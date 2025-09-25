@@ -1,31 +1,18 @@
-import os, json, orjson, uuid, time
+import os, json, uuid, time
 from typing import Dict, List
 from fastapi import FastAPI, Depends, HTTPException, Request
-from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi.responses import StreamingResponse
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 # Removed inference_client import - using Azure OpenAI client directly
 from keyvault_client import get_secret
-# Load environment variables (optional)
-try:
-    from dotenv import load_dotenv
-    # Try to load azure-openai.env first, then .env
-    load_dotenv('azure-openai.env')
-    load_dotenv()
-    print("Environment variables loaded successfully")
-except Exception as e:
-    print(f"Warning: Could not load .env file: {e}")
-    print("Continuing with system environment variables...")
+# Load environment variables
+from dotenv import load_dotenv
+load_dotenv('azure-openai.env')
+load_dotenv()
 
-# Import Azure OpenAI (optional)
-try:
-    from openai import AzureOpenAI
-    AZURE_OPENAI_AVAILABLE = True
-except ImportError:
-    print("Warning: Azure OpenAI not available. Using fallback responses.")
-    AzureOpenAI = None
-    AZURE_OPENAI_AVAILABLE = False
+# Removed Azure OpenAI client - using direct HTTP calls to AI Foundry
 
 # ---- Pydantic models ----
 class Message(BaseModel):
@@ -53,19 +40,9 @@ AZURE_INFERENCE_KEY = get_secret("FoundryApiKey", os.getenv("AZURE_INFERENCE_KEY
 AZURE_INFERENCE_CHAT_MODEL = get_secret("azure-inference-chat-model", os.getenv("AZURE_INFERENCE_CHAT_MODEL", "gpt-4o-mini"), force_refresh=True)
 AZURE_INFERENCE_EMBED_MODEL = get_secret("azure-inference-embed-model", os.getenv("AZURE_INFERENCE_EMBED_MODEL", "text-embedding-3-small"), force_refresh=True)
 
-# Initialize Azure AI Foundry client
-azure_openai_client = None
-if AZURE_OPENAI_AVAILABLE and AZURE_INFERENCE_ENDPOINT and AZURE_INFERENCE_KEY:
-    try:
-        azure_openai_client = AzureOpenAI(
-            azure_endpoint=AZURE_INFERENCE_ENDPOINT,
-            api_key=AZURE_INFERENCE_KEY,
-            api_version="2024-02-15-preview"
-        )
-        print("Azure AI Foundry client initialized successfully")
-    except Exception as e:
-        print(f"Warning: Could not initialize Azure AI Foundry client: {e}")
-        azure_openai_client = None
+# Azure AI Foundry configuration check
+if AZURE_INFERENCE_ENDPOINT and AZURE_INFERENCE_KEY:
+    print("Azure AI Foundry configured successfully")
 else:
     print("Azure AI Foundry not configured - using fallback responses")
 
@@ -146,7 +123,7 @@ DOCS: List[Dict] = []
 DOCS_PATH = os.path.join(os.path.dirname(__file__), "sample_docs.json")
 if os.path.exists(DOCS_PATH):
     with open(DOCS_PATH, "rb") as f:
-        DOCS = orjson.loads(f.read())
+        DOCS = json.loads(f.read())
 
 def mini_search(query: str, k: int = 3) -> List[Dict]:
     q = query.lower()
@@ -220,27 +197,7 @@ def root():
         }
     }
 
-@api.get("/test")
-def test_stream():
-    """Test endpoint to demonstrate the stream functionality"""
-    test_payload = {
-        "thread_id": "test-123",
-        "messages": [
-            {"role": "user", "content": "tell me about caffeine"}
-        ]
-    }
-    
-    # Simulate the stream logic
-    user_msg = "tell me about caffeine"
-    hits = mini_search(user_msg, k=3)
-    answer = compose_with_llm(user_msg, hits)
-    
-    return {
-        "message": "This is what the /stream endpoint would return",
-        "test_payload": test_payload,
-        "search_results": hits,
-        "answer": answer
-    }
+# Removed /test endpoint - not needed for production
 
 @api.get("/healthz")
 def healthz():
