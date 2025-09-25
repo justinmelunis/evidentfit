@@ -5,7 +5,7 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from inference_client import foundry_chat
+# Removed inference_client import - using Azure OpenAI client directly
 from keyvault_client import get_secret
 # Load environment variables (optional)
 try:
@@ -68,6 +68,61 @@ if AZURE_OPENAI_AVAILABLE and AZURE_INFERENCE_ENDPOINT and AZURE_INFERENCE_KEY:
         azure_openai_client = None
 else:
     print("Azure AI Foundry not configured - using fallback responses")
+
+# Helper functions to replace inference_client
+def foundry_chat(messages, max_tokens=500, temperature=0.2):
+    """
+    Chat completion using Azure AI Foundry
+    messages: list of {"role":"system"|"user"|"assistant", "content": "..."}
+    returns: string content
+    """
+    import httpx
+    
+    if not AZURE_INFERENCE_ENDPOINT or not AZURE_INFERENCE_KEY:
+        raise Exception("Azure AI Foundry not configured")
+    
+    url = f"{AZURE_INFERENCE_ENDPOINT}/chat/completions"
+    headers = {
+        "api-key": AZURE_INFERENCE_KEY,
+        "content-type": "application/json"
+    }
+    payload = {
+        "model": AZURE_INFERENCE_CHAT_MODEL,
+        "messages": messages,
+        "temperature": temperature,
+        "max_tokens": max_tokens
+    }
+    
+    r = httpx.post(url, json=payload, headers=headers, timeout=60)
+    r.raise_for_status()
+    data = r.json()
+    return data["choices"][0]["message"]["content"]
+
+def foundry_embed(texts):
+    """
+    Generate embeddings using Azure AI Foundry
+    texts: list[str]
+    returns: list[list[float]] (embeddings)
+    """
+    import httpx
+    
+    if not AZURE_INFERENCE_ENDPOINT or not AZURE_INFERENCE_KEY:
+        raise Exception("Azure AI Foundry not configured")
+    
+    url = f"{AZURE_INFERENCE_ENDPOINT}/embeddings"
+    headers = {
+        "api-key": AZURE_INFERENCE_KEY,
+        "content-type": "application/json"
+    }
+    payload = {
+        "model": AZURE_INFERENCE_EMBED_MODEL,
+        "input": texts
+    }
+    
+    r = httpx.post(url, json=payload, headers=headers, timeout=60)
+    r.raise_for_status()
+    data = r.json()
+    return [d["embedding"] for d in data["data"]]
 
 def guard(creds: HTTPBasicCredentials = Depends(security)):
     if creds.username != DEMO_USER or creds.password != DEMO_PW:
