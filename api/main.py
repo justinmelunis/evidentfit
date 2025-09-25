@@ -6,6 +6,7 @@ from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from inference_client import foundry_chat
+from keyvault_client import get_secret
 # Load environment variables (optional)
 try:
     from dotenv import load_dotenv
@@ -37,18 +38,19 @@ class StreamRequest(BaseModel):
 
 # ---- auth (private preview) ----
 security = HTTPBasic()
-DEMO_USER = os.getenv("DEMO_USER", "demo")
-DEMO_PW = os.getenv("DEMO_PW", "demo123")
+DEMO_USER = get_secret("demo-user", os.getenv("DEMO_USER", "demo"))
+DEMO_PW = get_secret("demo-password", os.getenv("DEMO_PW", "demo123"))
 
 # ---- Azure deployment configuration ----
 HOST = os.getenv("HOST", "0.0.0.0")
 PORT = int(os.getenv("PORT", "8000"))
 
-# ---- Azure OpenAI configuration ----
-AZURE_OPENAI_ENDPOINT = os.getenv("AZURE_OPENAI_ENDPOINT")
-AZURE_OPENAI_API_KEY = os.getenv("AZURE_OPENAI_API_KEY")
-AZURE_OPENAI_API_VERSION = os.getenv("AZURE_OPENAI_API_VERSION", "2024-02-15-preview")
-AZURE_OPENAI_DEPLOYMENT_NAME = os.getenv("AZURE_OPENAI_DEPLOYMENT_NAME", "gpt-4o-mini")
+# ---- Azure OpenAI configuration (with Key Vault fallback) ----
+# Try to get secrets from Key Vault first, fallback to environment variables
+AZURE_OPENAI_ENDPOINT = get_secret("azure-openai-endpoint", os.getenv("AZURE_OPENAI_ENDPOINT"))
+AZURE_OPENAI_API_KEY = get_secret("FoundryApiKey", os.getenv("AZURE_OPENAI_API_KEY"))
+AZURE_OPENAI_API_VERSION = get_secret("azure-openai-api-version", os.getenv("AZURE_OPENAI_API_VERSION", "2024-02-15-preview"))
+AZURE_OPENAI_DEPLOYMENT_NAME = get_secret("azure-openai-deployment-name", os.getenv("AZURE_OPENAI_DEPLOYMENT_NAME", "gpt-4o-mini"))
 
 # Initialize Azure OpenAI client
 azure_openai_client = None

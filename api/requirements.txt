@@ -4,3 +4,5 @@ orjson
 openai
 python-dotenv
 httpx
+azure-keyvault-secrets
+azure-identity
