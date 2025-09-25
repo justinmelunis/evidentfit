@@ -1,0 +1,23 @@
+[
+    {
+      "id": "1",
+      "title": "Creatine monohydrate and resistance training",
+      "url": "https://pubmed.ncbi.nlm.nih.gov/0000001/",
+      "summary": "Creatine monohydrate improves strength and lean mass in resistance-trained adults.",
+      "keywords": ["creatine", "strength", "hypertrophy", "resistance"]
+    },
+    {
+      "id": "2",
+      "title": "Caffeine dosing and performance",
+      "url": "https://pubmed.ncbi.nlm.nih.gov/0000002/",
+      "summary": "Caffeine at 3–6 mg/kg enhances power and endurance; monitor sensitivity.",
+      "keywords": ["caffeine", "mg/kg", "performance", "endurance", "power"]
+    },
+    {
+      "id": "3",
+      "title": "Beta-alanine supplementation",
+      "url": "https://pubmed.ncbi.nlm.nih.gov/0000003/",
+      "summary": "Beta-alanine (3.2–6.4 g/day) increases muscle carnosine and may improve high-intensity efforts.",
+      "keywords": ["beta-alanine", "carnosine", "high-intensity"]
+    }
+  ]
