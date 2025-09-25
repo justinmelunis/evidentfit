@@ -1,0 +1,63 @@
+name: Deploy to Azure
+
+on:
+  push:
+    branches: [ main, initial_web ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  deploy-api:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+    
+    - name: Install dependencies
+      run: |
+        cd api
+        pip install -r requirements.txt
+    
+    - name: Deploy to Azure App Service
+      uses: azure/webapps-deploy@v2
+      with:
+        app-name: ${{ secrets.AZURE_API_APP_NAME }}
+        publish-profile: ${{ secrets.AZURE_API_PUBLISH_PROFILE }}
+        package: ./api
+
+  deploy-frontend:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Set up Node.js
+      uses: actions/setup-node@v3
+      with:
+        node-version: '18'
+        cache: 'npm'
+        cache-dependency-path: web/evidentfit-web/package-lock.json
+    
+    - name: Install dependencies
+      run: |
+        cd web/evidentfit-web
+        npm ci
+    
+    - name: Build application
+      run: |
+        cd web/evidentfit-web
+        npm run build
+      env:
+        NEXT_PUBLIC_API_BASE: ${{ secrets.NEXT_PUBLIC_API_BASE }}
+        NEXT_PUBLIC_DEMO_USER: ${{ secrets.NEXT_PUBLIC_DEMO_USER }}
+        NEXT_PUBLIC_DEMO_PW: ${{ secrets.NEXT_PUBLIC_DEMO_PW }}
+    
+    - name: Deploy to Azure App Service
+      uses: azure/webapps-deploy@v2
+      with:
+        app-name: ${{ secrets.AZURE_FRONTEND_APP_NAME }}
+        publish-profile: ${{ secrets.AZURE_FRONTEND_PUBLISH_PROFILE }}
+        package: ./web/evidentfit-web
