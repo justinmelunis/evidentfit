@@ -1,0 +1,16 @@
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.log
+*.sqlite*
+.venv/
+.env
+.env.*
+dist/
+build/
+node_modules/
+.git/
+*.md
+test_*.py
+setup_keyvault.py
