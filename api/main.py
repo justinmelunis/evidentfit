@@ -5,6 +5,7 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+from inference_client import foundry_chat
 # Load environment variables (optional)
 try:
     from dotenv import load_dotenv
@@ -101,64 +102,29 @@ def mini_search(query: str, k: int = 3) -> List[Dict]:
     scored.sort(key=lambda x: x[0], reverse=True)
     return [d for _, d in scored[:k]] or DOCS[:k]
 
-async def compose_answer(prompt: str, hits: List[Dict]) -> str:
-    """
-    Generate an evidence-based answer using Azure OpenAI with retrieved research papers
-    """
-    print(f"DEBUG: azure_openai_client is {azure_openai_client}")
-    print(f"DEBUG: Using fallback mode")
-    
-    if not azure_openai_client:
-        # Fallback to stubbed response if Azure OpenAI is not configured
-        print("DEBUG: Using fallback response")
-        return _get_fallback_answer(prompt, hits)
-    
-    # Prepare context from retrieved papers
-    context_papers = []
-    for hit in hits:
-        context_papers.append(f"**{hit['title']}**\nSummary: {hit['summary']}\nURL: {hit['url']}")
-    
-    context = "\n\n".join(context_papers)
-    
-    # Create the system prompt for evidence-based fitness guidance
-    system_prompt = """You are an evidence-based fitness and supplement expert. You provide accurate, research-backed guidance on fitness supplements, nutrition, and training.
-
-Guidelines:
-- Base your answers on the provided research papers
-- Be specific about dosages, timing, and protocols
-- Always include proper citations
-- Emphasize that this is educational, not medical advice
-- Use a professional but accessible tone
-- Structure your response clearly with headings and bullet points"""
-
-    user_prompt = f"""Based on the following research papers, provide evidence-based guidance for this question: "{prompt}"
-
-Research Papers:
-{context}
-
-Please provide a comprehensive, evidence-based answer that:
-1. Directly addresses the user's question
-2. References specific findings from the research papers
-3. Includes practical recommendations with dosages
-4. Lists all citations properly
-5. Emphasizes this is educational, not medical advice"""
-
-    try:
-        response = azure_openai_client.chat.completions.create(
-            model=AZURE_OPENAI_DEPLOYMENT_NAME,
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt}
-            ],
-            temperature=0.3,  # Lower temperature for more consistent, factual responses
-            max_tokens=1000
-        )
-        
-        return response.choices[0].message.content
-        
-    except Exception as e:
-        print(f"Azure OpenAI error: {e}")
-        return _get_fallback_answer(prompt, hits)
+def compose_with_llm(prompt: str, hits: list[dict]) -> str:
+    citation_lines = "\n".join([f"- {h['title']} — {h['url']}" for h in hits])
+    sys = (
+        "You are EvidentFit, an evidence-focused supplement assistant for strength athletes. "
+        "Be concise, practical, and cite the provided sources at the end. "
+        "Do not invent sources. Include a short disclaimer."
+    )
+    user = (
+        f"User question: {prompt}\n\n"
+        f"Top sources:\n{citation_lines}\n\n"
+        "Write an answer that references these sources explicitly."
+    )
+    out = foundry_chat(
+        messages=[{"role": "system", "content": sys},
+                  {"role": "user", "content": user}],
+        max_tokens=450, temperature=0.2
+    )
+    # Ensure citations block appears even if the model forgets
+    if "Citations" not in out:
+        out += "\n\n**Citations**\n" + citation_lines
+    if "not medical advice" not in out.lower():
+        out += "\n\n_Educational only; not medical advice._"
+    return out
 
 def _get_fallback_answer(prompt: str, hits: List[Dict]) -> str:
     """Fallback response when Azure OpenAI is not available"""
@@ -209,7 +175,7 @@ def test_stream():
     # Simulate the stream logic
     user_msg = "tell me about caffeine"
     hits = mini_search(user_msg, k=3)
-    answer = compose_answer(user_msg, hits)
+    answer = compose_with_llm(user_msg, hits)
     
     return {
         "message": "This is what the /stream endpoint would return",
@@ -223,19 +189,21 @@ def healthz():
     return {"ok": True, "docs_loaded": len(DOCS)}
 
 @api.post("/stream")
-async def stream(request: StreamRequest, _=Depends(guard)):
-    thread_id = request.thread_id or str(uuid.uuid4())
-    msgs = request.messages
-    user_msg = next((m.content for m in reversed(msgs) if m.role == "user"), "")
+async def stream(request: Request, _=Depends(guard)):
+    payload = await request.json()
+    thread_id = payload.get("thread_id") or str(uuid.uuid4())
+    msgs = payload.get("messages", [])
+    user_msg = next((m["content"] for m in reversed(msgs) if m.get("role") == "user"), "")
+
     hits = mini_search(user_msg, k=3)
-    answer = await compose_answer(user_msg, hits)
+    answer = compose_with_llm(user_msg, hits)  # <-- now using Foundry chat
 
     async def gen():
-        # stream in two chunks to exercise the SSE client
-        frame1 = {"thread_id": thread_id, "stage": "search", "hits": hits}
-        yield f"data: {json.dumps(frame1)}\n\n"
-        time.sleep(0.15)
-        frame2 = {"thread_id": thread_id, "stage": "final", "answer": answer}
-        yield f"data: {json.dumps(frame2)}\n\n"
+        yield f"data: {json.dumps({'thread_id': thread_id, 'stage': 'search', 'hits': hits})}\n\n"
+        yield f"data: {json.dumps({'thread_id': thread_id, 'stage': 'final', 'answer': answer})}\n\n"
 
     return StreamingResponse(gen(), media_type="text/event-stream")
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(api, host="0.0.0.0", port=8000)
