@@ -45,28 +45,29 @@ DEMO_PW = get_secret("demo-password", os.getenv("DEMO_PW", "demo123"))
 HOST = os.getenv("HOST", "0.0.0.0")
 PORT = int(os.getenv("PORT", "8000"))
 
-# ---- Azure OpenAI configuration (with Key Vault fallback) ----
+# ---- Azure AI Foundry configuration (with Key Vault fallback) ----
 # Try to get secrets from Key Vault first, fallback to environment variables
-AZURE_OPENAI_ENDPOINT = get_secret("azure-openai-endpoint", os.getenv("AZURE_OPENAI_ENDPOINT"))
-AZURE_OPENAI_API_KEY = get_secret("FoundryApiKey", os.getenv("AZURE_OPENAI_API_KEY"))
-AZURE_OPENAI_API_VERSION = get_secret("azure-openai-api-version", os.getenv("AZURE_OPENAI_API_VERSION", "2024-02-15-preview"))
-AZURE_OPENAI_DEPLOYMENT_NAME = get_secret("azure-openai-deployment-name", os.getenv("AZURE_OPENAI_DEPLOYMENT_NAME", "gpt-4o-mini"))
+# Use force_refresh=True to bypass any caching issues
+AZURE_INFERENCE_ENDPOINT = get_secret("azure-inference-endpoint", os.getenv("AZURE_INFERENCE_ENDPOINT"), force_refresh=True)
+AZURE_INFERENCE_KEY = get_secret("FoundryApiKey", os.getenv("AZURE_INFERENCE_KEY"), force_refresh=True)
+AZURE_INFERENCE_CHAT_MODEL = get_secret("azure-inference-chat-model", os.getenv("AZURE_INFERENCE_CHAT_MODEL", "gpt-4o-mini"), force_refresh=True)
+AZURE_INFERENCE_EMBED_MODEL = get_secret("azure-inference-embed-model", os.getenv("AZURE_INFERENCE_EMBED_MODEL", "text-embedding-3-small"), force_refresh=True)
 
-# Initialize Azure OpenAI client
+# Initialize Azure AI Foundry client
 azure_openai_client = None
-if AZURE_OPENAI_AVAILABLE and AZURE_OPENAI_ENDPOINT and AZURE_OPENAI_API_KEY:
+if AZURE_OPENAI_AVAILABLE and AZURE_INFERENCE_ENDPOINT and AZURE_INFERENCE_KEY:
     try:
         azure_openai_client = AzureOpenAI(
-            azure_endpoint=AZURE_OPENAI_ENDPOINT,
-            api_key=AZURE_OPENAI_API_KEY,
-            api_version=AZURE_OPENAI_API_VERSION
+            azure_endpoint=AZURE_INFERENCE_ENDPOINT,
+            api_key=AZURE_INFERENCE_KEY,
+            api_version="2024-02-15-preview"
         )
-        print("Azure OpenAI client initialized successfully")
+        print("Azure AI Foundry client initialized successfully")
     except Exception as e:
-        print(f"Warning: Could not initialize Azure OpenAI client: {e}")
+        print(f"Warning: Could not initialize Azure AI Foundry client: {e}")
         azure_openai_client = None
 else:
-    print("Azure OpenAI not configured - using fallback responses")
+    print("Azure AI Foundry not configured - using fallback responses")
 
 def guard(creds: HTTPBasicCredentials = Depends(security)):
     if creds.username != DEMO_USER or creds.password != DEMO_PW:

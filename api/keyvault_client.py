@@ -79,8 +79,13 @@ class KeyVaultClient:
             Secret value as string, or None if not found
         """
         try:
+            # Force fresh retrieval by getting the latest version
             secret = self.client.get_secret(secret_name)
             logger.info(f"Successfully retrieved secret: {secret_name}")
+            logger.info(f"Secret version: {secret.properties.version}")
+            logger.info(f"Secret created: {secret.properties.created_on}")
+            logger.info(f"Secret updated: {secret.properties.updated_on}")
+            logger.info(f"Secret value starts with: {secret.value[:10]}...")
             return secret.value
         except Exception as e:
             logger.error(f"Failed to retrieve secret '{secret_name}': {e}")
@@ -136,18 +141,30 @@ def get_keyvault_client() -> KeyVaultClient:
         _keyvault_client = KeyVaultClient()
     return _keyvault_client
 
-def get_secret(secret_name: str, fallback_value: str = None) -> str:
+def refresh_keyvault_client():
+    """
+    Force refresh the global Key Vault client instance.
+    This can help bypass any caching issues.
+    """
+    global _keyvault_client
+    _keyvault_client = None
+    logger.info("Key Vault client refreshed")
+
+def get_secret(secret_name: str, fallback_value: str = None, force_refresh: bool = False) -> str:
     """
     Convenience function to get a secret with fallback.
     
     Args:
         secret_name: Name of the secret in Key Vault
         fallback_value: Fallback value if secret not found
+        force_refresh: Force refresh the Key Vault client to bypass caching
         
     Returns:
         Secret value or fallback value
     """
     try:
+        if force_refresh:
+            refresh_keyvault_client()
         client = get_keyvault_client()
         secret_value = client.get_secret(secret_name)
         return secret_value if secret_value is not None else fallback_value

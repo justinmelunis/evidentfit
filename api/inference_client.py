@@ -5,10 +5,10 @@ from dotenv import load_dotenv
 load_dotenv('azure-openai.env')
 load_dotenv()
 
-F_ENDPOINT = os.getenv("AZURE_OPENAI_ENDPOINT", "").rstrip("/")
-F_KEY = os.getenv("AZURE_OPENAI_API_KEY", "")
-CHAT_MODEL = os.getenv("AZURE_OPENAI_DEPLOYMENT_NAME", "gpt-4o-mini")
-EMBED_MODEL = os.getenv("AZURE_OPENAI_EMBED_MODEL", "text-embedding-3-small")
+F_ENDPOINT = os.getenv("AZURE_INFERENCE_ENDPOINT", "").rstrip("/")
+F_KEY = os.getenv("AZURE_INFERENCE_KEY", "")
+CHAT_MODEL = os.getenv("AZURE_INFERENCE_CHAT_MODEL", "gpt-4o-mini")
+EMBED_MODEL = os.getenv("AZURE_INFERENCE_EMBED_MODEL", "text-embedding-3-small")
 
 HEADERS = {
     "api-key": F_KEY,
