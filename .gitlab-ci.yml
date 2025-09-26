@@ -14,7 +14,7 @@ build_web:
       - web/evidentfit-web/node_modules
   before_script:
     - cd web/evidentfit-web
-    - npm ci
+    - npm ci --include=dev
   script:
     # Build the Next.js app with static export
     - npm run build
