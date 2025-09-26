@@ -1,7 +1,9 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  // Enable standalone output for Docker
-  output: 'standalone',
+  // Enable static export for Azure Static Web Apps
+  output: 'export',
+  trailingSlash: true,
+  distDir: 'out',
   
   // Environment variables for Azure
   env: {
@@ -14,7 +16,7 @@ const nextConfig = {
   
   // Image optimization
   images: {
-    unoptimized: true, // For static export if needed
+    unoptimized: true, // Required for static export
   },
 }
 

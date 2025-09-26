@@ -35,13 +35,19 @@ PORT = int(os.getenv("PORT", "8000"))
 # ---- Azure AI Foundry configuration (with Key Vault fallback) ----
 # Try to get secrets from Key Vault first, fallback to environment variables
 # Use force_refresh=True to bypass any caching issues
-AZURE_INFERENCE_ENDPOINT = get_secret("azure-inference-endpoint", os.getenv("AZURE_INFERENCE_ENDPOINT"), force_refresh=True)
-AZURE_INFERENCE_KEY = get_secret("FoundryApiKey", os.getenv("AZURE_INFERENCE_KEY"), force_refresh=True)
-AZURE_INFERENCE_CHAT_MODEL = get_secret("azure-inference-chat-model", os.getenv("AZURE_INFERENCE_CHAT_MODEL", "gpt-4o-mini"), force_refresh=True)
-AZURE_INFERENCE_EMBED_MODEL = get_secret("azure-inference-embed-model", os.getenv("AZURE_INFERENCE_EMBED_MODEL", "text-embedding-3-small"), force_refresh=True)
+FOUNDATION_ENDPOINT = get_secret("foundation-endpoint", os.getenv("FOUNDATION_ENDPOINT"), force_refresh=True)
+FOUNDATION_KEY = get_secret("foundation-key", os.getenv("FOUNDATION_KEY"), force_refresh=True)
+FOUNDATION_CHAT_MODEL = get_secret("foundation-chat-model", os.getenv("FOUNDATION_CHAT_MODEL", "gpt-4o-mini"), force_refresh=True)
+FOUNDATION_EMBED_MODEL = get_secret("foundation-embed-model", os.getenv("FOUNDATION_EMBED_MODEL", "text-embedding-3-small"), force_refresh=True)
+
+# ---- Azure AI Search configuration (with Key Vault fallback) ----
+SEARCH_ENDPOINT = get_secret("search-endpoint", os.getenv("SEARCH_ENDPOINT"), force_refresh=True)
+SEARCH_QUERY_KEY = get_secret("search-query-key", os.getenv("SEARCH_QUERY_KEY"), force_refresh=True)
+SEARCH_INDEX = get_secret("search-index", os.getenv("SEARCH_INDEX", "evidentfit-index"), force_refresh=True)
+INDEX_VERSION = get_secret("index-version", os.getenv("INDEX_VERSION", "v1-2025-09-25"), force_refresh=True)
 
 # Azure AI Foundry configuration check
-if AZURE_INFERENCE_ENDPOINT and AZURE_INFERENCE_KEY:
+if FOUNDATION_ENDPOINT and FOUNDATION_KEY:
     print("Azure AI Foundry configured successfully")
 else:
     print("Azure AI Foundry not configured - using fallback responses")
@@ -55,16 +61,16 @@ def foundry_chat(messages, max_tokens=500, temperature=0.2):
     """
     import httpx
     
-    if not AZURE_INFERENCE_ENDPOINT or not AZURE_INFERENCE_KEY:
+    if not FOUNDATION_ENDPOINT or not FOUNDATION_KEY:
         raise Exception("Azure AI Foundry not configured")
     
-    url = f"{AZURE_INFERENCE_ENDPOINT}/chat/completions"
+    url = f"{FOUNDATION_ENDPOINT}/chat/completions"
     headers = {
-        "api-key": AZURE_INFERENCE_KEY,
+        "api-key": FOUNDATION_KEY,
         "content-type": "application/json"
     }
     payload = {
-        "model": AZURE_INFERENCE_CHAT_MODEL,
+        "model": FOUNDATION_CHAT_MODEL,
         "messages": messages,
         "temperature": temperature,
         "max_tokens": max_tokens
@@ -83,16 +89,16 @@ def foundry_embed(texts):
     """
     import httpx
     
-    if not AZURE_INFERENCE_ENDPOINT or not AZURE_INFERENCE_KEY:
+    if not FOUNDATION_ENDPOINT or not FOUNDATION_KEY:
         raise Exception("Azure AI Foundry not configured")
     
-    url = f"{AZURE_INFERENCE_ENDPOINT}/embeddings"
+    url = f"{FOUNDATION_ENDPOINT}/embeddings"
     headers = {
-        "api-key": AZURE_INFERENCE_KEY,
+        "api-key": FOUNDATION_KEY,
         "content-type": "application/json"
     }
     payload = {
-        "model": AZURE_INFERENCE_EMBED_MODEL,
+        "model": FOUNDATION_EMBED_MODEL,
         "input": texts
     }
     
