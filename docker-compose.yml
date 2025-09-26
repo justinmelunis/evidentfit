@@ -1,10 +1,8 @@
-version: '3.8'
-
 services:
   api:
     build:
-      context: ./api
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: api/Dockerfile
     ports:
       - "8000:8000"
     environment:
@@ -13,8 +11,6 @@ services:
       - AZURE_KEY_VAULT_URL=${AZURE_KEY_VAULT_URL}
     env_file:
       - ./api/azure-openai.env
-    volumes:
-      - ./api:/app
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/healthz"]

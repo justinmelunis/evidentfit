@@ -29,12 +29,12 @@ export default function Agent() {
       alert("Connection test: " + JSON.stringify(data));
     } catch (error) {
       console.error("Connection test failed:", error);
-      alert("Connection test failed: " + error.message);
+      alert("Connection test failed: " + (error instanceof Error ? error.message : String(error)));
     }
   };
 
   const send = async () => {
-    const newMsgs = [...msgs, {role:"user", content: input}];
+    const newMsgs = [...msgs, {role:"user" as const, content: input}];
     setMsgs(newMsgs); setInput(""); setLoading(true);
 
     try {
@@ -114,7 +114,7 @@ export default function Agent() {
       }
     } catch (error) {
       console.error("Error sending message:", error);
-      setMsgs([...newMsgs, {role:"assistant", content: "Error: " + error.message}]);
+      setMsgs([...newMsgs, {role:"assistant" as const, content: "Error: " + (error instanceof Error ? error.message : String(error))}]);
     }
     
     setLoading(false);
