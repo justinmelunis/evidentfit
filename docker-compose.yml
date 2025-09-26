@@ -8,9 +8,12 @@ services:
     environment:
       - HOST=0.0.0.0
       - PORT=8000
-      - AZURE_KEY_VAULT_URL=${AZURE_KEY_VAULT_URL}
+      - AZURE_KEY_VAULT_URL=https://kv-evidentfit.vault.azure.net/
     env_file:
       - ./api/azure-openai.env
+    volumes:
+      # Mount Azure CLI credentials for Key Vault access
+      - ~/.azure:/home/appuser/.azure:ro
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/healthz"]
