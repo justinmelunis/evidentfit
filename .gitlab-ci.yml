@@ -18,7 +18,6 @@ build_web:
   script:
     # Build the Next.js app with static export
     - npm run build
-    - npx next export -o out
   artifacts:
     paths:
       - web/evidentfit-web/out
