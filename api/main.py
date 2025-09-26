@@ -64,10 +64,12 @@ def foundry_chat(messages, max_tokens=500, temperature=0.2):
     if not FOUNDATION_ENDPOINT or not FOUNDATION_KEY:
         raise Exception("Azure AI Foundry not configured")
     
-    url = f"{FOUNDATION_ENDPOINT}/chat/completions"
+    # Add API version parameter
+    API_VERSION = os.getenv("FOUNDATION_API_VERSION", "2024-05-01-preview")
+    url = f"{FOUNDATION_ENDPOINT.rstrip('/')}/models/chat/completions?api-version={API_VERSION}"
     headers = {
-        "api-key": FOUNDATION_KEY,
-        "content-type": "application/json"
+        "Content-Type": "application/json",
+        "api-key": FOUNDATION_KEY.strip()
     }
     payload = {
         "model": FOUNDATION_CHAT_MODEL,
@@ -92,10 +94,12 @@ def foundry_embed(texts):
     if not FOUNDATION_ENDPOINT or not FOUNDATION_KEY:
         raise Exception("Azure AI Foundry not configured")
     
-    url = f"{FOUNDATION_ENDPOINT}/embeddings"
+    # Add API version parameter for embeddings
+    API_VERSION = os.getenv("FOUNDATION_API_VERSION", "2024-05-01-preview")
+    url = f"{FOUNDATION_ENDPOINT.rstrip('/')}/models/embeddings?api-version={API_VERSION}"
     headers = {
-        "api-key": FOUNDATION_KEY,
-        "content-type": "application/json"
+        "Content-Type": "application/json",
+        "api-key": FOUNDATION_KEY.strip()
     }
     payload = {
         "model": FOUNDATION_EMBED_MODEL,
