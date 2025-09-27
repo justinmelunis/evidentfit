@@ -87,7 +87,12 @@ def pubmed_efetch_xml(pmids: list[str]) -> dict:
 def parse_pubmed_article(rec: dict) -> dict:
     art = rec.get("MedlineCitation", {}).get("Article", {})
     pmid = rec.get("MedlineCitation", {}).get("PMID", {}).get("#text") or rec.get("MedlineCitation", {}).get("PMID")
-    title = (art.get("ArticleTitle") or "").strip()
+    title_raw = art.get("ArticleTitle") or ""
+    if isinstance(title_raw, dict):
+        title = title_raw.get("#text", "") or str(title_raw)
+    else:
+        title = str(title_raw)
+    title = title.strip()
     abstract = art.get("Abstract", {})
     if isinstance(abstract, dict):
         ab = abstract.get("AbstractText")
