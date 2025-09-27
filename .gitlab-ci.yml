@@ -17,6 +17,17 @@ build_api:
   only:
     - main
 
+build_ingest:
+  stage: build
+  image: docker:26
+  services:
+    - docker:26-dind
+  variables:
+    DOCKER_TLS_CERTDIR: ""
+  script: "echo \"Docker login with user: $DOCKER_USER\" && echo \"$DOCKER_PASS\" | docker login -u \"$DOCKER_USER\" --password-stdin && docker build -t justinmelunis/evidentfit-ingest:$CI_COMMIT_SHORT_SHA -f agents/ingest/Dockerfile . && docker push justinmelunis/evidentfit-ingest:$CI_COMMIT_SHORT_SHA"
+  only:
+    - main
+
 build_web:
   stage: build
   image: node:20

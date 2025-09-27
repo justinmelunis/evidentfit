@@ -12,6 +12,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Create app user & dirs
 WORKDIR /app
 RUN useradd -m appuser
+
+# Install shared package if present
+COPY shared/ /opt/shared/
+RUN pip install --no-cache-dir -e /opt/shared || true
+
 COPY api/requirements.txt /app/requirements.txt
 
 # Install Python deps

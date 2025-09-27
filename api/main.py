@@ -5,9 +5,17 @@ from fastapi.responses import StreamingResponse
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-# Removed keyvault_client - using environment variables only
-from clients.foundry_chat import chat as foundry_chat
-from clients.search_read import search_docs
+# Use shared clients instead of local ones
+try:
+    from evidentfit_shared.foundry_client import embed_texts, chat as foundry_chat
+    from evidentfit_shared.search_client import ensure_index, upsert_docs, get_doc, search_docs
+except ImportError:
+    # Fallback to local clients if shared not available
+    from clients.foundry_chat import chat as foundry_chat
+    from clients.search_read import search_docs
+
+# Import stack rules
+from stack_rules import creatine_plan_by_form, protein_gap_plan, get_evidence_grade, get_supplement_timing, get_supplement_why
 # Load environment variables
 from dotenv import load_dotenv
 load_dotenv('azure-openai.env')
@@ -25,6 +33,15 @@ class Profile(BaseModel):
     weight_kg: float
     caffeine_sensitive: bool
     meds: List[str]
+    diet: Optional[str] = None
+    training_freq: Optional[str] = None
+    diet_protein_g_per_day: Optional[float] = None
+    diet_protein_g_per_kg: Optional[float] = None
+    creatine_form: Optional[str] = None
+
+class StackRequest(BaseModel):
+    profile: Profile
+    tier: Optional[str] = None
 
 class StreamRequest(BaseModel):
     thread_id: str
@@ -50,6 +67,7 @@ FOUNDATION_EMBED_MODEL = os.getenv("FOUNDATION_EMBED_MODEL", "text-embedding-3-s
 SEARCH_ENDPOINT = os.getenv("SEARCH_ENDPOINT")
 SEARCH_QUERY_KEY = os.getenv("SEARCH_QUERY_KEY")
 SEARCH_INDEX = os.getenv("SEARCH_INDEX", "evidentfit-index")
+SEARCH_SUMMARIES_INDEX = os.getenv("SEARCH_SUMMARIES_INDEX", "evidentfit-summaries")
 INDEX_VERSION = os.getenv("INDEX_VERSION", "v1-2025-09-25")
 
 # Azure AI Foundry configuration check
@@ -237,6 +255,131 @@ async def stream(request: StreamRequest, _=Depends(guard)):
         yield f"data: {json.dumps(final_event)}\n\n"
 
     return StreamingResponse(gen(), media_type="text/event-stream")
+
+@api.get("/summaries/{supplement}")
+def get_summary(supplement: str):
+    """Get supplement summary from Summaries index"""
+    try:
+        # Try to get summary from shared search client
+        if 'get_doc' in globals():
+            summary_doc = get_doc(f"summary:{supplement}")
+            if summary_doc:
+                return {
+                    "supplement": supplement,
+                    "evidence_grade": summary_doc.get("evidence_grade", "D"),
+                    "updated_at": summary_doc.get("updated_at", ""),
+                    "overview_md": summary_doc.get("overview_md", ""),
+                    "last12_md": summary_doc.get("last12_md", ""),
+                    "key_papers": json.loads(summary_doc.get("key_papers_json", "[]")),
+                    "recent_papers": json.loads(summary_doc.get("recent_papers_json", "[]")),
+                    "index_version": summary_doc.get("index_version", INDEX_VERSION)
+                }
+    except Exception as e:
+        print(f"Error fetching summary: {e}")
+    
+    # Fallback response if summary not found
+    raise HTTPException(status_code=404, detail=f"Summary not found for supplement: {supplement}")
+
+@api.post("/stack")
+def build_stack(request: StackRequest):
+    """Build deterministic supplement stack based on profile"""
+    profile = request.profile
+    tier = request.tier or "standard"
+    
+    # Build bucket key
+    weight_bin = round(profile.weight_kg / 5) * 5
+    stim = "sens" if profile.caffeine_sensitive else "ok"
+    meds_class = "none"  # Simplified for now
+    diet = profile.diet or "any"
+    training_freq = profile.training_freq or "med"
+    
+    bucket_key = f"{INDEX_VERSION}:{profile.goal}:{weight_bin}:{stim}:{meds_class}:{diet}:{training_freq}"
+    
+    # Build stack tiers
+    core = []
+    optional = []
+    conditional = []
+    experimental = []
+    
+    # Core supplements based on goal
+    if profile.goal in ["strength", "hypertrophy"]:
+        # Creatine
+        creatine_plan = creatine_plan_by_form(
+            profile.weight_kg, 
+            profile.creatine_form, 
+            include_loading=True
+        )
+        core.append(creatine_plan)
+        
+        # Protein gap
+        protein_plan = protein_gap_plan(
+            profile.goal,
+            profile.weight_kg,
+            profile.diet_protein_g_per_day,
+            profile.diet_protein_g_per_kg
+        )
+        if protein_plan:
+            core.append(protein_plan)
+        
+        # Caffeine (if not sensitive)
+        if not profile.caffeine_sensitive:
+            core.append({
+                "supplement": "caffeine",
+                "doses": [{"value": 3, "unit": "mg/kg", "days": None}],
+                "timing": "Pre-workout",
+                "evidence": "A",
+                "why": "Improves focus, energy, and performance",
+                "notes": ["Avoid late in day"]
+            })
+    
+    elif profile.goal == "endurance":
+        # Beta-alanine for endurance
+        optional.append({
+            "supplement": "beta-alanine",
+            "doses": [{"value": 3.2, "unit": "g", "days": None, "split": "2x daily"}],
+            "timing": "Split throughout day",
+            "evidence": "B",
+            "why": "Buffers muscle acidity, delays fatigue",
+            "notes": ["May cause paresthesia (tingling)"]
+        })
+    
+    # Build response
+    response = {
+        "bucket_key": bucket_key,
+        "profile_sig": profile.dict(),
+        "tiers": {
+            "core": core,
+            "optional": optional,
+            "conditional": conditional,
+            "experimental": experimental
+        },
+        "exclusions": [],
+        "safety": [],
+        "index_version": INDEX_VERSION,
+        "updated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+    }
+    
+    return response
+
+@api.get("/stack/bucket/{bucket_key}")
+def get_bucket(bucket_key: str):
+    """Get banked stack recipe by bucket key"""
+    try:
+        if 'get_doc' in globals():
+            doc = get_doc(bucket_key)
+            if doc:
+                return json.loads(doc.get("recipe", "{}"))
+    except Exception as e:
+        print(f"Error fetching bucket: {e}")
+    
+    raise HTTPException(status_code=404, detail=f"Bucket not found: {bucket_key}")
+
+@api.get("/stack/buckets")
+def list_buckets():
+    """List known buckets (admin endpoint)"""
+    # This would require a more complex search query
+    # For now, return empty list
+    return {"buckets": []}
 
 if __name__ == "__main__":
     import uvicorn
