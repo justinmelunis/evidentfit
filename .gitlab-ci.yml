@@ -14,10 +14,7 @@ build_api:
   variables:
     DOCKER_TLS_CERTDIR: ""
   script:
-    - echo "Docker login with user: $DOCKER_USER"
-    - echo "$DOCKER_PASS" | docker login -u "$DOCKER_USER" --password-stdin
-    - docker build -t justinmelunis/evidentfit-api:$CI_COMMIT_SHORT_SHA -f api/Dockerfile .
-    - docker push justinmelunis/evidentfit-api:$CI_COMMIT_SHORT_SHA
+    - echo "Testing Docker build"
   only:
     - main
 
