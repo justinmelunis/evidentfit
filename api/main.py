@@ -1,12 +1,13 @@
 import os, json, uuid, time
-from typing import Dict, List
+from typing import Dict, List, Optional
 from fastapi import FastAPI, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-# Removed inference_client import - using Azure OpenAI client directly
 from keyvault_client import get_secret
+from clients.foundry_chat import chat as foundry_chat
+from clients.search_read import search_docs
 # Load environment variables
 from dotenv import load_dotenv
 load_dotenv('azure-openai.env')
@@ -19,9 +20,16 @@ class Message(BaseModel):
     role: str
     content: str
 
+class Profile(BaseModel):
+    goal: str
+    weight_kg: float
+    caffeine_sensitive: bool
+    meds: List[str]
+
 class StreamRequest(BaseModel):
-    thread_id: str = None
+    thread_id: str
     messages: List[Message]
+    profile: Profile
 
 # ---- auth (private preview) ----
 security = HTTPBasic()
@@ -118,7 +126,8 @@ def guard(creds: HTTPBasicCredentials = Depends(security)):
 api = FastAPI(title="EvidentFit API", version="0.0.1")
 
 # CORS configuration for Azure deployment
-ALLOWED_ORIGINS = os.getenv("ALLOWED_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000,http://localhost:3001,http://127.0.0.1:3001,http://localhost:3002,http://127.0.0.1:3002").split(",")
+CORS_ALLOW_ORIGINS = os.getenv("CORS_ALLOW_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000,http://localhost:3001,http://127.0.0.1:3001,http://localhost:3002,http://127.0.0.1:3002")
+ALLOWED_ORIGINS = CORS_ALLOW_ORIGINS.split(",") if CORS_ALLOW_ORIGINS else []
 
 api.add_middleware(
     CORSMiddleware,
@@ -135,7 +144,8 @@ if os.path.exists(DOCS_PATH):
     with open(DOCS_PATH, "rb") as f:
         DOCS = json.loads(f.read())
 
-def mini_search(query: str, k: int = 3) -> List[Dict]:
+def mini_search(query: str, k: int = 8) -> List[Dict]:
+    """Fallback search using sample docs when Azure AI Search is not available"""
     q = query.lower()
     scored = []
     for d in DOCS:
@@ -148,28 +158,54 @@ def mini_search(query: str, k: int = 3) -> List[Dict]:
     return [d for _, d in scored[:k]] or DOCS[:k]
 
 def compose_with_llm(prompt: str, hits: list[dict]) -> str:
-    citation_lines = "\n".join([f"- {h['title']} — {h['url']}" for h in hits])
+    """Compose answer using Foundry chat with tight prompt that only cites retrieved IDs"""
+    # Build citations from hits
+    citation_lines = []
+    for h in hits:
+        title = h.get('title', 'Unknown')
+        url = h.get('url_pub', h.get('url', ''))
+        doi = h.get('doi', '')
+        pmid = h.get('pmid', '')
+        
+        # Build citation with available identifiers
+        citation_parts = [title]
+        if doi:
+            citation_parts.append(f"DOI: {doi}")
+        if pmid:
+            citation_parts.append(f"PMID: {pmid}")
+        if url:
+            citation_parts.append(f"URL: {url}")
+        
+        citation_lines.append(" - ".join(citation_parts))
+    
+    citations_text = "\n".join(citation_lines)
+    
     sys = (
         "You are EvidentFit, an evidence-focused supplement assistant for strength athletes. "
-        "Be concise, practical, and cite the provided sources at the end. "
-        "Do not invent sources. Include a short disclaimer."
+        "Be concise, practical, and cite ONLY the provided sources. "
+        "Do not invent sources or citations. Keep response under 500 tokens. "
+        "Include a disclaimer at the end."
     )
     user = (
         f"User question: {prompt}\n\n"
-        f"Top sources:\n{citation_lines}\n\n"
-        "Write an answer that references these sources explicitly."
+        f"Retrieved sources (cite only these):\n{citations_text}\n\n"
+        "Write an evidence-based answer that references these sources explicitly. "
+        "End with 'Educational only; not medical advice.'"
     )
-    out = foundry_chat(
-        messages=[{"role": "system", "content": sys},
-                  {"role": "user", "content": user}],
-        max_tokens=450, temperature=0.2
-    )
-    # Ensure citations block appears even if the model forgets
-    if "Citations" not in out:
-        out += "\n\n**Citations**\n" + citation_lines
-    if "not medical advice" not in out.lower():
-        out += "\n\n_Educational only; not medical advice._"
-    return out
+    
+    try:
+        out = foundry_chat(
+            messages=[{"role": "system", "content": sys},
+                      {"role": "user", "content": user}],
+            max_tokens=500, temperature=0.2
+        )
+        # Ensure disclaimer is present
+        if "not medical advice" not in out.lower():
+            out += "\n\n_Educational only; not medical advice._"
+        return out
+    except Exception as e:
+        print(f"Foundry chat failed: {e}")
+        return _get_fallback_answer(prompt, hits)
 
 def _get_fallback_answer(prompt: str, hits: List[Dict]) -> str:
     """Fallback response when Azure OpenAI is not available"""
@@ -214,21 +250,51 @@ def healthz():
     return {"ok": True, "docs_loaded": len(DOCS)}
 
 @api.post("/stream")
-async def stream(request: Request, _=Depends(guard)):
-    payload = await request.json()
-    thread_id = payload.get("thread_id") or str(uuid.uuid4())
-    msgs = payload.get("messages", [])
-    user_msg = next((m["content"] for m in reversed(msgs) if m.get("role") == "user"), "")
+async def stream(request: StreamRequest, _=Depends(guard)):
+    """SSE endpoint that emits search results then final answer"""
+    thread_id = request.thread_id
+    msgs = request.messages
+    profile = request.profile
+    
+    # Get user message
+    user_msg = next((m.content for m in reversed(msgs) if m.role == "user"), "")
 
-    hits = mini_search(user_msg, k=3)
-    answer = compose_with_llm(user_msg, hits)  # <-- now using Foundry chat
+    # Search for relevant documents
+    try:
+        hits = search_docs(query=user_msg, top=8)
+    except Exception as e:
+        print(f"Search failed, using fallback: {e}")
+        hits = mini_search(user_msg, k=8)
+    
+    # Compose answer using Foundry chat
+    answer = compose_with_llm(user_msg, hits)
 
     async def gen():
-        yield f"data: {json.dumps({'thread_id': thread_id, 'stage': 'search', 'hits': hits})}\n\n"
-        yield f"data: {json.dumps({'thread_id': thread_id, 'stage': 'final', 'answer': answer})}\n\n"
+        # Emit search stage with hits
+        search_event = {
+            "stage": "search",
+            "hits": [
+                {
+                    "title": h.get("title", ""),
+                    "url_pub": h.get("url_pub", ""),
+                    "study_type": h.get("study_type", ""),
+                    "doi": h.get("doi", ""),
+                    "pmid": h.get("pmid", "")
+                }
+                for h in hits
+            ]
+        }
+        yield f"data: {json.dumps(search_event)}\n\n"
+        
+        # Emit final stage with answer
+        final_event = {
+            "stage": "final",
+            "answer": answer
+        }
+        yield f"data: {json.dumps(final_event)}\n\n"
 
     return StreamingResponse(gen(), media_type="text/event-stream")
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(api, host="0.0.0.0", port=8000)
+    uvicorn.run(api, host=HOST, port=PORT)
