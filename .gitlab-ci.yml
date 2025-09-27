@@ -10,7 +10,7 @@ build_api:
   services: [docker:26-dind]
   variables: { DOCKER_TLS_CERTDIR: "" }
   script:
-    - docker login -u "$DOCKER_USER" -p "$DOCKER_PASS"
+    - echo "$DOCKER_PASS" | docker login -u "$DOCKER_USER" --password-stdin
     - docker build -t justinmelunis/evidentfit-api:$CI_COMMIT_SHORT_SHA -f api/Dockerfile .
     - docker push justinmelunis/evidentfit-api:$CI_COMMIT_SHORT_SHA
   rules:
