@@ -1,4 +1,6 @@
-stages: [build, deploy]
+stages:
+  - build
+  - deploy
 
 variables:
   NODE_ENV: production
@@ -7,7 +9,8 @@ variables:
 build_api:
   stage: build
   image: docker:26
-  services: [docker:26-dind]
+  services:
+    - docker:26-dind
   variables:
     DOCKER_TLS_CERTDIR: ""
   script:
@@ -17,7 +20,9 @@ build_api:
     - docker push justinmelunis/evidentfit-api:$CI_COMMIT_SHORT_SHA
   rules:
     - if: '$CI_COMMIT_BRANCH == "main" && $DOCKER_USER && $DOCKER_PASS'
-      changes: ["api/**/*", ".gitlab-ci.yml"]
+      changes:
+        - "api/**/*"
+        - ".gitlab-ci.yml"
 
 build_web:
   stage: build
@@ -31,7 +36,6 @@ build_web:
     - cd web/evidentfit-web
     - npm ci --include=dev
   script:
-    # Build the Next.js app with static export
     - npm run build
   artifacts:
     paths:
@@ -44,13 +48,13 @@ build_web:
 deploy_web:
   stage: deploy
   image: node:20
-  needs: [build_web]
+  needs:
+    - build_web
   variables:
     SWA_CLI_TELEMETRY: "off"
   before_script:
     - npm i -g @azure/static-web-apps-cli
   script:
-    # Deploy the exported site (static) from web/evidentfit-web/out
     - swa deploy ./web/evidentfit-web/out --deployment-token "$SWA_DEPLOYMENT_TOKEN"
   only:
     - main
