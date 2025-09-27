@@ -5,7 +5,7 @@ from fastapi.responses import StreamingResponse
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from keyvault_client import get_secret
+# Removed keyvault_client - using environment variables only
 from clients.foundry_chat import chat as foundry_chat
 from clients.search_read import search_docs
 # Load environment variables
@@ -33,26 +33,24 @@ class StreamRequest(BaseModel):
 
 # ---- auth (private preview) ----
 security = HTTPBasic()
-DEMO_USER = get_secret("demo-user", os.getenv("DEMO_USER", "demo"))
-DEMO_PW = get_secret("demo-password", os.getenv("DEMO_PW", "demo123"))
+DEMO_USER = os.getenv("DEMO_USER", "demo")
+DEMO_PW = os.getenv("DEMO_PW", "demo123")
 
 # ---- Azure deployment configuration ----
 HOST = os.getenv("HOST", "0.0.0.0")
 PORT = int(os.getenv("PORT", "8000"))
 
-# ---- Azure AI Foundry configuration (with Key Vault fallback) ----
-# Try to get secrets from Key Vault first, fallback to environment variables
-# Use force_refresh=True to bypass any caching issues
-FOUNDATION_ENDPOINT = get_secret("foundation-endpoint", os.getenv("FOUNDATION_ENDPOINT"), force_refresh=True)
-FOUNDATION_KEY = get_secret("foundation-key", os.getenv("FOUNDATION_KEY"), force_refresh=True)
-FOUNDATION_CHAT_MODEL = get_secret("foundation-chat-model", os.getenv("FOUNDATION_CHAT_MODEL", "gpt-4o-mini"), force_refresh=True)
-FOUNDATION_EMBED_MODEL = get_secret("foundation-embed-model", os.getenv("FOUNDATION_EMBED_MODEL", "text-embedding-3-small"), force_refresh=True)
+# ---- Azure AI Foundry configuration ----
+FOUNDATION_ENDPOINT = os.getenv("FOUNDATION_ENDPOINT")
+FOUNDATION_KEY = os.getenv("FOUNDATION_KEY")
+FOUNDATION_CHAT_MODEL = os.getenv("FOUNDATION_CHAT_MODEL", "gpt-4o-mini")
+FOUNDATION_EMBED_MODEL = os.getenv("FOUNDATION_EMBED_MODEL", "text-embedding-3-small")
 
-# ---- Azure AI Search configuration (with Key Vault fallback) ----
-SEARCH_ENDPOINT = get_secret("search-endpoint", os.getenv("SEARCH_ENDPOINT"), force_refresh=True)
-SEARCH_QUERY_KEY = get_secret("search-query-key", os.getenv("SEARCH_QUERY_KEY"), force_refresh=True)
-SEARCH_INDEX = get_secret("search-index", os.getenv("SEARCH_INDEX", "evidentfit-index"), force_refresh=True)
-INDEX_VERSION = get_secret("index-version", os.getenv("INDEX_VERSION", "v1-2025-09-25"), force_refresh=True)
+# ---- Azure AI Search configuration ----
+SEARCH_ENDPOINT = os.getenv("SEARCH_ENDPOINT")
+SEARCH_QUERY_KEY = os.getenv("SEARCH_QUERY_KEY")
+SEARCH_INDEX = os.getenv("SEARCH_INDEX", "evidentfit-index")
+INDEX_VERSION = os.getenv("INDEX_VERSION", "v1-2025-09-25")
 
 # Azure AI Foundry configuration check
 if FOUNDATION_ENDPOINT and FOUNDATION_KEY:
@@ -60,64 +58,9 @@ if FOUNDATION_ENDPOINT and FOUNDATION_KEY:
 else:
     print("Azure AI Foundry not configured - using fallback responses")
 
-# Helper functions to replace inference_client
-def foundry_chat(messages, max_tokens=500, temperature=0.2):
-    """
-    Chat completion using Azure AI Foundry
-    messages: list of {"role":"system"|"user"|"assistant", "content": "..."}
-    returns: string content
-    """
-    import httpx
-    
-    if not FOUNDATION_ENDPOINT or not FOUNDATION_KEY:
-        raise Exception("Azure AI Foundry not configured")
-    
-    # Add API version parameter
-    API_VERSION = os.getenv("FOUNDATION_API_VERSION", "2024-05-01-preview")
-    url = f"{FOUNDATION_ENDPOINT.rstrip('/')}/models/chat/completions?api-version={API_VERSION}"
-    headers = {
-        "Content-Type": "application/json",
-        "api-key": FOUNDATION_KEY.strip()
-    }
-    payload = {
-        "model": FOUNDATION_CHAT_MODEL,
-        "messages": messages,
-        "temperature": temperature,
-        "max_tokens": max_tokens
-    }
-    
-    r = httpx.post(url, json=payload, headers=headers, timeout=60)
-    r.raise_for_status()
-    data = r.json()
-    return data["choices"][0]["message"]["content"]
+# Removed duplicate foundry_chat function - using clients/foundry_chat.py
 
-def foundry_embed(texts):
-    """
-    Generate embeddings using Azure AI Foundry
-    texts: list[str]
-    returns: list[list[float]] (embeddings)
-    """
-    import httpx
-    
-    if not FOUNDATION_ENDPOINT or not FOUNDATION_KEY:
-        raise Exception("Azure AI Foundry not configured")
-    
-    # Add API version parameter for embeddings
-    API_VERSION = os.getenv("FOUNDATION_API_VERSION", "2024-05-01-preview")
-    url = f"{FOUNDATION_ENDPOINT.rstrip('/')}/models/embeddings?api-version={API_VERSION}"
-    headers = {
-        "Content-Type": "application/json",
-        "api-key": FOUNDATION_KEY.strip()
-    }
-    payload = {
-        "model": FOUNDATION_EMBED_MODEL,
-        "input": texts
-    }
-    
-    r = httpx.post(url, json=payload, headers=headers, timeout=60)
-    r.raise_for_status()
-    data = r.json()
-    return [d["embedding"] for d in data["data"]]
+# Removed foundry_embed function - not used in current implementation
 
 def guard(creds: HTTPBasicCredentials = Depends(security)):
     if creds.username != DEMO_USER or creds.password != DEMO_PW:
