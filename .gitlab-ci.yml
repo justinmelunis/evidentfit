@@ -4,6 +4,19 @@ variables:
   NODE_ENV: production
   NEXT_TELEMETRY_DISABLED: "1"
 
+build_api:
+  stage: build
+  image: docker:26
+  services: [docker:26-dind]
+  variables: { DOCKER_TLS_CERTDIR: "" }
+  script:
+    - docker login -u "$DOCKER_USER" -p "$DOCKER_PASS"
+    - docker build -t justinmelunis/evidentfit-api:$CI_COMMIT_SHORT_SHA -f api/Dockerfile .
+    - docker push justinmelunis/evidentfit-api:$CI_COMMIT_SHORT_SHA
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
+      changes: ["api/**/*"]
+
 build_web:
   stage: build
   image: node:20
