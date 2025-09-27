@@ -23,24 +23,21 @@ def ensure_index(vector_dim: int = 1536):
         body = {
           "name": SEARCH_INDEX,
           "fields": [
-            {"name":"id","type":"Edm.String","key":True,"filterable":False,"searchable":False},
+            {"name":"id","type":"Edm.String","key":True},
             {"name":"title","type":"Edm.String","searchable":True},
-            {"name":"doi","type":"Edm.String","filterable":True,"facetable":True},
-            {"name":"pmid","type":"Edm.String","filterable":True,"facetable":True},
+            {"name":"doi","type":"Edm.String"},
+            {"name":"pmid","type":"Edm.String"},
             {"name":"url_pub","type":"Edm.String"},
-            {"name":"journal","type":"Edm.String","filterable":True,"facetable":True},
-            {"name":"year","type":"Edm.Int32","filterable":True,"sortable":True,"facetable":True},
-            {"name":"study_type","type":"Edm.String","filterable":True,"facetable":True},
-            {"name":"supplements","type":"Collection(Edm.String)","filterable":True,"facetable":True},
-            {"name":"outcomes","type":"Collection(Edm.String)","filterable":True,"facetable":True},
-            {"name":"population","type":"Edm.String","filterable":True,"facetable":True},
+            {"name":"journal","type":"Edm.String"},
+            {"name":"year","type":"Edm.Int32"},
+            {"name":"study_type","type":"Edm.String"},
+            {"name":"supplements","type":"Edm.String"},
+            {"name":"outcomes","type":"Edm.String"},
+            {"name":"population","type":"Edm.String"},
             {"name":"summary","type":"Edm.String","searchable":True},
             {"name":"content","type":"Edm.String","searchable":True},
-            {
-              "name":"content_vector","type":"Collection(Edm.Single)",
-              "searchable":False,"retrievable":True,"filterable":False,"sortable":False,"facetable":False
-            },
-            {"name":"index_version","type":"Edm.String","filterable":True,"facetable":True}
+            {"name":"content_vector","type":"Edm.String"},
+            {"name":"index_version","type":"Edm.String"}
           ]
         }
         r = c.put(f"{SEARCH_ENDPOINT}/indexes/{SEARCH_INDEX}?api-version={API_VERSION}", json=body)
