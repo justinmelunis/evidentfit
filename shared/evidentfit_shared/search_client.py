@@ -5,6 +5,12 @@ SEARCH_ENDPOINT = os.getenv("SEARCH_ENDPOINT", "").rstrip("/")
 SEARCH_INDEX = os.getenv("SEARCH_INDEX", "evidentfit-index")
 ADMIN_KEY = os.getenv("SEARCH_ADMIN_KEY")
 
+# Validate required environment variables
+if not SEARCH_ENDPOINT:
+    raise RuntimeError("SEARCH_ENDPOINT environment variable is required")
+if not ADMIN_KEY:
+    raise RuntimeError("SEARCH_ADMIN_KEY environment variable is required")
+
 def _client(headers): return httpx.Client(timeout=60, headers=headers)
 
 def ensure_index(vector_dim: int = 1536):
