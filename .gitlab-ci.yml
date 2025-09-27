@@ -15,12 +15,8 @@ build_api:
     - docker build -t justinmelunis/evidentfit-api:$CI_COMMIT_SHORT_SHA -f api/Dockerfile .
     - docker push justinmelunis/evidentfit-api:$CI_COMMIT_SHORT_SHA
   rules:
-    - if: '$CI_COMMIT_BRANCH == "main"'
+    - if: '$CI_COMMIT_BRANCH == "main" && $DOCKER_USER && $DOCKER_PASS'
       changes: ["api/**/*", ".gitlab-ci.yml"]
-  only:
-    variables:
-      - $DOCKER_USER
-      - $DOCKER_PASS
 
 build_web:
   stage: build
