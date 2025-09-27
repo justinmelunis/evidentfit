@@ -257,7 +257,7 @@ export default function StackPlanner() {
             </div>
           ) : (
             <div className="text-gray-500 text-center py-8">
-              Fill out your profile and click "Get My Stack" to see your personalized supplement recommendations.
+              Fill out your profile and click &quot;Get My Stack&quot; to see your personalized supplement recommendations.
             </div>
           )}
         </div>
