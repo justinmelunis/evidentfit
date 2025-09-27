@@ -1,0 +1,327 @@
+# EvidentFit — Cursor Project Rules (v6, single file)
+
+## Project overview
+- Purpose: Evidence-based lifting supplement guidance with transparent citations.
+- Cloud: Azure Container Apps (API & Jobs), Azure AI Foundry Project endpoint (chat+embeddings), Azure AI Search.
+- Agents:
+  - Agent A — Ingestion/Indexing (ACA Job)
+  - Agent B — User API (FastAPI, SSE)
+  - Agent C — Monthly Summarizer/Publisher (ACA Job)
+  - Agent D — Stack Recommender (deterministic; lives in API; optional durable store)
+
+## Repo structure (monorepo)
+evidentfit/
+  api/                         # Agent B + Agent D
+    Dockerfile
+    requirements.txt
+    main.py                    # /stream, /healthz, /summaries/{supp}, /stack*
+    stack_rules.py             # Agent D: deterministic stack builder (incl. protein GAP + creatine CME)
+    clients/
+      search_read.py           # reads with QUERY key
+      search_write.py          # upserts with ADMIN key
+      foundry_chat.py          # chat completions (Project endpoint)
+      foundry_embed.py         # embeddings (Project endpoint)
+      openfda.py               # label lookups (keyword scan)
+    __init__.py
+  agents/
+    ingest/                    # Agent A (PubMed → Search)
+      Dockerfile
+      requirements.txt
+      run.py                   # modes: bootstrap | monthly (watermark-aware)
+    summarize/                 # Agent C (Papers → Summaries)
+      Dockerfile
+      requirements.txt
+      run.py
+  shared/                      # tiny common lib (installed editable in each image)
+    pyproject.toml             # project = evidentfit_shared
+    evidentfit_shared/
+      foundry_client.py        # chat(), embed() — uses api-key header + api-version
+      search_client.py         # search_docs(), upsert_docs(), ensure_index()
+      dosing.py                # creatine(CME), caffeine, beta-alanine, protein GAP helpers
+      interactions.py          # openFDA scan + safety gate
+      profile_bucket.py        # make_bucket_key(), normalize_meds()
+      utils.py                 # read_index_version() from VERSION file
+      __init__.py
+  web/                         # Next.js SWA (static export)
+    package.json
+    next.config.js
+    src/pages/agent.tsx
+  docs/
+    architecture.md
+    api-contracts.md
+  .cursorrules                 # THIS FILE
+  .gitlab-ci.yml
+  VERSION                      # e.g., v1-2025-09-25 (agents read this)
+  .env.examples/
+    api.env.example
+    ingest.env.example
+    summarize.env.example
+
+### Notes
+- Keep Agent D's logic in `api/stack_rules.py` (or later move to `shared/`).
+- Install `shared/` in each image via: `COPY shared/ /opt/shared/ && pip install -e /opt/shared`.
+- `VERSION` file defines INDEX_VERSION for **all** agents; bump on schema/normalizer changes.
+
+## Non-negotiable platform rules
+- Azure AI Foundry **Project endpoint only** (not "deployments" API):
+  - Auth header: `api-key: <KEY>` (NEVER `Authorization`)
+  - Append `?api-version=2024-05-01-preview` to **every** call
+  - Chat URL: `${FOUNDATION_ENDPOINT}/models/chat/completions`
+  - Embeddings URL: `${FOUNDATION_ENDPOINT}/embeddings`
+- Azure AI Search REST API version: `2023-11-01`
+- LLM outputs ≤ **500 tokens**; LLMs only for **composition/summaries** (no math/unit extraction).
+- Strict **cite-only-retrieved**: never invent PMIDs/DOIs/URLs.
+
+## Index schemas (expected)
+### Papers index (Agent A writes; B/C/D read)
+- id: string (key) e.g., `pmid:123456|chunk:0`
+- title: string; doi?: string; pmid: string; url_pub: string; journal: string; year: int
+- study_type: string  # "meta-analysis" | "RCT" | "crossover" | ...
+- supplements: collection(string)  # normalized slugs: "creatine","nitrate",...
+- outcomes: collection(string); population: string
+- summary?: string; content: string; content_vector: vector
+- index_version: string
+
+### Summaries index (Agent C writes; B/WEB read)
+- id: string (key)  # `summary:<supplement-slug>`
+- supplement: string; updated_at: datetime
+- overview_md: string; last12_md: string
+- key_papers_json: string  # JSON [{title,doi,pmid,url,journal,year,study_type}]
+- recent_papers_json: string
+- evidence_grade: string  # A/B/C/D
+- index_version: string
+
+### Stacks index (optional durable store for Agent D; else Postgres)
+- id: string (key)  # equals bucket_key
+- bucket_key: string; profile_sig: string (JSON); recipe: string (JSON)
+- index_version: string; updated_at: datetime
+
+## Agents (roles & boundaries)
+- Agent A (ingest job):
+  - PubMed E-utilities (ESearch/EFetch) → parse → tag `supplements` via keyword map
+  - Embed `content` → upsert to Papers; watermark doc `id=WATERMARK_KEY` with `last_ingest_iso`
+  - Modes: `bootstrap` (mindate=2000-01-01) & `monthly` (mindate=watermark)
+- Agent B (API):
+  - `/stream` SSE: retrieve top-k from Papers; deterministic dosing; interactions; safety gate; compose; stream
+  - `/summaries/{supp}`: read Summaries
+  - `/stack*`: Agent D routes (build+bank stacks)
+- Agent C (summarizer job):
+  - Read Papers → rank (meta > RCT > crossover > other; newer first)
+  - Compose overview + last-12-months; infer grade; upsert Summaries
+- Agent D (stack recommender; in API):
+  - Deterministic **tiered** stack (Core/Optional/Conditional/Experimental) from profile
+  - Attach doses, evidence grade, ≤3 citations per item (prefer meta/RCT)
+  - Interactions + safety, then recompose if items removed
+  - **Bank** by `bucket_key` (cache + optional durable store)
+
+## API contracts (Agent B)
+### GET /healthz
+- 200 → `{"ok": true, "docs_loaded": <int>}`
+
+### POST /stream  (SSE)
+- Request:
+  - `thread_id: string`
+  - `messages: [{role:"user"|"system"|"assistant", content:string}]`
+  - `profile: {goal:string, weight_kg:number, caffeine_sensitive:boolean, meds:string[]}`
+- Response lines:
+  - `data: {"stage":"search","hits":[{"title","url_pub","study_type","doi","pmid"}...] }`
+  - `data: {"stage":"final","answer":"**Plan** ...\n\n**Citations** ..."}`
+
+### GET /summaries/{supplement}
+- Reads `id=summary:{supplement}` from Summaries; returns:
+  {
+    "supplement":"creatine","evidence_grade":"A","updated_at":"ISO",
+    "overview_md":"...","last12_md":"...","key_papers":[...],"recent_papers":[...],
+    "index_version":"v1-YYYY-MM-DD"
+  }
+
+### POST /stack   (Agent D)
+- Input JSON:
+  {
+    "profile": {
+      "goal": "strength"|"hypertrophy"|"endurance"|"weight_loss"|"general",
+      "weight_kg": number,
+      "caffeine_sensitive": boolean,
+      "meds": string[],
+      "diet": "any"|"vegan"|null,
+      "training_freq": "low"|"med"|"high"|null,
+      "diet_protein_g_per_day": number|null,   // optional
+      "diet_protein_g_per_kg": number|null,    // optional
+      "creatine_form": "monohydrate"|"anhydrous"|"hcl"|null  // optional
+    },
+    "tier": "core"|"standard"|"full"|"experimental"|null
+  }
+- Behavior:
+  - Build deterministic stack (tiers below), attach ≤3 citations per item from Papers.
+  - **Protein is GAP-only** (see rules): recommend supplemental grams to close diet gap; only include if gap ≥ 20 g/day.
+  - **Creatine uses CME (monohydrate-equivalent) dosing** with form conversion (see rules).
+  - Interactions (openFDA) + safety gate → remove/adjust contraindicated items.
+  - Compute `bucket_key`; bank (cache + optional durable store).
+- 200 JSON:
+  {
+    "bucket_key":"<index_version>:<goal>:<weight_bin>:<stim>:<meds_class>:<diet>:<freq>",
+    "profile_sig": {...},
+    "tiers": {
+      "core":[ {supp,doses:[{value,unit,days?}],timing,evidence,why,citations:[...],notes?} ],
+      "optional":[ ... ],
+      "conditional":[ ... ],
+      "experimental":[ ... ]
+    },
+    "exclusions":[ "..."],
+    "safety":[ "..."],
+    "index_version":"v1-YYYY-MM-DD",
+    "updated_at":"ISO8601"
+  }
+
+### GET /stack/bucket/{bucket_key}
+- Return banked recipe if found; 404 if missing.
+
+### GET /stack/buckets  (optional admin)
+- List known buckets.
+
+## Profile buckets (banking)
+- Components:
+  - goal ∈ {strength,hypertrophy,endurance,weight_loss,general}
+  - weight_bin = nearest 5 kg (e.g., 78 → 80)
+  - stim = "sens" if caffeine_sensitive else "ok"
+  - meds_class ∈ {none,ssri,maoi,anticoag,bp,others}
+  - diet ∈ {any,vegan} (default any)
+  - training_freq ∈ {low,med,high} (default med)
+- `bucket_key = "{index_version}:{goal}:{weight_bin}:{stim}:{meds_class}:{diet}:{training_freq}"`
+
+## Deterministic dosing rules (no LLM math)
+- Creatine **CME (Creatine Monohydrate Equivalent) dosing**
+  - All dosing anchored to **CME grams** (evidence base = monohydrate).
+  - Maintenance CME target:
+    - <70 kg → **3 g CM/day**
+    - ≥70 kg → **5 g CM/day**
+  - Optional loading CME target: **0.3 g/kg/day** for **5–7 days**, then maintenance.
+  - Supported forms & base fractions (`base_frac` = creatine base per gram of product):
+    - `monohydrate`: **0.879** (baseline; CME factor 1.00)
+    - `anhydrous`: **1.000**
+    - `hcl`: **0.782**
+  - Computing grams of chosen form to hit CME target `cme_g`:
+    - `form_g = round_to_0.25( cme_g * 0.879 / base_frac[form] )`
+  - Unsupported / not-recommended forms:
+    - **ethyl-ester**: disallow; suggest monohydrate (inferior outcomes)
+    - **citrate/malate/nitrate/magnesium-chelate**: equivalence **unsupported** unless label states creatine base; prefer monohydrate
+  - Always display: "≈ equivalent to X g creatine monohydrate (CME)".
+- Caffeine: **3–6 mg/kg** pre (cap if sensitive; avoid late). Evidence A.
+- Beta-alanine: **3.2–6.4 g/day** split. Evidence B.
+- **Protein GAP logic (diet-first)**:
+  - Targets (g/kg/day):
+    - strength/hypertrophy **1.6–2.2** (use **1.8** for gap math)
+    - endurance **1.2–1.6** (use **1.4**)
+    - weight_loss **1.8–2.4** (use **2.0**)
+    - general **1.4–1.6** (use **1.5**)
+  - Inputs: `diet_protein_g_per_day` or `diet_protein_g_per_kg` (optional)
+  - Gap calc:
+    - `target = target_per_kg(goal) * weight_kg`
+    - `diet = diet_g_per_day or (diet_g_per_kg * weight_kg) or 0`
+    - `gap_g = max(0, target - diet)` → round to nearest **5 g**
+  - Include protein supplement **only if gap ≥ 20 g/day**.
+  - Show servings: `ceil(gap_g / 25)` (assume **25 g protein/serving**).
+  - Notes: "Prefer food first; supplement only to close the gap." "Kidney disease → consult clinician."
+- Optional adds (goal-dependent): nitrate/citrulline (B/C), betaine (C), etc., with concise "why" + citations.
+
+### REQUIRED helper shapes (for Cursor to implement)
+- `creatine_plan_by_form(weight_kg: float, form: "monohydrate"|"anhydrous"|"hcl"|None, include_loading: bool) -> dict`
+  - Returns: `{supplement:"creatine", form, doses:[{value,unit,days?,split?}], timing, evidence:"A", why, notes:[...] }`
+- `protein_gap_plan(goal:str, weight_kg:float, diet_g_per_day:float|None, diet_g_per_kg:float|None, serving_protein_g:int=25, include_threshold_g:int=20) -> dict|None`
+  - Returns None if gap < threshold; otherwise a plan with **supplemental grams/day** and servings.
+
+## Evidence attachment rules (stacks & summaries)
+- Rank: **meta-analysis > RCT > crossover > other**; newer > older
+- Dedupe by DOI
+- Fields: `title, doi, pmid, url_pub, journal, year, study_type`
+- Caps: ≤ **3 citations per stack item**; summaries use ≤ **8 key** and ≤ **6 recent**
+
+## Interactions & safety
+- Normalize meds to classes: {ssri, maoi, anticoag, bp, others}
+- openFDA label scan → warnings (e.g., stimulant/nitrate terms) with source URLs
+- Hard blocks:
+  - **MAOI + stimulants** → remove caffeine/related
+  - **Anticoagulants + high-dose nitrates** → reduce/flag
+  - **Pregnancy/minors** (future fields) → conservative defaults
+- Recompose stack after removals.
+
+## Environment variables (set at deploy; no secrets in repo)
+# Shared
+FOUNDATION_ENDPOINT
+FOUNDATION_KEY
+FOUNDATION_API_VERSION=2024-05-01-preview
+FOUNDATION_CHAT_MODEL=gpt-4o-mini
+FOUNDATION_EMBED_MODEL=text-embedding-3-small
+SEARCH_ENDPOINT
+SEARCH_QUERY_KEY
+SEARCH_ADMIN_KEY
+INDEX_VERSION=v1-YYYY-MM-DD     # OR set INDEX_VERSION_FILE=VERSION to auto-read
+CORS_ALLOW_ORIGINS=https://www.evidentfit.com
+
+# Agent A (ingest job)
+SEARCH_INDEX=evidentfit-index
+PM_SEARCH_QUERY=<PubMed boolean with RT context; exclude NO₂ pollution terms>
+NCBI_EMAIL=<you@example.com>
+NCBI_API_KEY=<optional>
+WATERMARK_KEY=meta:last_ingest
+INGEST_LIMIT=2000
+LOG_LEVEL=info
+
+# Agent B (API)
+SEARCH_INDEX=evidentfit-index
+SEARCH_SUMMARIES_INDEX=evidentfit-summaries
+STACKS_INDEX=evidentfit-stacks     # optional if using Search to store stacks
+PORT=8000
+BASIC_AUTH_USER, BASIC_AUTH_PASS   # optional preview gate
+
+# Agent C (summarizer job)
+SEARCH_PAPERS_INDEX=evidentfit-index
+SEARCH_SUMMARIES_INDEX=evidentfit-summaries
+SUPPLEMENTS=creatine,caffeine,beta-alanine,citrulline,protein,hmb,nitrate,nitric-oxide,tribulus,d-aspartic-acid,deer-antler,boron,tongkat-ali,betaine,taurine,carnitine,zma,glutamine,cla,ecdysteroids,exogenous-ketones
+MONTH_WINDOW=12
+LOG_LEVEL=info
+
+## Build & deploy (expected)
+- Docker tags: commit SHA or semver; avoid `latest`.
+- Images:
+  - API → `justinmelunis/evidentfit-api:<tag>`
+  - Ingest → `justinmelunis/evidentfit-ingest:<tag>`
+  - Summarizer → `justinmelunis/evidentfit-summarizer:<tag>`
+- SWA: Next.js static export; set `NEXT_PUBLIC_API_BASE` at build time.
+
+## CI/CD (GitLab) basics
+- Build API when `api/**/*` or `shared/**/*` change
+- Build ingest when `agents/ingest/**/*` or `shared/**/*` change
+- Build summarizer when `agents/summarize/**/*` or `shared/**/*` change
+- Deploy SWA when `web/**/*` changes
+- Container App/Job deploys can remain manual initially
+
+## Health & probes
+- `/healthz` for readiness & liveness
+- Suggested: readiness initialDelay 15s; liveness 20s
+
+## Coding standards
+- Python: black + isort; httpx with timeouts; small retry on 429/5xx; type hints
+- JS/TS: Prettier + ESLint; keep fetch logic in a small client module
+- Logging: status, URL (no secrets), first ~200 chars of body on failures
+
+## Safety, privacy, compliance
+- Append "Educational only; not medical advice" to end-user outputs
+- No PII beyond minimal profile fields; hash user IDs if logging
+- Secrets via Azure env or Key Vault references (later with managed identity)
+
+## Common tasks Cursor should handle (exact)
+1) Implement `creatine_plan_by_form()` (CME) and `protein_gap_plan()` in `api/stack_rules.py`, and wire into Agent D builder.
+2) Add `GET /summaries/{supp}` in `api/main.py` per contract.
+3) Implement `POST /stack`, `GET /stack/bucket/{bucket_key}`, optional `GET /stack/buckets`.
+4) Ingest (agents/ingest/run.py): expand supplement tags; drop NO₂ pollution false positives; respect watermark (`bootstrap|monthly`).
+5) Summarizer (agents/summarize/run.py): rank, compose overview/last12, upsert to Summaries.
+6) CORS: honor `CORS_ALLOW_ORIGINS`; fix browser CORS issues.
+7) Honor `INDEX_VERSION` everywhere; read from `VERSION` if present.
+
+## Do NOT do
+- Don't switch to Azure OpenAI "deployments" API; always use Foundry Project endpoints.
+- Don't increase token limits to mask retrieval issues.
+- Don't emit citations not present in retrieved docs.
+
+# End of rules
