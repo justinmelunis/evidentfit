@@ -38,15 +38,10 @@ def ensure_index(vector_dim: int = 1536):
             {"name":"content","type":"Edm.String","searchable":True},
             {
               "name":"content_vector","type":"Collection(Edm.Single)",
-              "searchable":False,"retrievable":True,"filterable":False,"sortable":False,"facetable":False,
-              "dimensions": vector_dim, "vectorSearchProfile":"vector-profile"
+              "searchable":False,"retrievable":True,"filterable":False,"sortable":False,"facetable":False
             },
             {"name":"index_version","type":"Edm.String","filterable":True,"facetable":True}
-          ],
-          "vectorSearch": {
-            "algorithms":[{"name":"hnsw","kind":"hnsw","hnswParameters":{"m":4,"efConstruction":400}}],
-            "profiles":[{"name":"vector-profile","algorithm":"hnsw"}]
-          }
+          ]
         }
         r = c.put(f"{SEARCH_ENDPOINT}/indexes/{SEARCH_INDEX}?api-version={API_VERSION}", json=body)
         r.raise_for_status()
