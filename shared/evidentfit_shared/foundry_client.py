@@ -8,7 +8,7 @@ EMBED_MODEL = os.getenv("FOUNDATION_EMBED_MODEL", "text-embedding-3-small")
 def embed_texts(texts: list[str]) -> list[list[float]]:
     if not FOUNDATION_ENDPOINT or not FOUNDATION_KEY:
         raise RuntimeError("Foundry not configured")
-    url = f"{FOUNDATION_ENDPOINT}/embeddings?api-version={API_VERSION}"
+    url = f"{FOUNDATION_ENDPOINT}/models/embeddings?api-version={API_VERSION}"
     headers = {"Content-Type": "application/json", "api-key": FOUNDATION_KEY}
     payload = {"model": EMBED_MODEL, "input": texts}
     with httpx.Client(timeout=60) as client:
