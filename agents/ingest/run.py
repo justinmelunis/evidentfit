@@ -131,8 +131,8 @@ def parse_pubmed_article(rec: dict) -> dict:
         "journal": journal,
         "year": year if isinstance(year,int) else None,
         "study_type": study_type,
-        "supplements": supplements,
-        "outcomes": outcomes,
+        "supplements": ",".join(supplements) if supplements else "",
+        "outcomes": ",".join(outcomes) if outcomes else "",
         "population": None,
         "summary": None,
         "content": content.strip(),
@@ -217,7 +217,7 @@ def run_ingest(mode: str):
     # Update watermark
     now_iso = datetime.datetime.utcnow().replace(tzinfo=datetime.timezone.utc).isoformat().replace("+00:00","Z")
     wm_doc = {
-        "id": WATERMARK_KEY,
+        "id": WATERMARK_KEY.replace(":", "_"),
         "title": "watermark",
         "summary": json.dumps({"last_ingest_iso": now_iso}),
         "year": int(now_iso[:4]),
