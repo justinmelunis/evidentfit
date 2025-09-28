@@ -123,7 +123,7 @@ def parse_pubmed_article(rec: dict) -> dict:
     outcomes = extract_outcomes(text_for_tags)
 
     return {
-        "id": f"pmid:{pmid}|chunk:0",
+        "id": f"pmid_{pmid}_chunk_0",
         "title": title,
         "doi": doi,
         "pmid": str(pmid) if pmid else None,
