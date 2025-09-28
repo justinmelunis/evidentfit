@@ -222,7 +222,8 @@ async def stream(request: StreamRequest, _=Depends(guard)):
 
     # Search for relevant documents
     try:
-        hits = search_docs(query=user_msg, top=8)
+        search_response = search_docs(query=user_msg, top=8)
+        hits = search_response.get('value', [])
     except Exception as e:
         print(f"Search failed, using fallback: {e}")
         hits = mini_search(user_msg, k=8)
