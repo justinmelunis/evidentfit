@@ -598,8 +598,14 @@ def calculate_combination_weights(combinations, total_docs):
     """Calculate weights based on combination representation"""
     weights = {}
     
-    # Target: 1% representation per combination (adjustable)
-    target_percentage = 0.01
+    # Dynamic target percentage based on dataset size
+    # For small datasets, use higher target percentage to avoid extreme penalties
+    if total_docs < 100:
+        target_percentage = 0.1  # 10% for small datasets
+    elif total_docs < 1000:
+        target_percentage = 0.05  # 5% for medium datasets
+    else:
+        target_percentage = 0.01  # 1% for large datasets
     
     for combo_type, combo_counts in combinations.items():
         weights[combo_type] = {}
@@ -708,8 +714,10 @@ def analyze_existing_combinations():
 def run_ingest(mode: str):
     ensure_index(vector_dim=1536)
 
-    # Analyze existing combination distribution
-    combination_weights, total_docs = analyze_existing_combinations()
+    # For bootstrap mode, start with empty combination weights
+    # We'll calculate them dynamically during the selection process
+    combination_weights = {}
+    total_docs = 0
 
     # Watermark → mindate
     mindate = None
@@ -799,40 +807,31 @@ def run_ingest(mode: str):
         quality_filtered_docs = [d for d in all_docs if d.get("reliability_score", 0) >= min_quality_threshold]
         print(f"Quality filter: {len(all_docs)} -> {len(quality_filtered_docs)} papers (removed {len(all_docs) - len(quality_filtered_docs)} low-quality)")
         
-        # Apply diversity filtering to get balanced representation
-        selected_docs = []
-        supplement_counts = {}
-        max_per_supplement = INGEST_LIMIT // 20  # Max 5% per supplement (500 papers)
-        
+        # Phase 1: Process all papers with reliability scores only
+        print(f"Phase 1: Processing {len(quality_filtered_docs)} papers with reliability scoring...")
         for doc in quality_filtered_docs:
-            if len(selected_docs) >= INGEST_LIMIT:
-                break
-                
-            supplements = doc.get("supplements", "").split(",") if doc.get("supplements") else []
-            supplements = [s.strip() for s in supplements if s.strip()]
-            
-            # Check if we can add this paper without exceeding limits
-            can_add = True
-            for supp in supplements:
-                if supplement_counts.get(supp, 0) >= max_per_supplement:
-                    can_add = False
-                    break
-            
-            if can_add:
-                selected_docs.append(doc)
-                for supp in supplements:
-                    supplement_counts[supp] = supplement_counts.get(supp, 0) + 1
+            # Calculate combination score (will be 0.0 since no weights yet)
+            combination_score = calculate_combination_score(doc, {})
+            doc["combination_score"] = combination_score
+            doc["enhanced_score"] = doc.get("reliability_score", 0) + combination_score
         
-        # Fill remaining slots with highest scoring papers
-        remaining_slots = INGEST_LIMIT - len(selected_docs)
-        if remaining_slots > 0:
-            used_ids = {doc["id"] for doc in selected_docs}
-            for doc in all_docs:
-                if doc["id"] not in used_ids and remaining_slots > 0:
-                    selected_docs.append(doc)
-                    remaining_slots -= 1
+        # Phase 2: Dynamic selection using combination-aware scoring
+        print(f"Phase 2: Selecting best {INGEST_LIMIT} papers using dynamic combination scoring...")
         
-        top_docs = selected_docs
+        # Calculate combination weights based on all processed papers
+        combinations = analyze_combination_distribution(quality_filtered_docs)
+        combination_weights = calculate_combination_weights(combinations, len(quality_filtered_docs))
+        print(f"Calculated combination weights based on {len(quality_filtered_docs)} papers")
+        
+        # Re-score all papers with combination weights
+        for doc in quality_filtered_docs:
+            combination_score = calculate_combination_score(doc, combination_weights)
+            doc["combination_score"] = combination_score
+            doc["enhanced_score"] = doc.get("reliability_score", 0) + combination_score
+        
+        # Sort by enhanced score and select top papers
+        quality_filtered_docs.sort(key=lambda x: x.get("enhanced_score", 0), reverse=True)
+        top_docs = quality_filtered_docs[:INGEST_LIMIT]
         
     else:
         # Monthly: Dynamic rolling window - merge, temporarily go to 15,000, then trim to 10,000
@@ -884,29 +883,31 @@ def run_ingest(mode: str):
             else:
                 temp_docs = quality_filtered_docs
             
-            # Apply diversity filtering to get balanced representation
-            selected_docs = []
-            supplement_counts = {}
-            max_per_supplement = INGEST_LIMIT // 20  # Max 5% per supplement (500 papers)
-            
+            # Phase 1: Process all papers with reliability scores only
+            print(f"Phase 1: Processing {len(temp_docs)} papers with reliability scoring...")
             for doc in temp_docs:
-                if len(selected_docs) >= INGEST_LIMIT:
-                    break
-                    
-                supplements = doc.get("supplements", "").split(",") if doc.get("supplements") else []
-                supplements = [s.strip() for s in supplements if s.strip()]
-                
-                # Check if we can add this paper without exceeding limits
-                can_add = True
-                for supp in supplements:
-                    if supplement_counts.get(supp, 0) >= max_per_supplement:
-                        can_add = False
-                        break
-                
-                if can_add:
-                    selected_docs.append(doc)
-                    for supp in supplements:
-                        supplement_counts[supp] = supplement_counts.get(supp, 0) + 1
+                # Calculate combination score (will be 0.0 since no weights yet)
+                combination_score = calculate_combination_score(doc, {})
+                doc["combination_score"] = combination_score
+                doc["enhanced_score"] = doc.get("reliability_score", 0) + combination_score
+            
+            # Phase 2: Dynamic selection using combination-aware scoring
+            print(f"Phase 2: Selecting best {INGEST_LIMIT} papers using dynamic combination scoring...")
+            
+            # Calculate combination weights based on all processed papers
+            combinations = analyze_combination_distribution(temp_docs)
+            combination_weights = calculate_combination_weights(combinations, len(temp_docs))
+            print(f"Calculated combination weights based on {len(temp_docs)} papers")
+            
+            # Re-score all papers with combination weights
+            for doc in temp_docs:
+                combination_score = calculate_combination_score(doc, combination_weights)
+                doc["combination_score"] = combination_score
+                doc["enhanced_score"] = doc.get("reliability_score", 0) + combination_score
+            
+            # Sort by enhanced score and select top papers
+            temp_docs.sort(key=lambda x: x.get("enhanced_score", 0), reverse=True)
+            selected_docs = temp_docs[:INGEST_LIMIT]
             
             # Fill remaining slots with highest scoring papers
             remaining_slots = INGEST_LIMIT - len(selected_docs)
