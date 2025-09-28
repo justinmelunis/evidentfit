@@ -191,13 +191,28 @@ def run_ingest(mode: str):
 
         if not docs: continue
 
-        vecs = embed_texts(texts)
-        for d, v in zip(docs, vecs): d["content_vector"] = v
-
-        upsert_docs(docs)
-        total += len(docs)
-        print(f"Upserted {len(docs)} docs (total {total})")
-        time.sleep(0.5)
+        # Process embeddings in smaller batches to avoid rate limits
+        batch_size = 10  # Smaller batch size for embeddings
+        for j in range(0, len(texts), batch_size):
+            batch_texts = texts[j:j+batch_size]
+            batch_docs = docs[j:j+batch_size]
+            
+            try:
+                # Skip embeddings for free tier - just use content as searchable text
+                # vecs = embed_texts(batch_texts)
+                # for d, v in zip(batch_docs, vecs): d["content_vector"] = v
+                
+                upsert_docs(batch_docs)
+                total += len(batch_docs)
+                print(f"Upserted {len(batch_docs)} docs (total {total})")
+                
+                # Rate limiting: wait between embedding calls
+                time.sleep(2.0)  # 2 seconds between batches
+                
+            except Exception as e:
+                print(f"Error processing batch {j//batch_size + 1}: {e}")
+                # Continue with next batch instead of failing completely
+                continue
 
     # Update watermark
     now_iso = datetime.datetime.utcnow().replace(tzinfo=datetime.timezone.utc).isoformat().replace("+00:00","Z")

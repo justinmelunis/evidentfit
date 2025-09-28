@@ -48,7 +48,10 @@ def upsert_docs(docs: list[dict]):
     url = f"{SEARCH_ENDPOINT}/indexes/{SEARCH_INDEX}/docs/index?api-version={API_VERSION}"
     payload = {"value": [{"@search.action":"mergeOrUpload", **d} for d in docs]}
     with _client(headers) as c:
-        r = c.post(url, json=payload); r.raise_for_status()
+        r = c.post(url, json=payload)
+        if r.status_code != 200:
+            print(f"Error response: {r.text}")
+        r.raise_for_status()
 
 def get_doc(doc_id: str) -> dict | None:
     headers = {"api-key": ADMIN_KEY}
