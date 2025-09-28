@@ -536,66 +536,170 @@ def parse_pubmed_article(rec: dict, dynamic_weights: dict = None) -> dict:
         "index_version": INDEX_VERSION
     }
 
-def analyze_existing_supplements():
-    """Analyze existing index to see supplement distribution and adjust scoring"""
+def analyze_combination_distribution(existing_docs):
+    """Analyze existing papers for factor combinations"""
+    combinations = {
+        "supplement_goal": {},      # creatine + muscle_gain
+        "supplement_population": {}, # beta-alanine + athletes  
+        "goal_population": {},      # muscle_gain + elderly
+        "study_type_goal": {},      # meta-analysis + weight_loss
+        "journal_supplement": {}    # J Appl Physiol + creatine
+    }
+    
+    for doc in existing_docs:
+        # Extract factors
+        supplements = doc.get("supplements", "").split(",")
+        primary_goal = doc.get("primary_goal", "")
+        population = doc.get("population_category", "")
+        study_type = doc.get("study_type", "")
+        journal = doc.get("journal", "").lower()
+        
+        # Track supplement + goal combinations
+        for supp in supplements:
+            if supp.strip() and primary_goal:
+                key = f"{supp.strip()}_{primary_goal}"
+                combinations["supplement_goal"][key] = combinations["supplement_goal"].get(key, 0) + 1
+        
+        # Track supplement + population combinations
+        for supp in supplements:
+            if supp.strip() and population:
+                key = f"{supp.strip()}_{population}"
+                combinations["supplement_population"][key] = combinations["supplement_population"].get(key, 0) + 1
+        
+        # Track goal + population combinations
+        if primary_goal and population:
+            key = f"{primary_goal}_{population}"
+            combinations["goal_population"][key] = combinations["goal_population"].get(key, 0) + 1
+        
+        # Track study type + goal combinations
+        if study_type and primary_goal:
+            key = f"{study_type}_{primary_goal}"
+            combinations["study_type_goal"][key] = combinations["study_type_goal"].get(key, 0) + 1
+        
+        # Track journal + supplement combinations
+        for supp in supplements:
+            if supp.strip() and journal:
+                key = f"{journal}_{supp.strip()}"
+                combinations["journal_supplement"][key] = combinations["journal_supplement"].get(key, 0) + 1
+    
+    return combinations
+
+def calculate_combination_weights(combinations, total_docs):
+    """Calculate weights based on combination representation"""
+    weights = {}
+    
+    # Target: 1% representation per combination (adjustable)
+    target_percentage = 0.01
+    
+    for combo_type, combo_counts in combinations.items():
+        weights[combo_type] = {}
+        
+        for combo, count in combo_counts.items():
+            current_percentage = count / total_docs
+            
+            if current_percentage > target_percentage * 5:  # Severely over-represented
+                weights[combo_type][combo] = -4.0  # Strong penalty
+            elif current_percentage > target_percentage * 3:  # Over-represented
+                weights[combo_type][combo] = -2.0  # Moderate penalty
+            elif current_percentage > target_percentage * 2:  # Well-represented
+                weights[combo_type][combo] = -1.0  # Small penalty
+            elif current_percentage > target_percentage:  # Adequately represented
+                weights[combo_type][combo] = 0.0  # Neutral
+            elif current_percentage > target_percentage * 0.5:  # Under-represented
+                weights[combo_type][combo] = 1.5  # Moderate bonus
+            else:  # Severely under-represented
+                weights[combo_type][combo] = 3.0  # Strong bonus
+    
+    return weights
+
+def calculate_combination_score(paper, combination_weights):
+    """Calculate score based on paper's factor combinations with quality safeguards"""
+    score = 0.0
+    
+    # Extract paper factors
+    supplements = paper.get("supplements", "").split(",")
+    primary_goal = paper.get("primary_goal", "")
+    population = paper.get("population_category", "")
+    study_type = paper.get("study_type", "")
+    journal = paper.get("journal", "").lower()
+    
+    # Quality safeguards: Don't boost low-quality papers too much
+    base_reliability = paper.get("reliability_score", 0)
+    max_combination_boost = min(5.0, base_reliability * 0.3)  # Cap boost at 30% of base score
+    
+    # Check supplement + goal combinations
+    for supp in supplements:
+        if supp.strip() and primary_goal:
+            key = f"{supp.strip()}_{primary_goal}"
+            weight = combination_weights.get("supplement_goal", {}).get(key, 0.0)
+            score += weight
+    
+    # Check supplement + population combinations
+    for supp in supplements:
+        if supp.strip() and population:
+            key = f"{supp.strip()}_{population}"
+            weight = combination_weights.get("supplement_population", {}).get(key, 0.0)
+            score += weight
+    
+    # Check goal + population combinations
+    if primary_goal and population:
+        key = f"{primary_goal}_{population}"
+        weight = combination_weights.get("goal_population", {}).get(key, 0.0)
+        score += weight
+    
+    # Check study type + goal combinations
+    if study_type and primary_goal:
+        key = f"{study_type}_{primary_goal}"
+        weight = combination_weights.get("study_type_goal", {}).get(key, 0.0)
+        score += weight
+    
+    # Check journal + supplement combinations
+    for supp in supplements:
+        if supp.strip() and journal:
+            key = f"{journal}_{supp.strip()}"
+            weight = combination_weights.get("journal_supplement", {}).get(key, 0.0)
+            score += weight
+    
+    # Apply quality safeguard: Cap positive combination scores for low-quality papers
+    if score > 0 and base_reliability < 5.0:  # Low-quality paper
+        score = min(score, max_combination_boost)
+    
+    return score
+
+def analyze_existing_combinations():
+    """Analyze existing index for factor combinations and adjust scoring"""
     try:
         from evidentfit_shared.search_client import search_docs
         
-        # Search for all documents to analyze supplement distribution
+        # Search for all documents to analyze combination distribution
         results = search_docs("*", top=1000)  # Get a sample of existing docs
+        existing_docs = results.get("value", [])
+        total_docs = len(existing_docs)
         
-        supplement_counts = {}
-        total_docs = len(results.get("value", []))
+        if total_docs == 0:
+            print("No existing documents found")
+            return {}, 0
         
-        for doc in results.get("value", []):
-            supplements = doc.get("supplements", "").split(",") if doc.get("supplements") else []
-            for supp in supplements:
-                supp = supp.strip()
-                if supp:
-                    supplement_counts[supp] = supplement_counts.get(supp, 0) + 1
+        # Analyze combination distribution
+        combinations = analyze_combination_distribution(existing_docs)
+        
+        # Calculate combination weights
+        combination_weights = calculate_combination_weights(combinations, total_docs)
         
         print(f"Found {total_docs} existing documents")
-        print(f"Current supplement distribution: {dict(sorted(supplement_counts.items(), key=lambda x: x[1], reverse=True)[:10])}")
+        print(f"Supplement-goal combinations: {dict(sorted(combinations['supplement_goal'].items(), key=lambda x: x[1], reverse=True)[:10])}")
+        print(f"Goal-population combinations: {dict(sorted(combinations['goal_population'].items(), key=lambda x: x[1], reverse=True)[:5])}")
         
-        return supplement_counts, total_docs
+        return combination_weights, total_docs
     except Exception as e:
-        print(f"Could not analyze existing supplements: {e}")
+        print(f"Could not analyze existing combinations: {e}")
         return {}, 0
-
-def get_dynamic_scoring_weights(existing_counts: dict, total_docs: int):
-    """Generate dynamic scoring weights based on existing supplement distribution"""
-    if total_docs == 0:
-        # No existing data, use default weights
-        return {
-            "rare_supplements": {"tribulus": 3.0, "d-aspartic-acid": 3.0, "deer-antler": 3.0, 
-                               "ecdysteroids": 3.0, "betaine": 2.5, "taurine": 2.5, "carnitine": 2.0,
-                               "zma": 2.0, "glutamine": 1.5, "cla": 1.5, "hmb": 1.0},
-            "medium_supplements": {"citrulline": 1.0, "nitrate": 1.0, "beta-alanine": 0.5},
-            "creatine_penalty": -1.0
-        }
-    
-    # Calculate relative representation
-    weights = {}
-    for supp, count in existing_counts.items():
-        representation = count / total_docs
-        if representation > 0.3:  # Over-represented (>30%)
-            weights[supp] = -2.0
-        elif representation > 0.15:  # Well-represented (15-30%)
-            weights[supp] = -1.0
-        elif representation > 0.05:  # Adequately represented (5-15%)
-            weights[supp] = 0.0
-        else:  # Under-represented (<5%)
-            weights[supp] = 2.0
-    
-    print(f"Dynamic scoring weights: {dict(sorted(weights.items(), key=lambda x: x[1], reverse=True)[:10])}")
-    return weights
 
 def run_ingest(mode: str):
     ensure_index(vector_dim=1536)
 
-    # Analyze existing supplement distribution
-    existing_counts, total_docs = analyze_existing_supplements()
-    dynamic_weights = get_dynamic_scoring_weights(existing_counts, total_docs)
+    # Analyze existing combination distribution
+    combination_weights, total_docs = analyze_existing_combinations()
 
     # Watermark → mindate
     mindate = None
@@ -656,8 +760,14 @@ def run_ingest(mode: str):
         if isinstance(arts, dict): arts = [arts]
 
         for rec in arts:
-            d = parse_pubmed_article(rec, dynamic_weights)
+            d = parse_pubmed_article(rec, combination_weights) # Pass combination weights
             if not d["title"] and not d["content"]: continue
+            
+            # Calculate combination score for this paper
+            combination_score = calculate_combination_score(d, combination_weights)
+            d["combination_score"] = combination_score
+            d["enhanced_score"] = d.get("reliability_score", 0) + combination_score
+            
             all_docs.append(d)
             total_processed += 1
             
@@ -671,15 +781,20 @@ def run_ingest(mode: str):
         # Bootstrap: Get best 10,000 from large batch
         print("Bootstrap mode: Selecting best 10,000 papers from all available...")
         
-        # Score all papers with diversity weighting
-        all_docs.sort(key=lambda x: x.get("reliability_score", 0), reverse=True)
+        # Score all papers with combination-aware weighting
+        all_docs.sort(key=lambda x: x.get("enhanced_score", 0), reverse=True)
+        
+        # Quality threshold: Never select papers below minimum quality
+        min_quality_threshold = 3.0  # Minimum reliability score
+        quality_filtered_docs = [d for d in all_docs if d.get("reliability_score", 0) >= min_quality_threshold]
+        print(f"Quality filter: {len(all_docs)} -> {len(quality_filtered_docs)} papers (removed {len(all_docs) - len(quality_filtered_docs)} low-quality)")
         
         # Apply diversity filtering to get balanced representation
         selected_docs = []
         supplement_counts = {}
         max_per_supplement = INGEST_LIMIT // 20  # Max 5% per supplement (500 papers)
         
-        for doc in all_docs:
+        for doc in quality_filtered_docs:
             if len(selected_docs) >= INGEST_LIMIT:
                 break
                 
@@ -744,15 +859,20 @@ def run_ingest(mode: str):
             
             print(f"Combined unique papers: {len(unique_docs)}")
             
-            # Sort by reliability score
-            unique_docs.sort(key=lambda x: x.get("reliability_score", 0), reverse=True)
+            # Sort by enhanced score (reliability + combination)
+            unique_docs.sort(key=lambda x: x.get("enhanced_score", x.get("reliability_score", 0)), reverse=True)
+            
+            # Quality threshold: Never select papers below minimum quality
+            min_quality_threshold = 3.0  # Minimum reliability score
+            quality_filtered_docs = [d for d in unique_docs if d.get("reliability_score", 0) >= min_quality_threshold]
+            print(f"Quality filter: {len(unique_docs)} -> {len(quality_filtered_docs)} papers (removed {len(unique_docs) - len(quality_filtered_docs)} low-quality)")
             
             # If we have more than 15,000, temporarily keep top 15,000 for processing
-            if len(unique_docs) > MAX_TEMP_LIMIT:
+            if len(quality_filtered_docs) > MAX_TEMP_LIMIT:
                 print(f"Temporarily keeping top {MAX_TEMP_LIMIT} papers for processing...")
-                temp_docs = unique_docs[:MAX_TEMP_LIMIT]
+                temp_docs = quality_filtered_docs[:MAX_TEMP_LIMIT]
             else:
-                temp_docs = unique_docs
+                temp_docs = quality_filtered_docs
             
             # Apply diversity filtering to get balanced representation
             selected_docs = []
@@ -808,7 +928,27 @@ def run_ingest(mode: str):
     
     print(f"Final selection: {len(top_docs)} papers")
     print(f"Final supplement distribution: {dict(sorted(final_supplement_counts.items(), key=lambda x: x[1], reverse=True)[:10])}")
-    print(f"Top reliability scores: {[d.get('reliability_score', 0) for d in top_docs[:5]]}")
+    print(f"Top enhanced scores: {[d.get('enhanced_score', 0) for d in top_docs[:5]]}")
+    print(f"Top combination scores: {[d.get('combination_score', 0) for d in top_docs[:5]]}")
+    
+    # Show combination distribution in final selection
+    combo_analysis = {"supplement_goal": {}, "goal_population": {}}
+    for doc in top_docs[:100]:  # Analyze top 100 papers
+        supplements = doc.get("supplements", "").split(",")
+        primary_goal = doc.get("primary_goal", "")
+        population = doc.get("population_category", "")
+        
+        for supp in supplements:
+            if supp.strip() and primary_goal:
+                key = f"{supp.strip()}_{primary_goal}"
+                combo_analysis["supplement_goal"][key] = combo_analysis["supplement_goal"].get(key, 0) + 1
+        
+        if primary_goal and population:
+            key = f"{primary_goal}_{population}"
+            combo_analysis["goal_population"][key] = combo_analysis["goal_population"].get(key, 0) + 1
+    
+    print(f"Top supplement-goal combinations: {dict(sorted(combo_analysis['supplement_goal'].items(), key=lambda x: x[1], reverse=True)[:10])}")
+    print(f"Top goal-population combinations: {dict(sorted(combo_analysis['goal_population'].items(), key=lambda x: x[1], reverse=True)[:5])}")
     
     # Process in batches
     total = 0
