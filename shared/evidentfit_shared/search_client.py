@@ -60,3 +60,13 @@ def get_doc(doc_id: str) -> dict | None:
     with _client(headers) as c:
         r = c.get(url)
         return r.json() if r.status_code == 200 else None
+
+def search_docs(query: str, top: int = 50) -> dict:
+    """Search documents in the index"""
+    headers = {"api-key": ADMIN_KEY, "Content-Type": "application/json"}
+    url = f"{SEARCH_ENDPOINT}/indexes/{SEARCH_INDEX}/docs/search?api-version={API_VERSION}"
+    payload = {"search": query, "top": top}
+    with _client(headers) as c:
+        r = c.post(url, json=payload)
+        r.raise_for_status()
+        return r.json()

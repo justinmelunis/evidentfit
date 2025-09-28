@@ -18,8 +18,8 @@ PM_SEARCH_QUERY = os.getenv("PM_SEARCH_QUERY") or \
 NCBI_EMAIL = os.getenv("NCBI_EMAIL","you@example.com")
 NCBI_API_KEY = os.getenv("NCBI_API_KEY")  # optional
 WATERMARK_KEY = os.getenv("WATERMARK_KEY","meta:last_ingest")
-INGEST_LIMIT = int(os.getenv("INGEST_LIMIT","15000"))  # Final target
-INITIAL_BATCH_SIZE = int(os.getenv("INITIAL_BATCH_SIZE","17500"))  # Start with more to filter down
+INGEST_LIMIT = int(os.getenv("INGEST_LIMIT","10000"))  # Final target
+MAX_TEMP_LIMIT = int(os.getenv("MAX_TEMP_LIMIT","15000"))  # Temporary limit during processing
 
 # --- Simple maps/heuristics ---
 SUPP_KEYWORDS = {
@@ -340,11 +340,11 @@ def run_ingest(mode: str):
             except Exception:
                 mindate = None
 
-    # Rolling window system: Get papers, maintain best 15,000
+    # Dynamic rolling window system: Maintain 10,000, temporarily go to 15,000
     if mode == "bootstrap":
-        # Bootstrap: Get large batch, filter to best 15,000
+        # Bootstrap: Get large batch, filter to best 10,000
         ids, retstart = [], 0
-        search_limit = INITIAL_BATCH_SIZE * 2  # Get 2x more to filter down
+        search_limit = MAX_TEMP_LIMIT * 2  # Get 2x more to filter down
         while len(ids) < search_limit:
             batch = pubmed_esearch(PM_SEARCH_QUERY, mindate=mindate, retmax=200, retstart=retstart)
             idlist = batch.get("esearchresult", {}).get("idlist", [])
@@ -358,7 +358,7 @@ def run_ingest(mode: str):
     else:
         # Monthly: Get new papers since last run
         ids, retstart = [], 0
-        while len(ids) < 5000:  # Reasonable limit for monthly updates
+        while len(ids) < 3000:  # Reasonable limit for monthly updates
             batch = pubmed_esearch(PM_SEARCH_QUERY, mindate=mindate, retmax=200, retstart=retstart)
             idlist = batch.get("esearchresult", {}).get("idlist", [])
             if not idlist: break
@@ -391,12 +391,12 @@ def run_ingest(mode: str):
             if total_processed % 100 == 0:
                 print(f"Processed {total_processed} papers...")
 
-    # Rolling window system: Maintain best 15,000 papers
-    print(f"Processing {len(all_docs)} papers with rolling window system...")
+    # Dynamic rolling window system: Maintain 10,000, temporarily go to 15,000
+    print(f"Processing {len(all_docs)} papers with dynamic rolling window system...")
     
     if mode == "bootstrap":
-        # Bootstrap: Get best 15,000 from large batch
-        print("Bootstrap mode: Selecting best 15,000 papers from all available...")
+        # Bootstrap: Get best 10,000 from large batch
+        print("Bootstrap mode: Selecting best 10,000 papers from all available...")
         
         # Score all papers with diversity weighting
         all_docs.sort(key=lambda x: x.get("reliability_score", 0), reverse=True)
@@ -404,7 +404,7 @@ def run_ingest(mode: str):
         # Apply diversity filtering to get balanced representation
         selected_docs = []
         supplement_counts = {}
-        max_per_supplement = INGEST_LIMIT // 20  # Max 5% per supplement
+        max_per_supplement = INGEST_LIMIT // 20  # Max 5% per supplement (500 papers)
         
         for doc in all_docs:
             if len(selected_docs) >= INGEST_LIMIT:
@@ -437,12 +437,12 @@ def run_ingest(mode: str):
         top_docs = selected_docs
         
     else:
-        # Monthly: Merge new papers with existing, maintain best 15,000
-        print("Monthly mode: Merging new papers with existing index...")
+        # Monthly: Dynamic rolling window - merge, temporarily go to 15,000, then trim to 10,000
+        print("Monthly mode: Dynamic rolling window with temporary expansion...")
         
         # Get existing papers from index
         try:
-            existing_results = search_docs("*", top=INGEST_LIMIT)
+            existing_results = search_docs("*", top=MAX_TEMP_LIMIT)  # Get up to 15,000 existing
             existing_docs = []
             for doc in existing_results.get("value", []):
                 # Convert existing doc to same format
@@ -471,9 +471,51 @@ def run_ingest(mode: str):
             
             print(f"Combined unique papers: {len(unique_docs)}")
             
-            # Sort by reliability score and take best 15,000
+            # Sort by reliability score
             unique_docs.sort(key=lambda x: x.get("reliability_score", 0), reverse=True)
-            top_docs = unique_docs[:INGEST_LIMIT]
+            
+            # If we have more than 15,000, temporarily keep top 15,000 for processing
+            if len(unique_docs) > MAX_TEMP_LIMIT:
+                print(f"Temporarily keeping top {MAX_TEMP_LIMIT} papers for processing...")
+                temp_docs = unique_docs[:MAX_TEMP_LIMIT]
+            else:
+                temp_docs = unique_docs
+            
+            # Apply diversity filtering to get balanced representation
+            selected_docs = []
+            supplement_counts = {}
+            max_per_supplement = INGEST_LIMIT // 20  # Max 5% per supplement (500 papers)
+            
+            for doc in temp_docs:
+                if len(selected_docs) >= INGEST_LIMIT:
+                    break
+                    
+                supplements = doc.get("supplements", "").split(",") if doc.get("supplements") else []
+                supplements = [s.strip() for s in supplements if s.strip()]
+                
+                # Check if we can add this paper without exceeding limits
+                can_add = True
+                for supp in supplements:
+                    if supplement_counts.get(supp, 0) >= max_per_supplement:
+                        can_add = False
+                        break
+                
+                if can_add:
+                    selected_docs.append(doc)
+                    for supp in supplements:
+                        supplement_counts[supp] = supplement_counts.get(supp, 0) + 1
+            
+            # Fill remaining slots with highest scoring papers
+            remaining_slots = INGEST_LIMIT - len(selected_docs)
+            if remaining_slots > 0:
+                used_ids = {doc["id"] for doc in selected_docs}
+                for doc in temp_docs:
+                    if doc["id"] not in used_ids and remaining_slots > 0:
+                        selected_docs.append(doc)
+                        remaining_slots -= 1
+            
+            top_docs = selected_docs
+            print(f"Trimmed from {len(temp_docs)} to {len(top_docs)} papers")
             
         except Exception as e:
             print(f"Could not merge with existing index: {e}")
