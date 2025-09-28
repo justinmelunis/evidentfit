@@ -18,8 +18,8 @@ PM_SEARCH_QUERY = os.getenv("PM_SEARCH_QUERY") or \
 NCBI_EMAIL = os.getenv("NCBI_EMAIL","you@example.com")
 NCBI_API_KEY = os.getenv("NCBI_API_KEY")  # optional
 WATERMARK_KEY = os.getenv("WATERMARK_KEY","meta:last_ingest")
-INGEST_LIMIT = int(os.getenv("INGEST_LIMIT","10000"))  # Final target
-MAX_TEMP_LIMIT = int(os.getenv("MAX_TEMP_LIMIT","15000"))  # Temporary limit during processing
+INGEST_LIMIT = int(os.getenv("INGEST_LIMIT","8000"))  # Final target (fits free tier)
+MAX_TEMP_LIMIT = int(os.getenv("MAX_TEMP_LIMIT","12000"))  # Temporary limit during processing
 
 # --- Enhanced maps/heuristics ---
 SUPP_KEYWORDS = {
