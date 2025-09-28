@@ -18,7 +18,8 @@ PM_SEARCH_QUERY = os.getenv("PM_SEARCH_QUERY") or \
 NCBI_EMAIL = os.getenv("NCBI_EMAIL","you@example.com")
 NCBI_API_KEY = os.getenv("NCBI_API_KEY")  # optional
 WATERMARK_KEY = os.getenv("WATERMARK_KEY","meta:last_ingest")
-INGEST_LIMIT = int(os.getenv("INGEST_LIMIT","5000"))
+INGEST_LIMIT = int(os.getenv("INGEST_LIMIT","15000"))  # Final target
+INITIAL_BATCH_SIZE = int(os.getenv("INITIAL_BATCH_SIZE","17500"))  # Start with more to filter down
 
 # --- Simple maps/heuristics ---
 SUPP_KEYWORDS = {
@@ -58,7 +59,7 @@ def classify_study_type(pub_types):
     if "cohort studies" in s: return "cohort"
     return "other"
 
-def calculate_reliability_score(rec: dict) -> float:
+def calculate_reliability_score(rec: dict, dynamic_weights: dict = None) -> float:
     """Calculate reliability score based on study type, sample size, and quality indicators"""
     score = 0.0
     
@@ -139,33 +140,39 @@ def calculate_reliability_score(rec: dict) -> float:
     if year and year >= 2020: score += 1.0
     elif year and year >= 2015: score += 0.5
     
-    # Supplement diversity bonus - boost less common supplements
+    # Dynamic supplement diversity scoring based on existing index
     text_for_diversity = f"{title}\n{content}".lower()
     diversity_bonus = 0.0
     
-    # Less researched supplements get higher scores
-    rare_supplements = {
-        "tribulus": 3.0, "d-aspartic-acid": 3.0, "deer-antler": 3.0, 
-        "ecdysteroids": 3.0, "betaine": 2.5, "taurine": 2.5, "carnitine": 2.0,
-        "zma": 2.0, "glutamine": 1.5, "cla": 1.5, "hmb": 1.0
-    }
-    
-    medium_supplements = {
-        "citrulline": 1.0, "nitrate": 1.0, "beta-alanine": 0.5
-    }
-    
-    # Check for supplement mentions and apply diversity bonus
-    for supp, bonus in rare_supplements.items():
-        if supp.replace("-", " ") in text_for_diversity or supp.replace("-", "-") in text_for_diversity:
-            diversity_bonus = max(diversity_bonus, bonus)
-    
-    for supp, bonus in medium_supplements.items():
-        if supp in text_for_diversity:
-            diversity_bonus = max(diversity_bonus, bonus)
-    
-    # Creatine penalty to reduce over-representation
-    if "creatine" in text_for_diversity:
-        diversity_bonus = max(diversity_bonus, -1.0)  # Small penalty
+    if dynamic_weights:
+        # Use dynamic weights based on existing supplement distribution
+        for supp, weight in dynamic_weights.items():
+            if supp in text_for_diversity or supp.replace("-", " ") in text_for_diversity:
+                diversity_bonus = max(diversity_bonus, weight)
+    else:
+        # Fallback to static weights if no dynamic weights provided
+        rare_supplements = {
+            "tribulus": 3.0, "d-aspartic-acid": 3.0, "deer-antler": 3.0, 
+            "ecdysteroids": 3.0, "betaine": 2.5, "taurine": 2.5, "carnitine": 2.0,
+            "zma": 2.0, "glutamine": 1.5, "cla": 1.5, "hmb": 1.0
+        }
+        
+        medium_supplements = {
+            "citrulline": 1.0, "nitrate": 1.0, "beta-alanine": 0.5
+        }
+        
+        # Check for supplement mentions and apply diversity bonus
+        for supp, bonus in rare_supplements.items():
+            if supp.replace("-", " ") in text_for_diversity or supp.replace("-", "-") in text_for_diversity:
+                diversity_bonus = max(diversity_bonus, bonus)
+        
+        for supp, bonus in medium_supplements.items():
+            if supp in text_for_diversity:
+                diversity_bonus = max(diversity_bonus, bonus)
+        
+        # Creatine penalty to reduce over-representation
+        if "creatine" in text_for_diversity:
+            diversity_bonus = max(diversity_bonus, -1.0)  # Small penalty
     
     score += diversity_bonus
     
@@ -197,7 +204,7 @@ def pubmed_efetch_xml(pmids: list[str]) -> dict:
         r = c.get("https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi", params=params)
         r.raise_for_status(); return xmltodict.parse(r.text)
 
-def parse_pubmed_article(rec: dict) -> dict:
+def parse_pubmed_article(rec: dict, dynamic_weights: dict = None) -> dict:
     art = rec.get("MedlineCitation", {}).get("Article", {})
     pmid = rec.get("MedlineCitation", {}).get("PMID", {}).get("#text") or rec.get("MedlineCitation", {}).get("PMID")
     title_raw = art.get("ArticleTitle") or ""
@@ -231,8 +238,8 @@ def parse_pubmed_article(rec: dict) -> dict:
     pubtypes = [pt.get("#text","") if isinstance(pt, dict) else str(pt) for pt in pubtypes]
     study_type = classify_study_type(pubtypes)
 
-    # Calculate reliability score
-    reliability_score = calculate_reliability_score(rec)
+    # Calculate reliability score with dynamic weights
+    reliability_score = calculate_reliability_score(rec, dynamic_weights)
 
     text_for_tags = f"{title}\n{content}"
     supplements = extract_supplements(text_for_tags)
@@ -256,8 +263,66 @@ def parse_pubmed_article(rec: dict) -> dict:
         "index_version": INDEX_VERSION
     }
 
+def analyze_existing_supplements():
+    """Analyze existing index to see supplement distribution and adjust scoring"""
+    try:
+        from evidentfit_shared.search_client import search_docs
+        
+        # Search for all documents to analyze supplement distribution
+        results = search_docs("*", top=1000)  # Get a sample of existing docs
+        
+        supplement_counts = {}
+        total_docs = len(results.get("value", []))
+        
+        for doc in results.get("value", []):
+            supplements = doc.get("supplements", "").split(",") if doc.get("supplements") else []
+            for supp in supplements:
+                supp = supp.strip()
+                if supp:
+                    supplement_counts[supp] = supplement_counts.get(supp, 0) + 1
+        
+        print(f"Found {total_docs} existing documents")
+        print(f"Current supplement distribution: {dict(sorted(supplement_counts.items(), key=lambda x: x[1], reverse=True)[:10])}")
+        
+        return supplement_counts, total_docs
+    except Exception as e:
+        print(f"Could not analyze existing supplements: {e}")
+        return {}, 0
+
+def get_dynamic_scoring_weights(existing_counts: dict, total_docs: int):
+    """Generate dynamic scoring weights based on existing supplement distribution"""
+    if total_docs == 0:
+        # No existing data, use default weights
+        return {
+            "rare_supplements": {"tribulus": 3.0, "d-aspartic-acid": 3.0, "deer-antler": 3.0, 
+                               "ecdysteroids": 3.0, "betaine": 2.5, "taurine": 2.5, "carnitine": 2.0,
+                               "zma": 2.0, "glutamine": 1.5, "cla": 1.5, "hmb": 1.0},
+            "medium_supplements": {"citrulline": 1.0, "nitrate": 1.0, "beta-alanine": 0.5},
+            "creatine_penalty": -1.0
+        }
+    
+    # Calculate relative representation
+    weights = {}
+    for supp, count in existing_counts.items():
+        representation = count / total_docs
+        if representation > 0.3:  # Over-represented (>30%)
+            weights[supp] = -2.0
+        elif representation > 0.15:  # Well-represented (15-30%)
+            weights[supp] = -1.0
+        elif representation > 0.05:  # Adequately represented (5-15%)
+            weights[supp] = 0.0
+        else:  # Under-represented (<5%)
+            weights[supp] = 2.0
+    
+    print(f"Dynamic scoring weights: {dict(sorted(weights.items(), key=lambda x: x[1], reverse=True)[:10])}")
+    return weights
+
 def run_ingest(mode: str):
     ensure_index(vector_dim=1536)
+
+    # Analyze existing supplement distribution
+    existing_counts, total_docs = analyze_existing_supplements()
+    dynamic_weights = get_dynamic_scoring_weights(existing_counts, total_docs)
 
     # Watermark → mindate
     mindate = None
@@ -275,22 +340,37 @@ def run_ingest(mode: str):
             except Exception:
                 mindate = None
 
-    # Search PubMed with higher limit to allow for filtering
-    ids, retstart = [], 0
-    search_limit = INGEST_LIMIT * 3  # Get 3x more to filter down
-    while len(ids) < search_limit:
-        batch = pubmed_esearch(PM_SEARCH_QUERY, mindate=mindate, retmax=200, retstart=retstart)
-        idlist = batch.get("esearchresult", {}).get("idlist", [])
-        if not idlist: break
-        ids.extend(idlist)
-        retstart += len(idlist)
-        if retstart >= int(batch["esearchresult"].get("count","0")): break
-        time.sleep(0.34)
+    # Rolling window system: Get papers, maintain best 15,000
+    if mode == "bootstrap":
+        # Bootstrap: Get large batch, filter to best 15,000
+        ids, retstart = [], 0
+        search_limit = INITIAL_BATCH_SIZE * 2  # Get 2x more to filter down
+        while len(ids) < search_limit:
+            batch = pubmed_esearch(PM_SEARCH_QUERY, mindate=mindate, retmax=200, retstart=retstart)
+            idlist = batch.get("esearchresult", {}).get("idlist", [])
+            if not idlist: break
+            ids.extend(idlist)
+            retstart += len(idlist)
+            if retstart >= int(batch["esearchresult"].get("count","0")): break
+            time.sleep(0.34)
+        
+        print(f"Bootstrap: Found {len(ids)} PMIDs (will filter to best {INGEST_LIMIT})")
+    else:
+        # Monthly: Get new papers since last run
+        ids, retstart = [], 0
+        while len(ids) < 5000:  # Reasonable limit for monthly updates
+            batch = pubmed_esearch(PM_SEARCH_QUERY, mindate=mindate, retmax=200, retstart=retstart)
+            idlist = batch.get("esearchresult", {}).get("idlist", [])
+            if not idlist: break
+            ids.extend(idlist)
+            retstart += len(idlist)
+            if retstart >= int(batch["esearchresult"].get("count","0")): break
+            time.sleep(0.34)
+        
+        print(f"Monthly: Found {len(ids)} new PMIDs since last run")
 
     if not ids:
         print("No new PubMed IDs."); return
-
-    print(f"Found {len(ids)} PMIDs (will filter to top {INGEST_LIMIT})")
 
     # Fetch → parse → score → filter → upsert
     all_docs = []
@@ -303,7 +383,7 @@ def run_ingest(mode: str):
         if isinstance(arts, dict): arts = [arts]
 
         for rec in arts:
-            d = parse_pubmed_article(rec)
+            d = parse_pubmed_article(rec, dynamic_weights)
             if not d["title"] and not d["content"]: continue
             all_docs.append(d)
             total_processed += 1
@@ -311,47 +391,108 @@ def run_ingest(mode: str):
             if total_processed % 100 == 0:
                 print(f"Processed {total_processed} papers...")
 
-    # Sort by reliability score and apply diversity filtering
-    print(f"Sorting {len(all_docs)} papers by reliability score...")
-    all_docs.sort(key=lambda x: x.get("reliability_score", 0), reverse=True)
+    # Rolling window system: Maintain best 15,000 papers
+    print(f"Processing {len(all_docs)} papers with rolling window system...")
     
-    # Apply diversity filtering to ensure balanced supplement representation
-    selected_docs = []
-    supplement_counts = {}
-    max_per_supplement = INGEST_LIMIT // 20  # Max 5% per supplement
-    
-    for doc in all_docs:
-        if len(selected_docs) >= INGEST_LIMIT:
-            break
-            
-        supplements = doc.get("supplements", "").split(",") if doc.get("supplements") else []
-        supplements = [s.strip() for s in supplements if s.strip()]
+    if mode == "bootstrap":
+        # Bootstrap: Get best 15,000 from large batch
+        print("Bootstrap mode: Selecting best 15,000 papers from all available...")
         
-        # Check if we can add this paper without exceeding limits
-        can_add = True
-        for supp in supplements:
-            if supplement_counts.get(supp, 0) >= max_per_supplement:
-                can_add = False
-                break
+        # Score all papers with diversity weighting
+        all_docs.sort(key=lambda x: x.get("reliability_score", 0), reverse=True)
         
-        if can_add:
-            selected_docs.append(doc)
-            for supp in supplements:
-                supplement_counts[supp] = supplement_counts.get(supp, 0) + 1
-    
-    # Fill remaining slots with highest scoring papers
-    remaining_slots = INGEST_LIMIT - len(selected_docs)
-    if remaining_slots > 0:
-        used_ids = {doc["id"] for doc in selected_docs}
+        # Apply diversity filtering to get balanced representation
+        selected_docs = []
+        supplement_counts = {}
+        max_per_supplement = INGEST_LIMIT // 20  # Max 5% per supplement
+        
         for doc in all_docs:
-            if doc["id"] not in used_ids and remaining_slots > 0:
+            if len(selected_docs) >= INGEST_LIMIT:
+                break
+                
+            supplements = doc.get("supplements", "").split(",") if doc.get("supplements") else []
+            supplements = [s.strip() for s in supplements if s.strip()]
+            
+            # Check if we can add this paper without exceeding limits
+            can_add = True
+            for supp in supplements:
+                if supplement_counts.get(supp, 0) >= max_per_supplement:
+                    can_add = False
+                    break
+            
+            if can_add:
                 selected_docs.append(doc)
-                remaining_slots -= 1
+                for supp in supplements:
+                    supplement_counts[supp] = supplement_counts.get(supp, 0) + 1
+        
+        # Fill remaining slots with highest scoring papers
+        remaining_slots = INGEST_LIMIT - len(selected_docs)
+        if remaining_slots > 0:
+            used_ids = {doc["id"] for doc in selected_docs}
+            for doc in all_docs:
+                if doc["id"] not in used_ids and remaining_slots > 0:
+                    selected_docs.append(doc)
+                    remaining_slots -= 1
+        
+        top_docs = selected_docs
+        
+    else:
+        # Monthly: Merge new papers with existing, maintain best 15,000
+        print("Monthly mode: Merging new papers with existing index...")
+        
+        # Get existing papers from index
+        try:
+            existing_results = search_docs("*", top=INGEST_LIMIT)
+            existing_docs = []
+            for doc in existing_results.get("value", []):
+                # Convert existing doc to same format
+                existing_doc = {
+                    "id": doc.get("id"),
+                    "title": doc.get("title"),
+                    "reliability_score": doc.get("reliability_score", 0),
+                    "supplements": doc.get("supplements", ""),
+                    "year": doc.get("year"),
+                    "study_type": doc.get("study_type")
+                }
+                existing_docs.append(existing_doc)
+            
+            print(f"Found {len(existing_docs)} existing papers in index")
+            
+            # Combine existing and new papers
+            combined_docs = existing_docs + all_docs
+            
+            # Remove duplicates (by ID)
+            seen_ids = set()
+            unique_docs = []
+            for doc in combined_docs:
+                if doc["id"] not in seen_ids:
+                    unique_docs.append(doc)
+                    seen_ids.add(doc["id"])
+            
+            print(f"Combined unique papers: {len(unique_docs)}")
+            
+            # Sort by reliability score and take best 15,000
+            unique_docs.sort(key=lambda x: x.get("reliability_score", 0), reverse=True)
+            top_docs = unique_docs[:INGEST_LIMIT]
+            
+        except Exception as e:
+            print(f"Could not merge with existing index: {e}")
+            print("Falling back to bootstrap mode...")
+            # Fallback to bootstrap logic
+            all_docs.sort(key=lambda x: x.get("reliability_score", 0), reverse=True)
+            top_docs = all_docs[:INGEST_LIMIT]
     
-    top_docs = selected_docs
+    # Final analysis
+    final_supplement_counts = {}
+    for doc in top_docs:
+        supplements = doc.get("supplements", "").split(",") if doc.get("supplements") else []
+        for supp in supplements:
+            supp = supp.strip()
+            if supp:
+                final_supplement_counts[supp] = final_supplement_counts.get(supp, 0) + 1
     
-    print(f"Selected {len(top_docs)} papers with diversity filtering")
-    print(f"Supplement distribution: {dict(sorted(supplement_counts.items(), key=lambda x: x[1], reverse=True)[:10])}")
+    print(f"Final selection: {len(top_docs)} papers")
+    print(f"Final supplement distribution: {dict(sorted(final_supplement_counts.items(), key=lambda x: x[1], reverse=True)[:10])}")
     print(f"Top reliability scores: {[d.get('reliability_score', 0) for d in top_docs[:5]]}")
     
     # Process in batches
