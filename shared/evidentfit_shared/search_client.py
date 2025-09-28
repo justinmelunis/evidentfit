@@ -78,6 +78,8 @@ def ensure_index(vector_dim: int = 1536):
             # === QUALITY & SCORING ===
             {"name":"reliability_score","type":"Edm.Double"},
             {"name":"study_design_score","type":"Edm.Double"},
+            {"name":"combination_score","type":"Edm.Double"},
+            {"name":"enhanced_score","type":"Edm.Double"},
             
             # === SYSTEM FIELDS ===
             {"name":"content_vector","type":"Edm.String"},

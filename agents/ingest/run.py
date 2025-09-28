@@ -180,6 +180,16 @@ def calculate_reliability_score(rec: dict, dynamic_weights: dict = None) -> floa
     elif year and year >= 2015: score += 0.5
     
     # Dynamic supplement diversity scoring based on existing index
+    # Extract content from abstract
+    content = ""
+    if isinstance(abstract, dict):
+        ab_text = abstract.get("AbstractText")
+        if ab_text:
+            if isinstance(ab_text, list):
+                content = " ".join([a.get("#text", a) if isinstance(a, dict) else a for a in ab_text])
+            else:
+                content = ab_text.get("#text", ab_text) if isinstance(ab_text, dict) else str(ab_text)
+    
     text_for_diversity = f"{title}\n{content}".lower()
     diversity_bonus = 0.0
     
@@ -548,11 +558,11 @@ def analyze_combination_distribution(existing_docs):
     
     for doc in existing_docs:
         # Extract factors
-        supplements = doc.get("supplements", "").split(",")
-        primary_goal = doc.get("primary_goal", "")
-        population = doc.get("population_category", "")
-        study_type = doc.get("study_type", "")
-        journal = doc.get("journal", "").lower()
+        supplements = (doc.get("supplements") or "").split(",")
+        primary_goal = doc.get("primary_goal") or ""
+        population = doc.get("population_category") or ""
+        study_type = doc.get("study_type") or ""
+        journal = (doc.get("journal") or "").lower()
         
         # Track supplement + goal combinations
         for supp in supplements:
@@ -617,11 +627,11 @@ def calculate_combination_score(paper, combination_weights):
     score = 0.0
     
     # Extract paper factors
-    supplements = paper.get("supplements", "").split(",")
-    primary_goal = paper.get("primary_goal", "")
-    population = paper.get("population_category", "")
-    study_type = paper.get("study_type", "")
-    journal = paper.get("journal", "").lower()
+    supplements = (paper.get("supplements") or "").split(",")
+    primary_goal = paper.get("primary_goal") or ""
+    population = paper.get("population_category") or ""
+    study_type = paper.get("study_type") or ""
+    journal = (paper.get("journal") or "").lower()
     
     # Quality safeguards: Don't boost low-quality papers too much
     base_reliability = paper.get("reliability_score", 0)
