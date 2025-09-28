@@ -186,9 +186,20 @@ def calculate_reliability_score(rec: dict, dynamic_weights: dict = None) -> floa
         ab_text = abstract.get("AbstractText")
         if ab_text:
             if isinstance(ab_text, list):
-                content = " ".join([a.get("#text", a) if isinstance(a, dict) else a for a in ab_text])
+                content_parts = []
+                for a in ab_text:
+                    if isinstance(a, dict):
+                        text = a.get("#text", "")
+                        if text:
+                            content_parts.append(str(text))
+                    else:
+                        content_parts.append(str(a))
+                content = " ".join(content_parts)
             else:
-                content = ab_text.get("#text", ab_text) if isinstance(ab_text, dict) else str(ab_text)
+                if isinstance(ab_text, dict):
+                    content = str(ab_text.get("#text", ""))
+                else:
+                    content = str(ab_text)
     
     text_for_diversity = f"{title}\n{content}".lower()
     diversity_bonus = 0.0
@@ -368,14 +379,38 @@ def pubmed_esearch(term: str, mindate: str|None=None, retmax: int=200, retstart:
     if mindate: params.update({"datetype":"pdat","mindate":mindate})  # YYYY/MM/DD
     with httpx.Client(timeout=60) as c:
         r = c.get("https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi", params=params)
-        r.raise_for_status(); return r.json()
+        r.raise_for_status()
+        try:
+            return r.json()
+        except Exception as e:
+            print(f"JSON decode error: {e}")
+            print(f"Response content: {r.text[:500]}...")
+            # Try to clean the response
+            import re
+            cleaned_text = re.sub(r'[\x00-\x1f\x7f-\x9f]', '', r.text)
+            return json.loads(cleaned_text)
 
 def pubmed_efetch_xml(pmids: list[str]) -> dict:
     params = {"db":"pubmed","retmode":"xml","id":",".join(pmids),"email":NCBI_EMAIL}
     if NCBI_API_KEY: params["api_key"]=NCBI_API_KEY
-    with httpx.Client(timeout=120) as c:
-        r = c.get("https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi", params=params)
-        r.raise_for_status(); return xmltodict.parse(r.text)
+    
+    # Retry logic for PubMed API
+    max_retries = 3
+    for attempt in range(max_retries):
+        try:
+            with httpx.Client(timeout=120) as c:
+                r = c.get("https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi", params=params)
+                r.raise_for_status()
+                return xmltodict.parse(r.text)
+        except Exception as e:
+            if attempt < max_retries - 1:
+                wait_time = (attempt + 1) * 5  # Exponential backoff
+                print(f"PubMed API error (attempt {attempt + 1}/{max_retries}): {e}")
+                print(f"Retrying in {wait_time} seconds...")
+                time.sleep(wait_time)
+            else:
+                print(f"PubMed API failed after {max_retries} attempts: {e}")
+                raise
 
 def parse_pubmed_article(rec: dict, dynamic_weights: dict = None) -> dict:
     art = rec.get("MedlineCitation", {}).get("Article", {})
@@ -389,7 +424,24 @@ def parse_pubmed_article(rec: dict, dynamic_weights: dict = None) -> dict:
     abstract = art.get("Abstract", {})
     if isinstance(abstract, dict):
         ab = abstract.get("AbstractText")
-        content = " ".join([a.get("#text", a) if isinstance(a, dict) else a for a in (ab if isinstance(ab, list) else [ab] if ab else [])])
+        if ab:
+            if isinstance(ab, list):
+                content_parts = []
+                for a in ab:
+                    if isinstance(a, dict):
+                        text = a.get("#text", "")
+                        if text:
+                            content_parts.append(str(text))
+                    else:
+                        content_parts.append(str(a))
+                content = " ".join(content_parts)
+            else:
+                if isinstance(ab, dict):
+                    content = str(ab.get("#text", ""))
+                else:
+                    content = str(ab)
+        else:
+            content = ""
     else:
         content = ""
     jour = art.get("Journal", {})
@@ -739,7 +791,7 @@ def run_ingest(mode: str):
     if mode == "bootstrap":
         # Bootstrap: Get large batch, filter to best 10,000
         ids, retstart = [], 0
-        search_limit = MAX_TEMP_LIMIT * 2  # Get 2x more to filter down
+        search_limit = min(MAX_TEMP_LIMIT * 2, 9999)  # Get 2x more to filter down, but respect PubMed limit
         while len(ids) < search_limit:
             batch = pubmed_esearch(PM_SEARCH_QUERY, mindate=mindate, retmax=200, retstart=retstart)
             idlist = batch.get("esearchresult", {}).get("idlist", [])
@@ -747,6 +799,7 @@ def run_ingest(mode: str):
             ids.extend(idlist)
             retstart += len(idlist)
             if retstart >= int(batch["esearchresult"].get("count","0")): break
+            if retstart >= 9999: break  # PubMed limit
             time.sleep(0.34)
         
         print(f"Bootstrap: Found {len(ids)} PMIDs (will filter to best {INGEST_LIMIT})")
@@ -771,8 +824,8 @@ def run_ingest(mode: str):
     all_docs = []
     total_processed = 0
     
-    for i in range(0, len(ids), 200):
-        pid_batch = ids[i:i+200]
+    for i in range(0, len(ids), 50):  # Smaller batches to avoid API limits
+        pid_batch = ids[i:i+50]
         xml = pubmed_efetch_xml(pid_batch)
         arts = xml.get("PubmedArticleSet", {}).get("PubmedArticle", [])
         if isinstance(arts, dict): arts = [arts]
