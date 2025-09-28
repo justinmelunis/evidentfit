@@ -37,6 +37,7 @@ def ensure_index(vector_dim: int = 1536):
             {"name":"summary","type":"Edm.String","searchable":True},
             {"name":"content","type":"Edm.String","searchable":True},
             {"name":"content_vector","type":"Edm.String"},
+            {"name":"reliability_score","type":"Edm.Double"},
             {"name":"index_version","type":"Edm.String"}
           ]
         }

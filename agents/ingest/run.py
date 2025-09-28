@@ -18,7 +18,7 @@ PM_SEARCH_QUERY = os.getenv("PM_SEARCH_QUERY") or \
 NCBI_EMAIL = os.getenv("NCBI_EMAIL","you@example.com")
 NCBI_API_KEY = os.getenv("NCBI_API_KEY")  # optional
 WATERMARK_KEY = os.getenv("WATERMARK_KEY","meta:last_ingest")
-INGEST_LIMIT = int(os.getenv("INGEST_LIMIT","2000"))
+INGEST_LIMIT = int(os.getenv("INGEST_LIMIT","5000"))
 
 # --- Simple maps/heuristics ---
 SUPP_KEYWORDS = {
@@ -57,6 +57,89 @@ def classify_study_type(pub_types):
     if "crossover studies" in s or "cross-over studies" in s: return "crossover"
     if "cohort studies" in s: return "cohort"
     return "other"
+
+def calculate_reliability_score(rec: dict) -> float:
+    """Calculate reliability score based on study type, sample size, and quality indicators"""
+    score = 0.0
+    
+    # Study type scoring (highest to lowest)
+    study_type = classify_study_type(rec.get("MedlineCitation", {}).get("Article", {}).get("PublicationTypeList", {}).get("PublicationType", []))
+    if study_type == "meta-analysis": score += 10.0
+    elif study_type == "RCT": score += 8.0
+    elif study_type == "crossover": score += 6.0
+    elif study_type == "cohort": score += 4.0
+    else: score += 2.0
+    
+    # Sample size scoring (extract from abstract if possible)
+    abstract = rec.get("MedlineCitation", {}).get("Article", {}).get("Abstract", {})
+    if isinstance(abstract, dict):
+        ab_text = abstract.get("AbstractText")
+        if ab_text:
+            import re
+            # Look for sample size patterns
+            n_patterns = [
+                r'n\s*=\s*(\d+)', r'(\d+)\s*participants', r'(\d+)\s*subjects',
+                r'(\d+)\s*patients', r'(\d+)\s*volunteers', r'(\d+)\s*individuals'
+            ]
+            max_n = 0
+            for pattern in n_patterns:
+                matches = re.findall(pattern, str(ab_text), re.I)
+                for match in matches:
+                    try:
+                        n = int(match)
+                        max_n = max(max_n, n)
+                    except:
+                        pass
+            
+            if max_n > 0:
+                # Sample size scoring (logarithmic scale)
+                if max_n >= 1000: score += 5.0
+                elif max_n >= 500: score += 4.0
+                elif max_n >= 100: score += 3.0
+                elif max_n >= 50: score += 2.0
+                elif max_n >= 20: score += 1.0
+    
+    # Quality indicators
+    title = rec.get("MedlineCitation", {}).get("Article", {}).get("ArticleTitle", "")
+    if isinstance(title, dict):
+        title = title.get("#text", "") or str(title)
+    title_lower = str(title).lower()
+    
+    # High-quality keywords
+    quality_indicators = [
+        "systematic review", "meta-analysis", "double-blind", "placebo-controlled",
+        "randomized", "controlled trial", "crossover", "longitudinal"
+    ]
+    for indicator in quality_indicators:
+        if indicator in title_lower:
+            score += 1.0
+    
+    # Journal impact (simplified - could be enhanced with actual impact factors)
+    journal = rec.get("MedlineCitation", {}).get("Article", {}).get("Journal", {})
+    journal_name = journal.get("ISOAbbreviation", "") or journal.get("Title", "")
+    high_impact_journals = [
+        "J Appl Physiol", "Med Sci Sports Exerc", "J Strength Cond Res",
+        "Eur J Appl Physiol", "Int J Sport Nutr Exerc Metab", "Sports Med",
+        "Am J Clin Nutr", "Nutrients", "J Int Soc Sports Nutr"
+    ]
+    if any(j in journal_name for j in high_impact_journals):
+        score += 2.0
+    
+    # Recent papers get slight boost
+    year = None
+    pubdate = journal.get("JournalIssue", {}).get("PubDate", {})
+    for k in ("Year", "MedlineDate"):
+        if pubdate.get(k):
+            try:
+                year = int(str(pubdate.get(k))[:4])
+                break
+            except:
+                pass
+    
+    if year and year >= 2020: score += 1.0
+    elif year and year >= 2015: score += 0.5
+    
+    return score
 
 def _find(text, patterns): return any(re.search(p, text, flags=re.I) for p in patterns)
 
@@ -118,6 +201,9 @@ def parse_pubmed_article(rec: dict) -> dict:
     pubtypes = [pt.get("#text","") if isinstance(pt, dict) else str(pt) for pt in pubtypes]
     study_type = classify_study_type(pubtypes)
 
+    # Calculate reliability score
+    reliability_score = calculate_reliability_score(rec)
+
     text_for_tags = f"{title}\n{content}"
     supplements = extract_supplements(text_for_tags)
     outcomes = extract_outcomes(text_for_tags)
@@ -135,7 +221,8 @@ def parse_pubmed_article(rec: dict) -> dict:
         "outcomes": ",".join(outcomes) if outcomes else "",
         "population": None,
         "summary": None,
-        "content": content.strip(),
+        "content": content.strip(),  # Only store abstract, not full text
+        "reliability_score": reliability_score,
         "index_version": INDEX_VERSION
     }
 
@@ -158,9 +245,10 @@ def run_ingest(mode: str):
             except Exception:
                 mindate = None
 
-    # Search PubMed
+    # Search PubMed with higher limit to allow for filtering
     ids, retstart = [], 0
-    while len(ids) < INGEST_LIMIT:
+    search_limit = INGEST_LIMIT * 3  # Get 3x more to filter down
+    while len(ids) < search_limit:
         batch = pubmed_esearch(PM_SEARCH_QUERY, mindate=mindate, retmax=200, retstart=retstart)
         idlist = batch.get("esearchresult", {}).get("idlist", [])
         if not idlist: break
@@ -172,47 +260,51 @@ def run_ingest(mode: str):
     if not ids:
         print("No new PubMed IDs."); return
 
-    print(f"Found {len(ids)} PMIDs (capped to INGEST_LIMIT={INGEST_LIMIT})")
+    print(f"Found {len(ids)} PMIDs (will filter to top {INGEST_LIMIT})")
 
-    # Fetch → parse → embed → upsert
-    total = 0
-    for i in range(0, min(len(ids), INGEST_LIMIT), 200):
+    # Fetch → parse → score → filter → upsert
+    all_docs = []
+    total_processed = 0
+    
+    for i in range(0, len(ids), 200):
         pid_batch = ids[i:i+200]
         xml = pubmed_efetch_xml(pid_batch)
         arts = xml.get("PubmedArticleSet", {}).get("PubmedArticle", [])
         if isinstance(arts, dict): arts = [arts]
 
-        docs, texts = [], []
         for rec in arts:
             d = parse_pubmed_article(rec)
             if not d["title"] and not d["content"]: continue
-            texts.append(d["content"] or d["title"])
-            docs.append(d)
-
-        if not docs: continue
-
-        # Process embeddings in smaller batches to avoid rate limits
-        batch_size = 10  # Smaller batch size for embeddings
-        for j in range(0, len(texts), batch_size):
-            batch_texts = texts[j:j+batch_size]
-            batch_docs = docs[j:j+batch_size]
+            all_docs.append(d)
+            total_processed += 1
             
-            try:
-                # Skip embeddings for free tier - just use content as searchable text
-                # vecs = embed_texts(batch_texts)
-                # for d, v in zip(batch_docs, vecs): d["content_vector"] = v
-                
-                upsert_docs(batch_docs)
-                total += len(batch_docs)
-                print(f"Upserted {len(batch_docs)} docs (total {total})")
-                
-                # Rate limiting: wait between embedding calls
-                time.sleep(2.0)  # 2 seconds between batches
-                
-            except Exception as e:
-                print(f"Error processing batch {j//batch_size + 1}: {e}")
-                # Continue with next batch instead of failing completely
-                continue
+            if total_processed % 100 == 0:
+                print(f"Processed {total_processed} papers...")
+
+    # Sort by reliability score and take top papers
+    print(f"Sorting {len(all_docs)} papers by reliability score...")
+    all_docs.sort(key=lambda x: x.get("reliability_score", 0), reverse=True)
+    top_docs = all_docs[:INGEST_LIMIT]
+    
+    print(f"Selected top {len(top_docs)} papers (reliability scores: {[d.get('reliability_score', 0) for d in top_docs[:5]]})")
+    
+    # Process in batches
+    total = 0
+    batch_size = 50  # Larger batches since we're not doing embeddings
+    for i in range(0, len(top_docs), batch_size):
+        batch_docs = top_docs[i:i+batch_size]
+        
+        try:
+            upsert_docs(batch_docs)
+            total += len(batch_docs)
+            print(f"Upserted {len(batch_docs)} docs (total {total})")
+            
+            # Small delay between batches
+            time.sleep(0.5)
+            
+        except Exception as e:
+            print(f"Error processing batch {i//batch_size + 1}: {e}")
+            continue
 
     # Update watermark
     now_iso = datetime.datetime.utcnow().replace(tzinfo=datetime.timezone.utc).isoformat().replace("+00:00","Z")
