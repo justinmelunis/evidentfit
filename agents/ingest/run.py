@@ -139,6 +139,36 @@ def calculate_reliability_score(rec: dict) -> float:
     if year and year >= 2020: score += 1.0
     elif year and year >= 2015: score += 0.5
     
+    # Supplement diversity bonus - boost less common supplements
+    text_for_diversity = f"{title}\n{content}".lower()
+    diversity_bonus = 0.0
+    
+    # Less researched supplements get higher scores
+    rare_supplements = {
+        "tribulus": 3.0, "d-aspartic-acid": 3.0, "deer-antler": 3.0, 
+        "ecdysteroids": 3.0, "betaine": 2.5, "taurine": 2.5, "carnitine": 2.0,
+        "zma": 2.0, "glutamine": 1.5, "cla": 1.5, "hmb": 1.0
+    }
+    
+    medium_supplements = {
+        "citrulline": 1.0, "nitrate": 1.0, "beta-alanine": 0.5
+    }
+    
+    # Check for supplement mentions and apply diversity bonus
+    for supp, bonus in rare_supplements.items():
+        if supp.replace("-", " ") in text_for_diversity or supp.replace("-", "-") in text_for_diversity:
+            diversity_bonus = max(diversity_bonus, bonus)
+    
+    for supp, bonus in medium_supplements.items():
+        if supp in text_for_diversity:
+            diversity_bonus = max(diversity_bonus, bonus)
+    
+    # Creatine penalty to reduce over-representation
+    if "creatine" in text_for_diversity:
+        diversity_bonus = max(diversity_bonus, -1.0)  # Small penalty
+    
+    score += diversity_bonus
+    
     return score
 
 def _find(text, patterns): return any(re.search(p, text, flags=re.I) for p in patterns)
@@ -281,12 +311,48 @@ def run_ingest(mode: str):
             if total_processed % 100 == 0:
                 print(f"Processed {total_processed} papers...")
 
-    # Sort by reliability score and take top papers
+    # Sort by reliability score and apply diversity filtering
     print(f"Sorting {len(all_docs)} papers by reliability score...")
     all_docs.sort(key=lambda x: x.get("reliability_score", 0), reverse=True)
-    top_docs = all_docs[:INGEST_LIMIT]
     
-    print(f"Selected top {len(top_docs)} papers (reliability scores: {[d.get('reliability_score', 0) for d in top_docs[:5]]})")
+    # Apply diversity filtering to ensure balanced supplement representation
+    selected_docs = []
+    supplement_counts = {}
+    max_per_supplement = INGEST_LIMIT // 20  # Max 5% per supplement
+    
+    for doc in all_docs:
+        if len(selected_docs) >= INGEST_LIMIT:
+            break
+            
+        supplements = doc.get("supplements", "").split(",") if doc.get("supplements") else []
+        supplements = [s.strip() for s in supplements if s.strip()]
+        
+        # Check if we can add this paper without exceeding limits
+        can_add = True
+        for supp in supplements:
+            if supplement_counts.get(supp, 0) >= max_per_supplement:
+                can_add = False
+                break
+        
+        if can_add:
+            selected_docs.append(doc)
+            for supp in supplements:
+                supplement_counts[supp] = supplement_counts.get(supp, 0) + 1
+    
+    # Fill remaining slots with highest scoring papers
+    remaining_slots = INGEST_LIMIT - len(selected_docs)
+    if remaining_slots > 0:
+        used_ids = {doc["id"] for doc in selected_docs}
+        for doc in all_docs:
+            if doc["id"] not in used_ids and remaining_slots > 0:
+                selected_docs.append(doc)
+                remaining_slots -= 1
+    
+    top_docs = selected_docs
+    
+    print(f"Selected {len(top_docs)} papers with diversity filtering")
+    print(f"Supplement distribution: {dict(sorted(supplement_counts.items(), key=lambda x: x[1], reverse=True)[:10])}")
+    print(f"Top reliability scores: {[d.get('reliability_score', 0) for d in top_docs[:5]]}")
     
     # Process in batches
     total = 0
