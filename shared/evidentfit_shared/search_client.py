@@ -23,21 +23,64 @@ def ensure_index(vector_dim: int = 1536):
         body = {
           "name": SEARCH_INDEX,
           "fields": [
+            # === CORE IDENTIFIERS ===
             {"name":"id","type":"Edm.String","key":True},
-            {"name":"title","type":"Edm.String","searchable":True},
-            {"name":"doi","type":"Edm.String"},
             {"name":"pmid","type":"Edm.String"},
+            {"name":"doi","type":"Edm.String"},
             {"name":"url_pub","type":"Edm.String"},
+            
+            # === SEARCHABLE CONTENT ===
+            {"name":"title","type":"Edm.String","searchable":True},
+            {"name":"content","type":"Edm.String","searchable":True},
+            {"name":"summary","type":"Edm.String","searchable":True},
+            
+            # === PUBLICATION METADATA ===
             {"name":"journal","type":"Edm.String"},
             {"name":"year","type":"Edm.Int32"},
             {"name":"study_type","type":"Edm.String"},
+            
+            # === SUPPLEMENT & OUTCOME TAGS ===
             {"name":"supplements","type":"Edm.String"},
             {"name":"outcomes","type":"Edm.String"},
+            
+            # === GOAL-SPECIFIC OUTCOMES ===
+            {"name":"primary_goal","type":"Edm.String"},
+            {"name":"hypertrophy_outcomes","type":"Edm.String"},
+            {"name":"weight_loss_outcomes","type":"Edm.String"},
+            {"name":"strength_outcomes","type":"Edm.String"},
+            {"name":"performance_outcomes","type":"Edm.String"},
+            
+            # === STUDY METADATA ===
             {"name":"population","type":"Edm.String"},
-            {"name":"summary","type":"Edm.String","searchable":True},
-            {"name":"content","type":"Edm.String","searchable":True},
-            {"name":"content_vector","type":"Edm.String"},
+            {"name":"sample_size","type":"Edm.Int32"},
+            {"name":"study_duration","type":"Edm.String"},
+            {"name":"sample_size_category","type":"Edm.String"},
+            {"name":"duration_category","type":"Edm.String"},
+            {"name":"population_category","type":"Edm.String"},
+            
+            # === AUTHOR & CREDIBILITY ===
+            {"name":"first_author","type":"Edm.String"},
+            {"name":"author_count","type":"Edm.Int32"},
+            {"name":"funding_sources","type":"Edm.String"},
+            
+            # === SAFETY & DOSAGE ===
+            {"name":"safety_indicators","type":"Edm.String"},
+            {"name":"dosage_info","type":"Edm.String"},
+            {"name":"has_loading_phase","type":"Edm.Boolean"},
+            {"name":"has_maintenance_phase","type":"Edm.Boolean"},
+            {"name":"has_side_effects","type":"Edm.Boolean"},
+            {"name":"has_contraindications","type":"Edm.Boolean"},
+            
+            # === CATEGORIZATION ===
+            {"name":"mesh_terms","type":"Edm.String"},
+            {"name":"keywords","type":"Edm.String"},
+            
+            # === QUALITY & SCORING ===
             {"name":"reliability_score","type":"Edm.Double"},
+            {"name":"study_design_score","type":"Edm.Double"},
+            
+            # === SYSTEM FIELDS ===
+            {"name":"content_vector","type":"Edm.String"},
             {"name":"index_version","type":"Edm.String"}
           ]
         }

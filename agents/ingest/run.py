@@ -21,7 +21,7 @@ WATERMARK_KEY = os.getenv("WATERMARK_KEY","meta:last_ingest")
 INGEST_LIMIT = int(os.getenv("INGEST_LIMIT","10000"))  # Final target
 MAX_TEMP_LIMIT = int(os.getenv("MAX_TEMP_LIMIT","15000"))  # Temporary limit during processing
 
-# --- Simple maps/heuristics ---
+# --- Enhanced maps/heuristics ---
 SUPP_KEYWORDS = {
   "creatine": [r"\bcreatine\b"],
   "caffeine": [r"\bcaffeine\b", r"\bcoffee\b"],
@@ -43,6 +43,45 @@ SUPP_KEYWORDS = {
   "deer-antler": [r"\bdeer antler\b", r"\bIGF-1\b"],
 }
 
+# Enhanced outcome categories
+HYPERTROPHY_OUTCOMES = {
+    "muscle_mass": [r"\bmuscle mass\b", r"\blean mass\b", r"\bfat-free mass\b", r"\bFFM\b"],
+    "muscle_size": [r"\bmuscle size\b", r"\bCSA\b", r"\bcross-sectional area\b"],
+    "muscle_volume": [r"\bmuscle volume\b", r"\bthigh volume\b", r"\barm volume\b"],
+    "muscle_thickness": [r"\bmuscle thickness\b", r"\bultrasound\b"],
+    "body_composition": [r"\bbody composition\b", r"\bDEXA\b", r"\bbodpod\b"]
+}
+
+WEIGHT_LOSS_OUTCOMES = {
+    "weight_loss": [r"\bweight loss\b", r"\bweight reduction\b", r"\bbody weight\b"],
+    "fat_loss": [r"\bfat loss\b", r"\bfat mass\b", r"\bpercent body fat\b"],
+    "waist_circumference": [r"\bwaist circumference\b", r"\bwaist-to-hip\b"],
+    "bmi": [r"\bBMI\b", r"\bbody mass index\b"],
+    "visceral_fat": [r"\bvisceral fat\b", r"\babdominal fat\b"]
+}
+
+STRENGTH_OUTCOMES = {
+    "max_strength": [r"\b1RM\b", r"\bmax strength\b", r"\bbench press\b", r"\bsquat\b"],
+    "power": [r"\bpower\b", r"\bCMJ\b", r"\bvertical jump\b", r"\bexplosive\b"],
+    "endurance": [r"\bendurance\b", r"\bVO2\b", r"\btime to exhaustion\b"],
+    "recovery": [r"\brecovery\b", r"\bDOMS\b", r"\bsoreness\b"]
+}
+
+PERFORMANCE_OUTCOMES = {
+    "sport_performance": [r"\bsport performance\b", r"\bathletic performance\b"],
+    "training_adaptation": [r"\btraining adaptation\b", r"\badaptation\b"],
+    "muscle_function": [r"\bmuscle function\b", r"\bmuscle performance\b"]
+}
+
+SAFETY_INDICATORS = {
+    "side_effects": [r"\bside effects?\b", r"\badverse events?\b", r"\btolerability\b"],
+    "contraindications": [r"\bcontraindicated\b", r"\bnot recommended\b", r"\bcaution\b"],
+    "pregnancy": [r"\bpregnancy\b", r"\bpregnant\b", r"\blactation\b"],
+    "diabetes": [r"\bdiabetes\b", r"\bdiabetic\b", r"\bglucose\b"],
+    "hypertension": [r"\bhypertension\b", r"\bblood pressure\b", r"\bhypertensive\b"]
+}
+
+# Legacy outcome map for backward compatibility
 OUTCOME_MAP = {
   "strength": [r"\b1 ?RM\b", r"\bmax(imum)? strength\b", r"\bbench press\b", r"\bsquat\b"],
   "hypertrophy": [r"\blean mass\b", r"\bfat[- ]free mass\b", r"\bCSA\b", r"\bhypertroph(y|ic)\b"],
@@ -188,6 +227,130 @@ def extract_outcomes(text: str):
     t = text.lower()
     return sorted({k for k, pats in OUTCOME_MAP.items() if _find(t, pats)})
 
+# Enhanced extraction functions
+def extract_goal_specific_outcomes(text: str) -> dict:
+    """Extract goal-specific outcomes from paper text"""
+    text_lower = text.lower()
+    
+    # Muscle gain/hypertrophy
+    hypertrophy_outcomes = []
+    for outcome, patterns in HYPERTROPHY_OUTCOMES.items():
+        if any(re.search(p, text_lower, re.I) for p in patterns):
+            hypertrophy_outcomes.append(outcome)
+    
+    # Weight loss
+    weight_loss_outcomes = []
+    for outcome, patterns in WEIGHT_LOSS_OUTCOMES.items():
+        if any(re.search(p, text_lower, re.I) for p in patterns):
+            weight_loss_outcomes.append(outcome)
+    
+    # Strength/power
+    strength_outcomes = []
+    for outcome, patterns in STRENGTH_OUTCOMES.items():
+        if any(re.search(p, text_lower, re.I) for p in patterns):
+            strength_outcomes.append(outcome)
+    
+    # Performance
+    performance_outcomes = []
+    for outcome, patterns in PERFORMANCE_OUTCOMES.items():
+        if any(re.search(p, text_lower, re.I) for p in patterns):
+            performance_outcomes.append(outcome)
+    
+    # Determine primary goal
+    goal_scores = {
+        "muscle_gain": len(hypertrophy_outcomes),
+        "weight_loss": len(weight_loss_outcomes),
+        "strength": len(strength_outcomes),
+        "performance": len(performance_outcomes)
+    }
+    primary_goal = max(goal_scores, key=goal_scores.get) if any(goal_scores.values()) else "general"
+    
+    return {
+        "primary_goal": primary_goal,
+        "hypertrophy_outcomes": ",".join(hypertrophy_outcomes),
+        "weight_loss_outcomes": ",".join(weight_loss_outcomes),
+        "strength_outcomes": ",".join(strength_outcomes),
+        "performance_outcomes": ",".join(performance_outcomes)
+    }
+
+def extract_safety_indicators(text: str) -> dict:
+    """Extract safety and contraindication information"""
+    text_lower = text.lower()
+    
+    safety_tags = []
+    for indicator, patterns in SAFETY_INDICATORS.items():
+        if any(re.search(p, text_lower, re.I) for p in patterns):
+            safety_tags.append(indicator)
+    
+    return {
+        "safety_indicators": ",".join(safety_tags),
+        "has_side_effects": "side_effects" in safety_tags,
+        "has_contraindications": "contraindications" in safety_tags
+    }
+
+def extract_dosage_info(text: str) -> dict:
+    """Extract dosage and timing information"""
+    dosage_patterns = [
+        r'(\d+(?:\.\d+)?)\s*(?:g|mg|mcg|grams?|milligrams?)\s*(?:per day|daily|/day)',
+        r'(\d+(?:\.\d+)?)\s*(?:g|mg|mcg|grams?|milligrams?)\s*(?:pre|post|before|after)',
+        r'(\d+(?:\.\d+)?)\s*(?:g|mg|mcg|grams?|milligrams?)\s*(?:loading|maintenance)'
+    ]
+    
+    dosages = []
+    for pattern in dosage_patterns:
+        matches = re.findall(pattern, text, re.I)
+        dosages.extend(matches)
+    
+    return {
+        "dosage_info": ",".join(dosages),
+        "has_loading_phase": "loading" in text.lower(),
+        "has_maintenance_phase": "maintenance" in text.lower()
+    }
+
+def categorize_sample_size(sample_size: int) -> str:
+    """Categorize sample size for analysis"""
+    if sample_size >= 100: return "large"
+    elif sample_size >= 30: return "medium" 
+    else: return "small"
+
+def categorize_duration(duration: str) -> str:
+    """Categorize study duration"""
+    if "year" in duration: return "long_term"
+    elif "month" in duration: return "medium_term"
+    else: return "short_term"
+
+def categorize_population(population: str) -> str:
+    """Categorize study population"""
+    if "athlete" in population: return "athletes"
+    elif "trained" in population: return "trained"
+    elif "untrained" in population: return "untrained"
+    elif "elderly" in population: return "elderly"
+    else: return "general"
+
+def calculate_study_design_score(study_type: str, sample_size: int, duration: str) -> float:
+    """Calculate study design quality score"""
+    score = 0.0
+    
+    # Study type scoring
+    if study_type == "meta-analysis": score += 3.0
+    elif study_type == "RCT": score += 2.5
+    elif study_type == "crossover": score += 2.0
+    elif study_type == "cohort": score += 1.5
+    else: score += 1.0
+    
+    # Sample size scoring
+    if sample_size >= 100: score += 2.0
+    elif sample_size >= 50: score += 1.5
+    elif sample_size >= 30: score += 1.0
+    else: score += 0.5
+    
+    # Duration scoring
+    if "year" in duration: score += 1.5
+    elif "month" in duration: score += 1.0
+    else: score += 0.5
+    
+    return min(score, 10.0)  # Cap at 10
+
 # --- PubMed E-utilities ---
 def pubmed_esearch(term: str, mindate: str|None=None, retmax: int=200, retstart:int=0) -> dict:
     params = {"db":"pubmed","retmode":"json","term":term,"retmax":str(retmax),"retstart":str(retstart),"email":NCBI_EMAIL}
@@ -244,6 +407,79 @@ def parse_pubmed_article(rec: dict, dynamic_weights: dict = None) -> dict:
     text_for_tags = f"{title}\n{content}"
     supplements = extract_supplements(text_for_tags)
     outcomes = extract_outcomes(text_for_tags)
+    
+    # Enhanced metadata extraction
+    goal_data = extract_goal_specific_outcomes(text_for_tags)
+    safety_data = extract_safety_indicators(text_for_tags)
+    dosage_data = extract_dosage_info(text_for_tags)
+    
+    # Extract sample size from content
+    sample_size = 0
+    if content:
+        n_patterns = [
+            r'n\s*=\s*(\d+)', r'(\d+)\s*participants', r'(\d+)\s*subjects',
+            r'(\d+)\s*patients', r'(\d+)\s*volunteers', r'(\d+)\s*individuals'
+        ]
+        for pattern in n_patterns:
+            matches = re.findall(pattern, content, re.I)
+            for match in matches:
+                try:
+                    n = int(match)
+                    sample_size = max(sample_size, n)
+                except:
+                    pass
+    
+    # Extract study duration from content
+    study_duration = ""
+    if content:
+        duration_patterns = [
+            r'(\d+)\s*(?:weeks?|months?|days?|years?)',
+            r'(?:for|over|during)\s*(\d+)\s*(?:weeks?|months?|days?|years?)'
+        ]
+        for pattern in duration_patterns:
+            matches = re.findall(pattern, content, re.I)
+            if matches:
+                study_duration = matches[0] + " " + matches[1] if len(matches) > 1 else matches[0]
+                break
+    
+    # Extract population info
+    population = ""
+    if content:
+        pop_patterns = [
+            r'\b(?:men|women|males?|females?|adults?|elderly|athletes?|trained|untrained)\b'
+        ]
+        for pattern in pop_patterns:
+            matches = re.findall(pattern, content, re.I)
+            if matches:
+                population = matches[0]
+                break
+    
+    # Calculate enhanced scores
+    sample_size_category = categorize_sample_size(sample_size)
+    duration_category = categorize_duration(study_duration)
+    population_category = categorize_population(population)
+    study_design_score = calculate_study_design_score(study_type, sample_size, study_duration)
+    
+    # Extract author information
+    authors = art.get("AuthorList", {}).get("Author", [])
+    if isinstance(authors, dict): authors = [authors]
+    first_author = ""
+    author_count = len(authors)
+    if authors:
+        first_author = f"{authors[0].get('LastName', '')} {authors[0].get('ForeName', '')}".strip()
+    
+    # Extract MeSH terms
+    mesh_terms = []
+    mesh_list = rec.get("MedlineCitation", {}).get("MeshHeadingList", {}).get("MeshHeading", [])
+    if isinstance(mesh_list, dict): mesh_list = [mesh_list]
+    for mesh in mesh_list or []:
+        if isinstance(mesh, dict):
+            mesh_terms.append(mesh.get("DescriptorName", {}).get("#text", ""))
+    
+    # Extract keywords
+    keywords = art.get("KeywordList", {}).get("Keyword", [])
+    if isinstance(keywords, dict): keywords = [keywords]
+    keyword_list = [kw.get("#text", "") for kw in keywords if isinstance(kw, dict)]
 
     return {
         "id": f"pmid_{pmid}_chunk_0",
@@ -256,10 +492,47 @@ def parse_pubmed_article(rec: dict, dynamic_weights: dict = None) -> dict:
         "study_type": study_type,
         "supplements": ",".join(supplements) if supplements else "",
         "outcomes": ",".join(outcomes) if outcomes else "",
-        "population": None,
+        
+        # Enhanced goal-specific outcomes
+        "primary_goal": goal_data["primary_goal"],
+        "hypertrophy_outcomes": goal_data["hypertrophy_outcomes"],
+        "weight_loss_outcomes": goal_data["weight_loss_outcomes"],
+        "strength_outcomes": goal_data["strength_outcomes"],
+        "performance_outcomes": goal_data["performance_outcomes"],
+        
+        # Study metadata
+        "population": population,
+        "sample_size": sample_size,
+        "study_duration": study_duration,
+        "sample_size_category": sample_size_category,
+        "duration_category": duration_category,
+        "population_category": population_category,
+        
+        # Safety and dosage
+        "safety_indicators": safety_data["safety_indicators"],
+        "dosage_info": dosage_data["dosage_info"],
+        "has_loading_phase": dosage_data["has_loading_phase"],
+        "has_maintenance_phase": dosage_data["has_maintenance_phase"],
+        "has_side_effects": safety_data["has_side_effects"],
+        "has_contraindications": safety_data["has_contraindications"],
+        
+        # Author and credibility
+        "first_author": first_author,
+        "author_count": author_count,
+        "funding_sources": "",  # TODO: Extract from funding info
+        
+        # Categorization
+        "mesh_terms": ",".join(mesh_terms),
+        "keywords": ",".join(keyword_list),
+        
+        # Quality and scoring
+        "reliability_score": reliability_score,
+        "study_design_score": study_design_score,
+        
+        # System fields
         "summary": None,
         "content": content.strip(),  # Only store abstract, not full text
-        "reliability_score": reliability_score,
+        "content_vector": "",  # Will be filled during processing
         "index_version": INDEX_VERSION
     }
 
