@@ -24,17 +24,20 @@ export default function RootLayout({
             <Link href="/" className="text-xl font-bold text-gray-900 hover:text-blue-600 transition-colors">
               EvidentFit
             </Link>
-            <div className="flex gap-6">
-              <Link href="/agent" className="text-gray-600 hover:text-blue-600 font-medium transition-colors">
-                Chat
-              </Link>
-              <Link href="/stack" className="text-gray-600 hover:text-blue-600 font-medium transition-colors">
-                Stack Planner
-              </Link>
-              <Link href="/methodology" className="text-gray-600 hover:text-blue-600 font-medium transition-colors">
-                Methodology
-              </Link>
-            </div>
+          <div className="flex gap-6">
+            <Link href="/agent" className="text-gray-600 hover:text-blue-600 font-medium transition-colors">
+              Chat
+            </Link>
+            <Link href="/stack-chat" className="text-gray-600 hover:text-blue-600 font-medium transition-colors">
+              Stack Chat
+            </Link>
+            <Link href="/stack" className="text-gray-600 hover:text-blue-600 font-medium transition-colors">
+              Stack Planner
+            </Link>
+            <Link href="/methodology" className="text-gray-600 hover:text-blue-600 font-medium transition-colors">
+              Methodology
+            </Link>
+          </div>
           </div>
         </nav>
         {children}
