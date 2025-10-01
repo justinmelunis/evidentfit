@@ -14,8 +14,15 @@ except ImportError:
     from clients.foundry_chat import chat as foundry_chat
     from clients.search_read import search_docs
 
-# Import stack rules
+# Import stack rules and conversational builder
 from stack_rules import creatine_plan_by_form, protein_gap_plan, get_evidence_grade, get_supplement_timing, get_supplement_why
+try:
+    from stack_builder import build_conversational_stack, get_creatine_form_comparison
+    from evidentfit_shared.types import UserProfile, StackPlan
+    CONVERSATIONAL_STACK_AVAILABLE = True
+except ImportError:
+    CONVERSATIONAL_STACK_AVAILABLE = False
+    print("Warning: Conversational stack builder not available")
 # Load environment variables
 from dotenv import load_dotenv
 load_dotenv('azure-openai.env')
@@ -44,6 +51,12 @@ class StackRequest(BaseModel):
     tier: Optional[str] = None
 
 class StreamRequest(BaseModel):
+    thread_id: str
+    messages: List[Message]
+    profile: Profile
+
+class ConversationalStackRequest(BaseModel):
+    """Request for conversational stack endpoint"""
     thread_id: str
     messages: List[Message]
     profile: Profile
@@ -399,6 +412,138 @@ def list_buckets():
     # This would require a more complex search query
     # For now, return empty list
     return {"buckets": []}
+
+@api.post("/stack/conversational")
+async def stack_conversational(request: ConversationalStackRequest, _=Depends(guard)):
+    """
+    Build a personalized supplement stack through conversational interaction.
+    
+    Combines user profile with chat context to:
+    - Answer specific questions about supplements
+    - Build evidence-based stack recommendations
+    - Explain dosing and form alternatives
+    - Apply safety guardrails
+    """
+    if not CONVERSATIONAL_STACK_AVAILABLE:
+        raise HTTPException(status_code=501, detail="Conversational stack not available")
+    
+    # Extract user message for context
+    user_msg = next((m.content for m in reversed(request.messages) if m.role == "user"), "")
+    
+    # Convert Profile to UserProfile
+    profile_dict = request.profile.dict()
+    try:
+        user_profile = UserProfile(**profile_dict)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Invalid profile: {str(e)}")
+    
+    # Build search query from profile goal + user message
+    search_query = f"{user_profile.goal} {user_msg}"
+    
+    # Search for relevant papers
+    try:
+        search_response = search_docs(query=search_query, top=15)
+        docs = search_response.get('value', [])
+        print(f"Found {len(docs)} papers for query: {search_query}")
+    except Exception as e:
+        print(f"Search failed: {e}")
+        docs = []
+    
+    # Build stack plan with conversation context
+    try:
+        stack_plan = build_conversational_stack(
+            profile=user_profile,
+            retrieved_docs=docs,
+            conversation_context=user_msg
+        )
+    except Exception as e:
+        print(f"Stack building failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to build stack: {str(e)}")
+    
+    # Compose conversational explanation using LLM
+    explanation = _compose_stack_explanation(
+        stack_plan=stack_plan,
+        user_message=user_msg,
+        docs=docs
+    )
+    
+    return {
+        "stack_plan": stack_plan.dict(),
+        "explanation": explanation,
+        "retrieved_count": len(docs),
+        "thread_id": request.thread_id
+    }
+
+@api.get("/stack/creatine-forms")
+def get_creatine_forms():
+    """
+    Get detailed comparison of creatine forms.
+    
+    Useful for users asking "which creatine should I take?"
+    """
+    if not CONVERSATIONAL_STACK_AVAILABLE:
+        return {"error": "Not available"}
+    
+    return get_creatine_form_comparison()
+
+def _compose_stack_explanation(stack_plan: StackPlan, user_message: str, docs: List[dict]) -> str:
+    """
+    Use LLM to compose a conversational explanation of the stack.
+    
+    Args:
+        stack_plan: The generated stack plan
+        user_message: User's question/request
+        docs: Retrieved research papers
+        
+    Returns:
+        Conversational explanation with citations
+    """
+    # Build context from stack items
+    items_summary = []
+    for item in stack_plan.items:
+        dose_str = f"{item.doses[0].value} {item.doses[0].unit}" if item.doses else "varied"
+        items_summary.append(f"- {item.supplement.title()}: {dose_str} ({item.evidence_grade})")
+    
+    # Build context from exclusions
+    exclusions_str = ""
+    if stack_plan.exclusions:
+        exclusions_str = f"\n\nExcluded:\n" + "\n".join(f"- {ex}" for ex in stack_plan.exclusions)
+    
+    # Build warnings context
+    warnings_str = ""
+    if stack_plan.warnings:
+        warnings_str = f"\n\nSafety Notes:\n" + "\n".join(f"- {w}" for w in stack_plan.warnings)
+    
+    # Create prompt for LLM
+    prompt = f"""Based on the user's question and their profile, explain this supplement stack in a conversational, evidence-based way.
+
+User asked: "{user_message}"
+
+Profile: {stack_plan.profile.goal}, {stack_plan.profile.weight_kg}kg, caffeine_sensitive={stack_plan.profile.caffeine_sensitive}
+
+Recommended Stack:
+{chr(10).join(items_summary)}{exclusions_str}{warnings_str}
+
+Provide a conversational explanation that:
+1. Directly addresses their question
+2. Explains why each supplement is included (briefly)
+3. Notes any exclusions and why
+4. Highlights key safety considerations
+5. Keeps a friendly but professional tone
+6. References evidence grades (A=strong, B=moderate, C=limited)
+
+If they asked about specific supplement forms (like creatine), explain the differences.
+
+Keep response under 400 tokens. Be helpful and actionable."""
+
+    try:
+        # Use existing foundry_chat function
+        response = foundry_chat(prompt, model=FOUNDATION_CHAT_MODEL, max_tokens=400)
+        return response
+    except Exception as e:
+        print(f"LLM composition failed: {e}")
+        # Fallback to simple summary
+        return f"Based on your profile and question, here's your personalized stack:\n\n" + "\n".join(items_summary)
 
 if __name__ == "__main__":
     import uvicorn
