@@ -203,7 +203,7 @@ export default function CreatineFormsPage() {
           
           <div className="space-y-4 text-gray-700">
             <p>
-              Different creatine forms contain different amounts of actual creatine because they're bound 
+              Different creatine forms contain different amounts of actual creatine because they&apos;re bound 
               to different molecules. To ensure consistent dosing, we use <strong>Creatine Monohydrate Equivalent (CME)</strong>.
             </p>
 

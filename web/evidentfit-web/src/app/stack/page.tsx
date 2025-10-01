@@ -262,7 +262,7 @@ export default function StackPlanner() {
                 onChange={(e) => setProfile({...profile, caffeine_sensitive: e.target.checked})}
                 className="mr-2 h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
               />
-              <span className="text-sm text-gray-700">I'm sensitive to caffeine</span>
+              <span className="text-sm text-gray-700">I&apos;m sensitive to caffeine</span>
             </label>
 
             <label className="flex items-center">
