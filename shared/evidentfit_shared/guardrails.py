@@ -186,10 +186,17 @@ def check_contraindications(profile: dict, supplement: str) -> Tuple[bool, str]:
         if condition in blocked:
             return False, f"Contraindicated with {condition.replace('_', ' ')}"
     
+    # Check condition-based blocks (from CONDITION_ADJUSTMENTS)
+    for condition in conditions:
+        if condition in CONDITION_ADJUSTMENTS:
+            adj = CONDITION_ADJUSTMENTS[condition]
+            if supplement in adj.get("block", []) or "stimulants" in adj.get("block", []) and supplement == "caffeine":
+                return False, f"Not recommended with {condition.replace('_', ' ')}"
+    
     # Age-based restrictions
     age = profile.get("age")
     if age and age < 18:
-        if supplement in AGE_RESTRICTIONS["minor"]["block"]:
+        if supplement in AGE_RESTRICTIONS["minor"]["block"] or ("stimulants" in AGE_RESTRICTIONS["minor"]["block"] and supplement == "caffeine"):
             return False, "Not recommended for minors (age < 18)"
     
     if profile.get("pregnancy"):
@@ -201,7 +208,7 @@ def check_contraindications(profile: dict, supplement: str) -> Tuple[bool, str]:
     for med_class in meds:
         if med_class in MEDICATION_INTERACTIONS:
             interaction = MEDICATION_INTERACTIONS[med_class]
-            if supplement in interaction.get("avoid", []):
+            if supplement in interaction.get("avoid", []) or ("stimulants" in interaction.get("avoid", []) and supplement == "caffeine"):
                 return False, f"Avoid with {med_class} medications"
     
     return True, ""

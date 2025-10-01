@@ -347,7 +347,7 @@ def get_creatine_form_comparison() -> Dict[str, dict]:
 
 def build_caffeine_item(profile: UserProfile, docs: List[dict]) -> Optional[StackItem]:
     """Build caffeine stack item with sensitivity and caps."""
-    # Check contraindications
+    # Check contraindications (e.g., certain meds, pregnancy, heart conditions)
     safe, reason = check_contraindications(profile.dict(), "caffeine")
     if not safe:
         return StackItem(
@@ -360,7 +360,7 @@ def build_caffeine_item(profile: UserProfile, docs: List[dict]) -> Optional[Stac
             tier="core"
         )
     
-    # Determine dose range based on sensitivity
+    # Determine dose range based on sensitivity (reduce dose, but don't exclude)
     if profile.caffeine_sensitive:
         mg_per_kg_range = "3-4"
         max_dose = min(4 * profile.weight_kg, 200)
