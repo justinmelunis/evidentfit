@@ -45,84 +45,129 @@ Watermark Update
 
 ## Scoring Methodology
 
-### Phase 1: Reliability Scoring (0-100 points)
+### Phase 1: Reliability Scoring (0-20+ points)
 
-Every paper receives a **reliability score** based on objective quality indicators:
+Every paper receives a **reliability score** based on objective quality indicators. This is a lightweight, reproducible heuristic designed to rank papers without requiring manual review or API lookups.
 
-#### 1. Study Type Score (0-40 points)
-- **Meta-analysis**: 40 points — highest evidence level
-- **RCT**: 30 points — gold standard for interventions
-- **Crossover**: 25 points — good control design
-- **Cohort**: 15 points — observational but useful
-- **Other**: 5 points — baseline for published work
+#### 1. Study Type Score (2-10 points)
+- **Meta-analysis**: +10 points — highest evidence level, synthesis of multiple studies
+- **RCT (Randomized Controlled Trial)**: +8 points — gold standard for interventions
+- **Crossover**: +6 points — good control design, within-subject comparison
+- **Cohort**: +4 points — observational but useful for long-term outcomes
+- **Other**: +2 points — baseline for published work
 
-#### 2. Sample Size Score (0-20 points)
-- **≥200 participants**: 20 points (very large, high confidence)
-- **100-199**: 15 points (large study)
-- **50-99**: 10 points (medium study)
-- **20-49**: 5 points (small study)
-- **<20**: 2 points (pilot/feasibility)
+#### 2. Sample Size Score (0-5 points)
+Extracted via regex patterns from abstract (e.g., "n=50", "100 participants"):
+- **≥1000 participants**: +5 points (very large, high statistical power)
+- **≥500**: +4 points (large study)
+- **≥100**: +3 points (medium study)
+- **≥50**: +2 points (small study)
+- **≥20**: +1 point (pilot/feasibility)
+- **<20 or not detected**: 0 points
 
-#### 3. Quality Indicators (0-20 points)
-Each indicator adds points:
-- **Double-blind**: +8 points
-- **Placebo-controlled**: +8 points
-- **Randomized**: +4 points
+*Note: Regex may under/over-count if abstract formatting is atypical; treated as a signal, not a gate.*
 
-#### 4. Journal Impact (0-10 points)
-Bonus for publication in high-impact journals:
-- Top-tier journals (JAMA, Lancet, Nature, etc.): +10 points
-- Mid-tier journals (AJCN, Nutrients, J Sports Sci, etc.): +5 points
-- Other journals: 0 points (baseline)
+#### 3. Quality Indicators (0-8+ points)
+Each keyword detected in the title adds +1 point:
+- "systematic review"
+- "meta-analysis"
+- "double-blind"
+- "placebo-controlled"
+- "randomized"
+- "controlled trial"
+- "crossover"
+- "longitudinal"
 
-#### 5. Recency Score (0-10 points)
-- Papers from last 5 years: +10 points
-- Papers 5-10 years old: +5 points
-- Older papers: 0 points (still valuable, just dated)
+*Papers can accumulate multiple indicators (e.g., a "randomized, double-blind, placebo-controlled trial" gets +4).*
 
-**Quality Threshold**: Papers must score ≥30 points to proceed to Phase 2.
+#### 4. Journal Impact (0-2 points)
+Simple heuristic based on curated list of sports nutrition/physiology journals:
+- **High-impact**: +2 points for journals like:
+  - J Appl Physiol, Med Sci Sports Exerc, J Strength Cond Res
+  - Sports Med, Am J Clin Nutr, Nutrients, J Int Soc Sports Nutr
+  - Eur J Appl Physiol, Int J Sport Nutr Exerc Metab
+- **Other journals**: 0 points (not penalized, just no bonus)
 
-### Phase 2: Combination-Aware Scoring (-20 to +20 points)
+*This is a small nudge, not a gate. Can be expanded or removed as needed.*
 
-After reliability scoring, papers are re-scored based on **diversity needs** to ensure balanced representation.
+#### 5. Recency Score (0-1 points)
+- **2020 or later**: +1 point (recent findings)
+- **2015-2019**: +0.5 points (still relatively recent)
+- **Before 2015**: 0 points (older papers still valuable, just not prioritized)
 
-#### Combination Key
-Each paper is assigned a combination key based on:
-```
-supplement | goal | population | study_type | journal
-```
+#### 6. Diversity Bonus (±3 points)
+To prevent the corpus from being overwhelmed by creatine papers, we apply small adjustments:
+- **Under-represented supplements**: +3 to +0.5 points
+  - Rare: tribulus, D-aspartic acid, deer antler, ecdysteroids (+3)
+  - Medium-rare: betaine, taurine, carnitine, ZMA (+2.5-2.0)
+  - Less common: citrulline, nitrate, beta-alanine (+1.0-0.5)
+- **Over-represented supplements**: -1 point
+  - Creatine (most common) gets small penalty to make room for diversity
 
-Example: `creatine|strength|trained-athletes|RCT|J-Int-Soc-Sports-Nutr`
+*This is overridden by dynamic weights when combination-aware scoring is active.*
+
+**Typical Score Range**: 0-20+ points (most papers fall in 5-15 range)
+
+**Quality Threshold**: Papers must score ≥3.0 points to proceed to Phase 2 (filters out extremely low-quality or off-topic papers).
+
+### Phase 2: Combination-Aware Scoring (variable adjustment)
+
+After reliability scoring, papers are re-scored based on **diversity needs** to ensure balanced representation across multiple dimensions simultaneously. This prevents the corpus from being dominated by a few over-studied combinations (e.g., "creatine + strength + trained athletes + RCT").
+
+#### Tracked Combinations
+
+The system analyzes existing papers and new candidates across five combination types:
+
+1. **supplement × goal** (e.g., "creatine_strength", "beta-alanine_endurance")
+2. **supplement × population** (e.g., "creatine_trained-athletes", "nitrate_older-adults")
+3. **goal × population** (e.g., "hypertrophy_untrained", "weight_loss_clinical")
+4. **study_type × goal** (e.g., "meta-analysis_strength", "RCT_weight_loss")
+5. **journal × supplement** (e.g., "sports-med_creatine", "nutrients_beta-alanine")
 
 #### Dynamic Weights Calculation
 
-For each unique combination in the candidate pool:
-1. **Count papers** with that combination
-2. **Calculate frequency**: `count / total_papers`
-3. **Assign weight**: `1.0 / frequency` (underrepresented = higher weight)
-4. **Normalize weights**: Scale to 0.5-2.0 range
+The system samples up to 1,000 existing documents and calculates weights based on representation:
 
-#### Combination Score Formula
+**Target percentage** (adaptive to corpus size):
+- Small corpus (<100 papers): 10% per combination
+- Medium corpus (100-1000): 5% per combination  
+- Large corpus (≥1000): 1% per combination
 
-For each dimension (supplement, goal, population, study type, journal):
-```python
-dimension_score = weight * scaling_factor
-```
+**Weight assignment** based on current representation:
+- **Severely over-represented** (>5× target): **-4.0** penalty
+- **Over-represented** (>3× target): **-2.0** penalty
+- **Well-represented** (>2× target): **-1.0** penalty
+- **Adequately represented** (>1× target): **0.0** neutral
+- **Under-represented** (0.5-1× target): **+1.5** bonus
+- **Severely under-represented** (<0.5× target): **+3.0** bonus
 
-Scaling factors:
-- Supplement: 0.6 (most important for diversity)
-- Goal: 0.5
-- Population: 0.4
-- Study Type: 0.3
-- Journal: 0.2
+*Combinations not yet in the corpus receive maximum bonus (+3.0) for introducing new coverage.*
 
-**Total combination score**: Sum of all dimension scores, capped at ±20 points.
+#### Paper-Level Combination Score
+
+For each paper, the system:
+1. Identifies all combinations the paper belongs to (typically 5-10 combinations)
+2. Sums the weights across all matching combinations
+3. Applies **quality safeguards**:
+   - Papers with reliability <5.0 can only get **max +30% of base score** as combination bonus
+   - This prevents weak papers from being selected purely for diversity
+4. Returns the adjusted combination score (typically -10 to +15 range)
+
+**Example**:
+- Paper: Creatine RCT in trained athletes for strength
+- Combinations:
+  - creatine_strength: -2.0 (over-represented)
+  - creatine_trained-athletes: -1.0 (well-represented)
+  - strength_trained-athletes: -1.0 (well-represented)
+  - RCT_strength: 0.0 (adequate)
+  - sports-med_creatine: -2.0 (over-represented)
+- **Combination score**: -6.0 (penalized for common combination)
 
 #### Quality Safeguards
 
-1. **Low-quality cap**: Papers with reliability score <50 can only get +5 max combination bonus
-2. **High-quality boost**: Papers with reliability score ≥70 get full ±20 range
-3. **Minimum threshold**: Papers <30 reliability score are excluded entirely
+1. **Low-quality papers**: If reliability <5.0, positive combination bonus capped at 30% of base score
+2. **Example**: Paper with reliability 4.0 and combination score +9.0 → capped at +1.2
+3. **Rationale**: Diversity is important, but not at the expense of quality
 
 ### Final Enhanced Score
 
@@ -130,7 +175,15 @@ Scaling factors:
 Enhanced Score = Reliability Score + Combination Score
 ```
 
-Range: 10-120 points (30-100 from reliability, ±20 from combination)
+**Typical Range**: 0-25 points
+- Reliability: 0-20+ (most papers 5-15)
+- Combination: -10 to +15 (typically -5 to +5)
+
+**Example Scenarios**:
+- **High-quality, common topic**: Reliability 15 + Combination -5 = **10** (solid but not prioritized)
+- **High-quality, novel topic**: Reliability 15 + Combination +8 = **23** (highly prioritized)
+- **Low-quality, novel topic**: Reliability 3 + Combination +8 → capped at 3 + 0.9 = **3.9** (filtered out)
+- **High-quality meta-analysis**: Reliability 18 + Combination 0 = **18** (prioritized for quality alone)
 
 ## Paper Selection Process
 
