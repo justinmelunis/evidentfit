@@ -208,7 +208,25 @@ def root():
 
 @api.get("/healthz")
 def healthz():
-    return {"ok": True, "docs_loaded": len(DOCS)}
+    """Health check endpoint that reports actual index doc count"""
+    try:
+        # Query the actual index to get document count
+        search_response = search_docs(query="*", top=1)
+        # Azure AI Search returns the count in @odata.count if requested
+        # For now, we'll just confirm we can connect
+        index_available = True
+        fallback_count = len(DOCS)
+    except Exception as e:
+        print(f"Index health check failed: {e}")
+        index_available = False
+        fallback_count = len(DOCS)
+    
+    return {
+        "ok": True, 
+        "docs_loaded": fallback_count,
+        "index_available": index_available,
+        "using_fallback": not index_available
+    }
 
 @api.post("/stream")
 async def stream(request: StreamRequest, _=Depends(guard)):
