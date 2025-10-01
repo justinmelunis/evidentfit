@@ -3,10 +3,14 @@ import Link from 'next/link'
 export default function Home() {
   return (
     <main className="max-w-4xl mx-auto p-8">
-      <h1 className="text-4xl font-bold mb-8 text-center">EvidentFit</h1>
-      <p className="text-xl text-gray-600 text-center mb-12">
-        Evidence-based supplement guidance for strength athletes
-      </p>
+      <div className="text-center mb-12">
+        <h1 className="text-5xl font-bold mb-4 text-gray-900">
+          Evidence-Based Supplement Guidance
+        </h1>
+        <p className="text-xl text-gray-600">
+          Powered by 8,000+ peer-reviewed studies from PubMed
+        </p>
+      </div>
       
       <div className="grid md:grid-cols-2 gap-8">
         <Link href="/agent" className="block">
@@ -31,6 +35,11 @@ export default function Home() {
       </div>
       
       <div className="mt-12 text-center">
+        <div className="mb-4">
+          <Link href="/methodology" className="text-blue-600 hover:text-blue-800 font-medium">
+            Learn About Our Methodology →
+          </Link>
+        </div>
         <p className="text-sm text-gray-500">
           Educational only; not medical advice.
         </p>
