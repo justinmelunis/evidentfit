@@ -7,8 +7,8 @@ export default function Home() {
         <h1 className="text-5xl font-bold mb-4 text-gray-900">
           Evidence-Based Supplement Guidance
         </h1>
-        <p className="text-xl text-gray-600">
-          Powered by 8,000+ peer-reviewed studies from PubMed
+        <p className="text-xl text-gray-600 max-w-3xl mx-auto">
+          All relevant PubMed research, distilled into thousands of curated studies—then turned into tailored, evidence-backed supplement plans with doses, citations, and interaction checks.
         </p>
       </div>
       
