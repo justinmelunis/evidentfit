@@ -49,7 +49,7 @@ def creatine_plan_by_form(weight_kg: float, form: str = None, include_loading: b
             "value": form_g_loading,
             "unit": "g",
             "days": 7,
-            "split": "2-3x daily"
+            "split": 3  # 2-3x daily, use middle value
         })
     
     # Maintenance phase
@@ -57,7 +57,7 @@ def creatine_plan_by_form(weight_kg: float, form: str = None, include_loading: b
         "value": form_g_maintenance,
         "unit": "g",
         "days": None,  # ongoing
-        "split": "1x daily"
+        "split": 1  # 1x daily
     })
     
     # Notes

@@ -368,7 +368,7 @@ def build_stack(request: StackRequest):
         # Beta-alanine for endurance
         optional.append({
             "supplement": "beta-alanine",
-            "doses": [{"value": 3.2, "unit": "g", "days": None, "split": "2x daily"}],
+            "doses": [{"value": 3.2, "unit": "g", "days": None, "split": 2}],
             "timing": "Split throughout day",
             "evidence": "B",
             "why": "Buffers muscle acidity, delays fatigue",

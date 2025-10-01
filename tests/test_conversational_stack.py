@@ -50,6 +50,7 @@ def test_conversational_stack():
         response = requests.post(url, json=payload, auth=AUTH, timeout=30)
         
         print(f"Status Code: {response.status_code}")
+        print(f"Response Headers: {dict(response.headers)}")
         print(f"\nResponse:")
         
         if response.status_code == 200:
