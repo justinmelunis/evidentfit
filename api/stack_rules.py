@@ -140,9 +140,12 @@ def protein_gap_plan(
         }],
         "timing": "Post-workout or between meals",
         "evidence": "A",
-        "why": f"Close protein gap to reach {target_per_kg} g/kg/day target",
+        "why": f"Supplement {gap_g_rounded}g daily to bridge your protein gap (this is supplemental protein, not total)",
         "notes": [
-            "Prefer food first; supplement only to close the gap",
+            f"Your optimal total protein: {target_per_kg} g/kg/day ({int(target_g)}g total for your weight)",
+            f"Current estimated intake: {int(current_g)}g/day",
+            f"Supplement gap: {gap_g_rounded}g/day ({servings} x 25g servings)",
+            "Food sources preferred; supplement only to close the gap",
             "Kidney disease → consult clinician"
         ]
     }

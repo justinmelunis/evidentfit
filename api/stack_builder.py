@@ -96,46 +96,70 @@ MINOR_BLOCKED_SUPPLEMENTS = ["caffeine", "stimulants", "experimental", "tribulus
 # Base evidence grades by goal (before profile adjustments)
 BASE_GRADES = {
     "strength": {
+        # Grade A: Strong evidence for strength
         "creatine": "A", "protein": "A", "caffeine": "A", 
-        "beta-alanine": "B", "hmb": "B", "leucine": "B",
-        "citrulline": "C", "nitrate": "C", "carnitine": "C",
-        "omega-3": "B", "vitamin-d": "B", "magnesium": "C",
-        "bcaa": "D", "glutamine": "D", "zma": "C", "taurine": "C"
+        # Grade B: Moderate evidence
+        "beta-alanine": "B", "hmb": "B", "leucine": "B", "omega-3": "B", "vitamin-d": "B",
+        # Grade C: Some evidence  
+        "citrulline": "C", "nitrate": "C", "carnitine": "C", "magnesium": "C", "zma": "C", "taurine": "C", "betaine": "C",
+        # Grade D: Limited/insufficient evidence
+        "bcaa": "D", "glutamine": "D", "tribulus": "D", "d-aspartic-acid": "D", "tongkat-ali": "D", 
+        "ashwagandha": "C", "rhodiola": "C", "curcumin": "C", "collagen": "D"
     },
     "hypertrophy": {
+        # Grade A: Strong evidence for muscle growth
         "creatine": "A", "protein": "A", "leucine": "A",
-        "hmb": "B", "beta-alanine": "B", "caffeine": "B",
-        "citrulline": "B", "omega-3": "B", "vitamin-d": "B",
-        "carnitine": "C", "nitrate": "C", "magnesium": "C",
-        "bcaa": "D", "glutamine": "D", "zma": "C", "taurine": "C"
+        # Grade B: Moderate evidence
+        "hmb": "B", "beta-alanine": "B", "caffeine": "B", "citrulline": "B", "omega-3": "B", "vitamin-d": "B",
+        # Grade C: Some evidence
+        "carnitine": "C", "nitrate": "C", "magnesium": "C", "betaine": "C", "taurine": "C", "zma": "C",
+        # Grade D: Limited evidence
+        "bcaa": "D", "glutamine": "D", "tribulus": "D", "d-aspartic-acid": "D", "tongkat-ali": "C",
+        "ashwagandha": "C", "rhodiola": "C", "curcumin": "C", "collagen": "C"
     },
     "endurance": {
+        # Grade A: Strong evidence for endurance
         "caffeine": "A", "beta-alanine": "A", "nitrate": "A",
-        "citrulline": "B", "carnitine": "B", "protein": "B",
-        "creatine": "C", "omega-3": "B", "vitamin-d": "B",
-        "magnesium": "B", "taurine": "C", "bcaa": "C",
-        "hmb": "D", "glutamine": "D", "zma": "C", "leucine": "C"
+        # Grade B: Moderate evidence
+        "citrulline": "B", "carnitine": "B", "protein": "B", "omega-3": "B", "vitamin-d": "B", "magnesium": "B",
+        # Grade C: Some evidence
+        "creatine": "C", "taurine": "C", "bcaa": "C", "zma": "C", "leucine": "C", "betaine": "C",
+        # Grade D: Limited evidence
+        "hmb": "D", "glutamine": "D", "tribulus": "D", "d-aspartic-acid": "D",
+        "ashwagandha": "B", "rhodiola": "B", "curcumin": "C", "collagen": "D", "tongkat-ali": "D"
     },
     "weight_loss": {
-        "protein": "A", "caffeine": "A", "carnitine": "B",
-        "omega-3": "B", "vitamin-d": "B", "magnesium": "C",
-        "creatine": "C", "beta-alanine": "C", "citrulline": "C",
-        "hmb": "C", "leucine": "B", "taurine": "C",
-        "bcaa": "D", "glutamine": "D", "zma": "C", "nitrate": "D"
+        # Grade A: Strong evidence for weight loss
+        "protein": "A", "caffeine": "A",
+        # Grade B: Moderate evidence  
+        "carnitine": "B", "omega-3": "B", "vitamin-d": "B", "leucine": "B",
+        # Grade C: Some evidence
+        "magnesium": "C", "creatine": "C", "beta-alanine": "C", "citrulline": "C", "hmb": "C", "taurine": "C", "zma": "C",
+        # Grade D: Limited evidence
+        "bcaa": "D", "glutamine": "D", "nitrate": "D", "tribulus": "D", "d-aspartic-acid": "D",
+        "ashwagandha": "C", "rhodiola": "C", "curcumin": "C", "collagen": "D", "tongkat-ali": "D", "betaine": "C"
     },
     "performance": {
+        # Grade A: Strong evidence for athletic performance
         "caffeine": "A", "creatine": "A", "beta-alanine": "A",
-        "nitrate": "B", "citrulline": "B", "protein": "B",
-        "carnitine": "B", "omega-3": "B", "vitamin-d": "B",
-        "hmb": "C", "leucine": "B", "magnesium": "C",
-        "bcaa": "C", "glutamine": "D", "zma": "C", "taurine": "C"
+        # Grade B: Moderate evidence
+        "nitrate": "B", "citrulline": "B", "protein": "B", "carnitine": "B", "omega-3": "B", "vitamin-d": "B", "leucine": "B",
+        # Grade C: Some evidence
+        "hmb": "C", "magnesium": "C", "bcaa": "C", "taurine": "C", "zma": "C", "betaine": "C",
+        # Grade D: Limited evidence  
+        "glutamine": "D", "tribulus": "D", "d-aspartic-acid": "D", "tongkat-ali": "D",
+        "ashwagandha": "B", "rhodiola": "B", "curcumin": "C", "collagen": "D"
     },
     "general": {
+        # Grade A: Strong evidence for general health
         "protein": "A", "omega-3": "A", "vitamin-d": "A",
-        "magnesium": "B", "creatine": "B", "caffeine": "C",
-        "beta-alanine": "C", "citrulline": "C", "carnitine": "C",
-        "hmb": "C", "leucine": "C", "taurine": "C",
-        "bcaa": "D", "glutamine": "D", "zma": "C", "nitrate": "D"
+        # Grade B: Moderate evidence
+        "magnesium": "B", "creatine": "B", "ashwagandha": "B", "curcumin": "B",
+        # Grade C: Some evidence
+        "caffeine": "C", "beta-alanine": "C", "citrulline": "C", "carnitine": "C", "hmb": "C", 
+        "leucine": "C", "taurine": "C", "rhodiola": "C", "zma": "C", "betaine": "C", "collagen": "C",
+        # Grade D: Limited evidence for general health
+        "bcaa": "D", "glutamine": "D", "nitrate": "D", "tribulus": "D", "d-aspartic-acid": "D", "tongkat-ali": "D"
     }
 }
 
@@ -1099,10 +1123,10 @@ def build_conversational_stack_with_banking(
     # Apply caffeine sensitivity and pregnancy rules
     final_items = apply_profile_rules(adjusted_items, profile)
     
-    # Categorize into tiers
-    recommended = [item for item in final_items if item.tier == "core" and item.included]
-    optional = [item for item in final_items if item.tier == "optional" and item.included]
-    not_recommended = [item for item in final_items if not item.included or item.tier == "not_recommended"]
+    # Categorize into three tiers
+    recommended = [item for item in final_items if item.tier == "recommended" and item.included]
+    optional = [item for item in final_items if item.tier == "optional" and item.included]  
+    not_recommended = [item for item in final_items if item.tier == "not_recommended" or not item.included]
     
     # Generate safety warnings
     safety_warnings = generate_safety_warnings(profile, final_items)
@@ -1125,17 +1149,17 @@ def generate_base_stack_items(profile: UserProfile, docs: List[dict]) -> List[St
     # Get LLM suggestions for personalization
     llm_suggestions = _get_llm_supplement_suggestions(profile, "")
     
-    # Combine base supplements with LLM suggestions
-    supplements_to_evaluate = set(base_grades.keys()) | set(llm_suggestions) | set(COMMON_SUPPLEMENTS[:15])
+    # Evaluate ALL common supplements for comprehensive three-tier system
+    supplements_to_evaluate = set(COMMON_SUPPLEMENTS) | set(llm_suggestions)
     
     for supplement in supplements_to_evaluate:
-        # Get base grade for this goal
-        base_grade = base_grades.get(supplement, "D")
+        # Get base grade for this goal (calculate dynamically from papers if not in base grades)
+        if supplement in base_grades:
+            base_grade = base_grades[supplement]
+        else:
+            # Calculate evidence grade dynamically from retrieved papers
+            base_grade = calculate_evidence_grade_from_papers(supplement, docs, goal)
         
-        # Skip very low evidence unless specifically requested
-        if base_grade == "D" and supplement not in llm_suggestions:
-            continue
-            
         # Build supplement item based on type
         item = None
         if supplement == "creatine":
@@ -1151,18 +1175,29 @@ def generate_base_stack_items(profile: UserProfile, docs: List[dict]) -> List[St
             item = build_generic_supplement_item(supplement, profile, docs, base_grade)
         
         if item:
-            # Override grade with base grade (banking system)
+            # Override grade with calculated grade
             item.evidence_grade = base_grade
             
-            # Set tier based on grade and goal relevance
-            if base_grade in ["A", "B"] and supplement in base_grades:
-                item.tier = "core"
-            elif base_grade in ["B", "C"]:
-                item.tier = "optional"  
-            else:
+            # Determine inclusion and tier based on evidence grade and goal fit
+            if base_grade == "A":
+                item.tier = "recommended"
+                item.included = True
+            elif base_grade == "B":
+                # B-grade can be recommended or optional based on goal relevance
+                if supplement in base_grades:
+                    item.tier = "recommended"
+                    item.included = True
+                else:
+                    item.tier = "optional"
+                    item.included = True
+            elif base_grade == "C":
+                item.tier = "optional"
+                item.included = True
+                item.reason = "Moderate evidence - may provide benefits"
+            else:  # Grade D
                 item.tier = "not_recommended"
                 item.included = False
-                item.reason = f"Limited evidence for {goal} goals (Grade {base_grade})"
+                item.reason = f"Insufficient evidence for {goal} goals (Grade {base_grade})"
             
             items.append(item)
     
