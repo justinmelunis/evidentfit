@@ -34,7 +34,7 @@ The U.S. National Library of Medicine's database of 35+ million peer-reviewed bi
 - ❌ Environmental/pollution research (e.g., nitrogen dioxide air quality studies)
 - ❌ Studies with severe methodological flaws
 
-**Current Database**: ~8,000 carefully curated research papers, updated monthly.
+**Current Database**: ~8,000 carefully curated research papers, selected from 50,000+ available studies, updated monthly.
 
 ### How We Evaluate Quality
 
@@ -73,7 +73,8 @@ To prevent our database from being dominated by a few over-studied supplements, 
 
   PubMed Query
        ↓
-  ~12,000 Candidate Papers
+  50,000+ Candidate Papers Evaluated
+  (Iterative processing over multiple cycles)
        ↓
 ┌─────────────────────┐
 │ Quality Scoring     │ → Study design (meta > RCT > crossover)
@@ -91,10 +92,10 @@ To prevent our database from being dominated by a few over-studied supplements, 
 └─────────────────────┘
        ↓
   Final Selection: ~8,000 Papers
-  Balanced, high-quality, comprehensive
+  Highest quality by combined scoring
 ```
 
-**Result**: Our recommendations reflect comprehensive evidence across the supplement landscape, not just the most-studied topics.
+**Result**: We evaluate 50,000+ supplement studies and select only the top 8,000 papers. Our recommendations reflect comprehensive evidence across the supplement landscape, not just the most-studied topics.
 
 ---
 
