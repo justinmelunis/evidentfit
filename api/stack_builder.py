@@ -45,7 +45,7 @@ def _get_llm_supplement_suggestions(profile: UserProfile, context: Optional[str]
         List of supplement names suggested by LLM
     """
     try:
-        from clients.foundry_chat import foundry_chat
+        from clients.foundry_chat import chat as foundry_chat
     except ImportError:
         print("Warning: foundry_chat not available for LLM suggestions")
         return []
