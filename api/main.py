@@ -538,7 +538,11 @@ Keep response under 400 tokens. Be helpful and actionable."""
 
     try:
         # Use existing foundry_chat function
-        response = foundry_chat(prompt, model=FOUNDATION_CHAT_MODEL, max_tokens=400)
+        response = foundry_chat(
+            messages=[{"role": "user", "content": prompt}],
+            model=FOUNDATION_CHAT_MODEL,
+            max_tokens=400
+        )
         return response
     except Exception as e:
         print(f"LLM composition failed: {e}")

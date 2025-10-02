@@ -84,7 +84,7 @@ Example: creatine, protein, hmb, vitamin-d"""
     
     try:
         response = foundry_chat(
-            prompt=prompt,
+            messages=[{"role": "user", "content": prompt}],
             model=os.getenv("FOUNDATION_CHAT_MODEL", "gpt-4o-mini"),
             max_tokens=150,
             temperature=0.3  # Lower temperature for more consistent suggestions
