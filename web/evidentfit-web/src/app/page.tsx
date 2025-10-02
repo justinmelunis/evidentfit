@@ -23,7 +23,7 @@ export default function Home() {
           </div>
         </Link>
         
-        <Link href="/stack" className="block">
+        <Link href="/stack-chat" className="block">
           <div className="border rounded-lg p-6 hover:shadow-lg transition-shadow">
             <h2 className="text-2xl font-semibold mb-4">🎯 Stack Planner</h2>
             <p className="text-gray-600 mb-4">
