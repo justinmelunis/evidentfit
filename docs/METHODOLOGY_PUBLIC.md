@@ -168,7 +168,7 @@ Every claim in the response links to specific studies. You get:
 
 ## Part 3: Personalized Stack Generation
 
-The Stack Planner builds a complete, personalized supplement protocol tailored to your unique profile.
+The Stack Planner builds a complete, personalized supplement protocol tailored to your unique profile using our **three-level evidence banking system**.
 
 ### How Stack Generation Works
 
@@ -183,39 +183,47 @@ The Stack Planner builds a complete, personalized supplement protocol tailored t
   Context: "I'm vegan and train 5x/week. Interested in creatine."
        ↓
 ┌──────────────────────────────────────────────────────────────────┐
-│  PHASE 1: Banking Check (Performance Optimization)              │
+│  PHASE 1: Three-Level Evidence Banking                          │
+│                                                                  │
+│  Level 1: Goal × Supplement Evidence (Always cached)           │
+│  ┌─────────────────┐    ┌─────────────────┐                    │
+│  │ "creatine +     │ ──→│ Grade A         │                    │
+│  │  hypertrophy"   │    │ (67 studies)    │                    │
+│  └─────────────────┘    └─────────────────┘                    │
+│                                                                  │
+│  Level 2: Profile-Specific Reasoning (Banking Check)           │
 │  ┌─────────────────┐    ┌─────────────────┐                    │
 │  │ Generate Key    │ ──→│ Check Cache     │                    │
+│  │ "hypertrophy:   │    │ 360 pre-computed│                    │
+│  │  medium:female: │    │ combinations    │                    │
+│  │  young"         │    │                 │                    │
 │  └─────────────────┘    └─────────────────┘                    │
-│  Key: "hypertrophy:medium:female:young"                        │
-│  Cache: 360 pre-computed profile combinations                   │
-│  Result: Base recommendations + evidence grades                 │
 └──────────────────────────────────────────────────────────────────┘
        ↓ (if cached)         ↓ (if not cached)
        │               ┌──────────────────────────────────────────┐
-       │               │  AI Profile Analysis (Hybrid)           │
+       │               │  LLM Profile Analysis (Generate)         │
        │               │  ┌────────────┐    ┌─────────────┐      │
-       │               │  │  AI Model  │ ──→│ Suggestions │      │
+       │               │  │  AI Model  │ ──→│ Personalized│      │
+       │               │  │  + Papers  │    │ Reasoning   │      │
        │               │  └────────────┘    └─────────────┘      │
-       │               │  Analyzes demographics + context:       │
-       │               │  → creatine (asked about)               │
-       │               │  → protein (vegan, muscle growth)       │
-       │               │  → b12 (vegan)                          │
-       │               │  → iron (female athlete)                │
-       │               │  → beta-alanine (training 5x/week)      │
-       │               └──────────────────────────────────────────┘
-       │                        ↓
-       │               ┌──────────────────────────────────────────┐
-       │               │  Evidence Validation & Banking           │
-       │               │  ✅ creatine → Grade A (cached/computed) │
-       │               │  ✅ protein → Grade A                    │
-       │               │  ✅ b12 → Grade A (vegan-specific)       │
-       │               │  ✅ iron → Grade B (female athlete)      │
-       │               │  ✅ beta-alanine → Grade B               │
-       │               │  💾 Save to cache for future users      │
+       │               │  "For your profile (28yo female),       │
+       │               │  creatine enhances training capacity    │
+       │               │  because studies in female athletes..." │
+       │               │  💾 Save to Level 2 cache               │
        │               └──────────────────────────────────────────┘
        │                        ↓
        └────────────────────────┘
+                ↓
+┌──────────────────────────────────────────────────────────────────┐
+│  Level 3: Real-Time Context Analysis (Never cached)             │
+│  ┌─────────────────┐    ┌─────────────────┐                    │
+│  │ Parse Chat:     │ ──→│ Apply Rules:    │                    │
+│  │ "I have anxiety"│    │ Block caffeine  │                    │
+│  │ "I'm vegan"     │    │ Add B12, Iron   │                    │
+│  │ "Interested in  │    │ Include creatine│                    │
+│  │  creatine"      │    │ with details    │                    │
+│  └─────────────────┘    └─────────────────┘                    │
+└──────────────────────────────────────────────────────────────────┘
                 ↓
 ┌──────────────────────────────────────────────────────────────────┐
 │  PHASE 2: Real-Time Personalization                             │
@@ -246,38 +254,57 @@ The Stack Planner builds a complete, personalized supplement protocol tailored t
 └──────────────────────────────────────────────────────────────────┘
        ↓
 ┌──────────────────────────────────────────────────────────────────┐
-│  PHASE 5: Presentation with Evidence                            │
+│  PHASE 5: Interactive UI Presentation                           │
 │                                                                  │
-│  ✅ RECOMMENDED (Core)          💡 OPTIONAL (Maybe)            │
-│  • Creatine (Grade A)            • Beta-alanine (Grade B)      │
-│    Why: Proven strength gains      Why: Training volume boost  │
-│    Dose: 5g/day                    Dose: 3.2g 2x daily        │
-│    Research: [3 citations]         Research: [2 citations]     │
-│  • Protein (Grade A)                                            │
-│  • B12 (Grade A - vegan)          🚫 NOT RECOMMENDED            │
-│  • Iron (Grade B - female)        • Caffeine                    │
-│                                     Reason: Not requested       │
+│  🎯 Your Custom Stack (3 supplements)                          │
+│  [Creatine A] [Protein A] [B12 A] ← Interactive summary        │
+│                                                                  │
+│  Toggle Navigation:                                             │
+│  [✅ Recommended (3)] [💡 Optional (2)] [🚫 Not Recommended (1)]│
+│                                                                  │
+│  Active Section: ✅ RECOMMENDED                                 │
+│  ☑ Creatine (Grade A)     📚 Research-backed reasoning         │
+│    Why: For your profile (28yo female), creatine enhances      │
+│    training capacity because studies show...                   │
+│    Dose: 5g/day • Post-workout                                 │
+│    Research: [3 PubMed citations with direct links]            │
+│                                                                  │
+│  ☑ Protein (Grade A)      📊 Gap analysis: 25g supplemental    │
+│  ☑ B12 (Grade A)          🌱 Vegan-specific recommendation     │
+│                                                                  │
+│  💡 Checkbox system allows custom stack building               │
+│  🔄 Toggle between sections for full transparency              │
 └──────────────────────────────────────────────────────────────────┘
        ↓
-  Your Personalized Stack
+  Your Evidence-Based, Personalized Stack
 ```
 
 ### Detailed Phase Breakdown
 
-#### Phase 1: Banking Check (Performance Optimization)
+#### Phase 1: Three-Level Evidence Banking
 
-**Why Banking?**
-To provide fast, consistent recommendations, we pre-compute base supplement stacks for common profile combinations. This ensures:
-- ⚡ **Speed**: Instant recommendations instead of 10-15 second processing
-- 🎯 **Consistency**: Same profile = same base recommendations
-- 📊 **Quality**: More time to validate evidence grades and dosing
+**Why Three Levels?**
+Our banking system operates at three distinct levels to balance performance, personalization, and accuracy:
 
-**Banking Buckets:**
-Your profile maps to one of 360 pre-computed combinations:
-- **6 Goals**: Strength, muscle growth, endurance, weight loss, performance, general health
-- **5 Weight Bins**: XS (<60kg), Small (60-70kg), Medium (70-85kg), Large (85-100kg), XL (100kg+)
-- **3 Sex Categories**: Male, female, other/unspecified  
-- **4 Age Bins**: Minor (13-17), young (18-29), adult (30-49), mature (50+)
+**Level 1: Goal × Supplement Evidence (216 combinations)**
+- Pre-computed evidence grades for every supplement × goal combination
+- Based on dynamic analysis of research papers for goal-specific outcomes
+- Updated monthly when new research is ingested
+- Example: "Creatine + strength = Grade A (67 studies), Creatine + endurance = Grade C (12 studies)"
+
+**Level 2: Profile-Specific Reasoning (360 combinations)**
+- Personalized "why" explanations based on demographics
+- Generated by LLM analysis of research papers tailored to user profile
+- Your profile maps to one of 360 pre-computed combinations:
+  - **6 Goals**: Strength, muscle growth, endurance, weight loss, performance, general health
+  - **5 Weight Bins**: XS (<60kg), Small (60-70kg), Medium (70-85kg), Large (85-100kg), XL (100kg+)
+  - **3 Sex Categories**: Male, female, other/unspecified  
+  - **4 Age Bins**: Minor (13-17), young (18-29), adult (30-49), mature (50+)
+
+**Level 3: Real-Time Context Analysis (Never cached)**
+- Dynamic modifications based on conversation context
+- Text parsing for conditions, medications, specific interests
+- Applied in real-time for maximum personalization
 
 **Banking Key Example:**
 - 28-year-old, 176 lb (80kg) female, muscle growth goal
@@ -415,7 +442,30 @@ Your final stack includes:
 
 **The Challenge**: Providing both fast responses and deeply personalized recommendations.
 
-**Our Solution**: A hybrid banking system that pre-computes base recommendations while allowing real-time personalization.
+**Our Solution**: A **three-level evidence banking system** that pre-computes evidence at different granularities while allowing real-time personalization.
+
+### Three-Level Architecture
+
+#### **Level 1: Goal × Supplement Evidence Banking**
+- **What**: Evidence grades (A/B/C/D) for each supplement × goal combination
+- **Cached**: 216 combinations (6 goals × 36 supplements)
+- **Source**: Dynamic analysis of research papers for goal-specific outcomes
+- **Updated**: Monthly when new research is ingested
+- **Example**: "Creatine for strength = Grade A, Creatine for endurance = Grade C"
+
+#### **Level 2: Profile-Specific Reasoning Banking**
+- **What**: Personalized "why" explanations based on demographics and research
+- **Cached**: 360 profile combinations (goal × weight bin × sex × age bin)
+- **Source**: LLM analysis of retrieved papers tailored to user demographics
+- **Updated**: When evidence base changes or new profiles are encountered
+- **Example**: "For your profile (28yo male, strength), creatine enhances power output because studies in male athletes show 5g/day increases 1RM by 8-15%"
+
+#### **Level 3: Real-Time Adjustments**
+- **What**: Dynamic modifications based on conversation context
+- **Cached**: Never (always real-time)
+- **Source**: Text parsing + safety guardrails + user preferences
+- **Applied**: Conditions, medications, specific supplement interests
+- **Example**: "Caffeine excluded due to anxiety condition mentioned in chat"
 
 ### Technical Implementation
 
@@ -542,6 +592,58 @@ Our methodology evolves as:
 - We learn from real-world use
 
 We're committed to staying current with the science and transparent about our methods.
+
+---
+
+## Interactive Features & User Experience
+
+### Stack Planner Interface
+
+Our Stack Planner provides an interactive, user-friendly interface for exploring and customizing supplement recommendations:
+
+#### **Toggle Navigation System**
+- **Three clear sections**: Recommended, Optional, and Not Recommended supplements
+- **One section at a time**: Reduces cognitive load and improves focus
+- **Live counts**: See how many supplements are in each category
+- **Easy switching**: Toggle between sections to explore all options
+
+#### **Interactive Checkbox System**
+- **Custom stack building**: Check/uncheck any supplement from any tier
+- **Smart initialization**: Recommended supplements are pre-selected
+- **Live summary**: See your custom stack at the top with evidence grades
+- **Quick removal**: Remove supplements directly from the summary
+- **Full transparency**: Access all details (dosing, research, reasoning) for every supplement
+
+#### **Evidence-Based Details**
+- **Research-backed reasoning**: Every "why" explanation is generated from actual research papers
+- **Evidence grades**: A/B/C/D grades based on study quality and consistency
+- **Supporting citations**: Direct links to PubMed studies for verification
+- **Personalized explanations**: Reasoning tailored to your demographics and goals
+
+### Supplement Database
+
+For users who want to research independently, we provide a comprehensive supplement database:
+
+#### **Individual Supplement Pages** (`/supplements`)
+- **Mechanism of action**: How each supplement works in the body
+- **Evidence by goal**: See how research applies to different fitness goals
+- **Dosing and timing**: Evidence-based recommendations
+- **Safety considerations**: Contraindications and precautions
+- **Goal-specific filtering**: View evidence grades for your specific goals
+
+#### **Search and Discovery**
+- **Search functionality**: Find supplements by name or description
+- **Goal filtering**: See how evidence changes based on your objectives
+- **Paper counts**: Transparent about the research volume behind each grade
+- **Direct citations**: Every claim links to specific PubMed studies
+
+### Mobile-First Design
+
+All features are optimized for mobile devices with:
+- **Responsive layouts**: Clean display on phones, tablets, and desktops
+- **Touch-friendly controls**: Easy checkbox and button interactions
+- **Readable typography**: Clear text at all screen sizes
+- **Fast loading**: Optimized performance on slower connections
 
 ---
 
