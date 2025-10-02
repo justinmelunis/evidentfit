@@ -28,6 +28,18 @@ from dotenv import load_dotenv
 load_dotenv('azure-openai.env')
 load_dotenv()
 
+# Initialize banking system on startup
+try:
+    from banking_loader import initialize_banking_loader
+    banking_available = initialize_banking_loader()
+    if banking_available:
+        print("✅ Banking system initialized successfully")
+    else:
+        print("⚠️ Banking system not available - using fallback calculations")
+except ImportError:
+    print("⚠️ Banking loader not available - using fallback calculations")
+    banking_available = False
+
 # Removed Azure OpenAI client - using direct HTTP calls to AI Foundry
 
 # ---- Pydantic models ----
@@ -486,6 +498,61 @@ def get_creatine_forms():
         return {"error": "Not available"}
     
     return get_creatine_form_comparison()
+
+@api.get("/supplements/evidence")
+def get_supplement_evidence():
+    """Get Level 1 banking evidence data for all supplements and goals"""
+    try:
+        from banking_loader import get_banking_status
+        from stack_builder import COMMON_SUPPLEMENTS, BANKING_BUCKETS
+        
+        # Check if banking is available
+        banking_status = get_banking_status()
+        if not banking_status.get("loaded", False):
+            # Return fallback data if banking not available
+            return {
+                "evidence_data": {},
+                "goals": ["strength", "hypertrophy", "endurance", "weight_loss", "performance", "general"],
+                "supplements": ["creatine", "caffeine", "protein", "beta-alanine", "omega-3", "vitamin-d"],
+                "banking_status": {"loaded": False, "message": "Banking system not available"}
+            }
+        
+        # Get evidence for all supplement × goal combinations
+        evidence_data = {}
+        goals = BANKING_BUCKETS['goal']
+        
+        for supplement in COMMON_SUPPLEMENTS:
+            evidence_data[supplement] = {}
+            for goal in goals:
+                try:
+                    from banking_loader import get_cached_evidence_grade
+                    grade = get_cached_evidence_grade(supplement, goal)
+                    evidence_data[supplement][goal] = {
+                        "grade": grade or "D",
+                        "available": grade is not None
+                    }
+                except Exception as e:
+                    evidence_data[supplement][goal] = {
+                        "grade": "D",
+                        "available": False,
+                        "error": str(e)
+                    }
+        
+        return {
+            "evidence_data": evidence_data,
+            "goals": goals,
+            "supplements": COMMON_SUPPLEMENTS,
+            "banking_status": banking_status
+        }
+        
+    except Exception as e:
+        print(f"Supplement evidence failed: {e}")
+        return {
+            "evidence_data": {},
+            "goals": ["strength", "hypertrophy", "endurance", "weight_loss", "performance", "general"],
+            "supplements": ["creatine", "caffeine", "protein", "beta-alanine", "omega-3", "vitamin-d"],
+            "banking_status": {"loaded": False, "error": str(e)}
+        }
 
 def _compose_stack_explanation(stack_plan: StackPlan, user_message: str, docs: List[dict]) -> str:
     """

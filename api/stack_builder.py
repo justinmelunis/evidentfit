@@ -93,72 +93,105 @@ COMMON_SUPPLEMENTS = [
 PREGNANCY_SAFE_SUPPLEMENTS = ["protein", "prenatal-vitamin", "omega-3", "vitamin-d", "folate"]
 MINOR_BLOCKED_SUPPLEMENTS = ["caffeine", "stimulants", "experimental", "tribulus", "d-aspartic-acid"]
 
-# Base evidence grades by goal (before profile adjustments)
-BASE_GRADES = {
+# ============================================================================
+# Level 1 Evidence Banking: Goal × Supplement Evidence Grades
+# ============================================================================
+
+def get_goal_evidence_grade(supplement: str, goal: str, docs: List[dict]) -> str:
+    """
+    Get evidence grade for supplement × goal combination.
+    Uses Level 1 banking cache when available, calculates from papers as fallback.
+    
+    Args:
+        supplement: Supplement name
+        goal: User goal (strength, hypertrophy, etc.)
+        docs: Retrieved research papers
+        
+    Returns:
+        Evidence grade (A/B/C/D) based on research for this goal
+    """
+    
+    # Try to get from Level 1 bank first
+    try:
+        from banking_loader import get_cached_evidence_grade
+        cached_grade = get_cached_evidence_grade(supplement, goal)
+        if cached_grade:
+            return cached_grade
+    except ImportError:
+        pass
+    
+    # Fallback: Calculate dynamically from papers
+    
+    # Filter papers relevant to this supplement and goal
+    relevant_papers = []
+    for doc in docs:
+        doc_supplements = (doc.get("supplements") or "").lower().split(",")
+        if supplement.lower() in [s.strip() for s in doc_supplements]:
+            # Check if paper is relevant to the goal
+            primary_goal = (doc.get("primary_goal") or "").lower()
+            outcomes = (doc.get("outcomes") or "").lower()
+            
+            goal_keywords = {
+                "strength": ["strength", "1rm", "power", "force"],
+                "hypertrophy": ["hypertrophy", "muscle mass", "lean mass", "muscle growth"],
+                "endurance": ["endurance", "vo2", "aerobic", "cardio", "fatigue"],
+                "weight_loss": ["weight loss", "fat loss", "body composition", "metabolism"],
+                "performance": ["performance", "athletic", "exercise", "training"],
+                "general": ["health", "wellness", "general", "overall"]
+            }
+            
+            keywords = goal_keywords.get(goal, [])
+            if any(keyword in primary_goal or keyword in outcomes for keyword in keywords):
+                relevant_papers.append(doc)
+    
+    if not relevant_papers:
+        return "D"  # No evidence for this goal
+    
+    # Calculate evidence grade based on paper quality and quantity
+    return calculate_evidence_grade_from_papers(supplement, relevant_papers, goal)
+
+# Fallback static grades (used when papers not available)
+FALLBACK_BASE_GRADES = {
     "strength": {
-        # Grade A: Strong evidence for strength
         "creatine": "A", "protein": "A", "caffeine": "A", 
-        # Grade B: Moderate evidence
         "beta-alanine": "B", "hmb": "B", "leucine": "B", "omega-3": "B", "vitamin-d": "B",
-        # Grade C: Some evidence  
         "citrulline": "C", "nitrate": "C", "carnitine": "C", "magnesium": "C", "zma": "C", "taurine": "C", "betaine": "C",
-        # Grade D: Limited/insufficient evidence
         "bcaa": "D", "glutamine": "D", "tribulus": "D", "d-aspartic-acid": "D", "tongkat-ali": "D", 
         "ashwagandha": "C", "rhodiola": "C", "curcumin": "C", "collagen": "D"
     },
     "hypertrophy": {
-        # Grade A: Strong evidence for muscle growth
         "creatine": "A", "protein": "A", "leucine": "A",
-        # Grade B: Moderate evidence
         "hmb": "B", "beta-alanine": "B", "caffeine": "B", "citrulline": "B", "omega-3": "B", "vitamin-d": "B",
-        # Grade C: Some evidence
         "carnitine": "C", "nitrate": "C", "magnesium": "C", "betaine": "C", "taurine": "C", "zma": "C",
-        # Grade D: Limited evidence
         "bcaa": "D", "glutamine": "D", "tribulus": "D", "d-aspartic-acid": "D", "tongkat-ali": "C",
         "ashwagandha": "C", "rhodiola": "C", "curcumin": "C", "collagen": "C"
     },
     "endurance": {
-        # Grade A: Strong evidence for endurance
         "caffeine": "A", "beta-alanine": "A", "nitrate": "A",
-        # Grade B: Moderate evidence
         "citrulline": "B", "carnitine": "B", "protein": "B", "omega-3": "B", "vitamin-d": "B", "magnesium": "B",
-        # Grade C: Some evidence
         "creatine": "C", "taurine": "C", "bcaa": "C", "zma": "C", "leucine": "C", "betaine": "C",
-        # Grade D: Limited evidence
         "hmb": "D", "glutamine": "D", "tribulus": "D", "d-aspartic-acid": "D",
         "ashwagandha": "B", "rhodiola": "B", "curcumin": "C", "collagen": "D", "tongkat-ali": "D"
     },
     "weight_loss": {
-        # Grade A: Strong evidence for weight loss
         "protein": "A", "caffeine": "A",
-        # Grade B: Moderate evidence  
         "carnitine": "B", "omega-3": "B", "vitamin-d": "B", "leucine": "B",
-        # Grade C: Some evidence
         "magnesium": "C", "creatine": "C", "beta-alanine": "C", "citrulline": "C", "hmb": "C", "taurine": "C", "zma": "C",
-        # Grade D: Limited evidence
         "bcaa": "D", "glutamine": "D", "nitrate": "D", "tribulus": "D", "d-aspartic-acid": "D",
         "ashwagandha": "C", "rhodiola": "C", "curcumin": "C", "collagen": "D", "tongkat-ali": "D", "betaine": "C"
     },
     "performance": {
-        # Grade A: Strong evidence for athletic performance
         "caffeine": "A", "creatine": "A", "beta-alanine": "A",
-        # Grade B: Moderate evidence
         "nitrate": "B", "citrulline": "B", "protein": "B", "carnitine": "B", "omega-3": "B", "vitamin-d": "B", "leucine": "B",
-        # Grade C: Some evidence
         "hmb": "C", "magnesium": "C", "bcaa": "C", "taurine": "C", "zma": "C", "betaine": "C",
-        # Grade D: Limited evidence  
         "glutamine": "D", "tribulus": "D", "d-aspartic-acid": "D", "tongkat-ali": "D",
         "ashwagandha": "B", "rhodiola": "B", "curcumin": "C", "collagen": "D"
     },
     "general": {
-        # Grade A: Strong evidence for general health
         "protein": "A", "omega-3": "A", "vitamin-d": "A",
-        # Grade B: Moderate evidence
         "magnesium": "B", "creatine": "B", "ashwagandha": "B", "curcumin": "B",
-        # Grade C: Some evidence
         "caffeine": "C", "beta-alanine": "C", "citrulline": "C", "carnitine": "C", "hmb": "C", 
         "leucine": "C", "taurine": "C", "rhodiola": "C", "zma": "C", "betaine": "C", "collagen": "C",
-        # Grade D: Limited evidence for general health
         "bcaa": "D", "glutamine": "D", "nitrate": "D", "tribulus": "D", "d-aspartic-acid": "D", "tongkat-ali": "D"
     }
 }
@@ -271,6 +304,124 @@ def extract_medications_from_text(text: str) -> List[str]:
             medications.append(med_class)
     
     return medications
+
+def generate_profile_specific_reasoning(
+    supplement: str, 
+    profile: UserProfile, 
+    evidence_grade: str,
+    docs: List[dict],
+    bank_key: str
+) -> str:
+    """
+    Generate personalized reasoning using Level 2 banking cache or LLM from research papers.
+    
+    Args:
+        supplement: Supplement name
+        profile: User profile with demographics and goals
+        evidence_grade: Evidence grade (A/B/C/D)
+        docs: Retrieved research papers
+        bank_key: Banking key for caching
+        
+    Returns:
+        Personalized explanation string based on research
+    """
+    
+    # Try to get from Level 2 bank first
+    try:
+        from banking_loader import get_cached_reasoning
+        cached_reasoning = get_cached_reasoning(supplement, bank_key)
+        if cached_reasoning:
+            return cached_reasoning
+    except ImportError:
+        pass
+    
+    # Fallback: Generate reasoning from papers using LLM
+    
+    try:
+        from clients.foundry_chat import chat as foundry_chat
+    except ImportError:
+        # Fallback to simple reasoning if LLM not available
+        return f"May provide benefits for {profile.goal} goals based on research evidence (Grade {evidence_grade})"
+    
+    # Filter papers relevant to this supplement
+    relevant_papers = []
+    for doc in docs[:10]:  # Limit to top 10 papers for context
+        doc_supplements = (doc.get("supplements") or "").lower().split(",")
+        if supplement.lower() in [s.strip() for s in doc_supplements]:
+            relevant_papers.append(doc)
+    
+    if not relevant_papers:
+        return f"May provide benefits for {profile.goal} goals, though specific research for your profile is limited (Grade {evidence_grade})"
+    
+    # Build profile context
+    profile_context = []
+    if profile.age:
+        if profile.age < 25:
+            profile_context.append("young adult (under 25)")
+        elif profile.age >= 50:
+            profile_context.append("older adult (50+)")
+        else:
+            profile_context.append(f"{profile.age} years old")
+    
+    if hasattr(profile, 'sex') and profile.sex:
+        profile_context.append(profile.sex)
+    
+    weight_bin = get_weight_bin(profile.weight_kg)
+    if weight_bin in ["xs", "small"]:
+        profile_context.append("lighter body weight")
+    elif weight_bin in ["large", "xl"]:
+        profile_context.append("heavier body weight")
+    
+    profile_desc = ", ".join(profile_context) if profile_context else "general population"
+    
+    # Build research context
+    paper_summaries = []
+    for paper in relevant_papers[:3]:  # Top 3 most relevant
+        title = paper.get("title", "")
+        study_type = paper.get("study_type", "")
+        population = paper.get("population", "")
+        summary = f"- {title} ({study_type})"
+        if population:
+            summary += f" - studied in {population}"
+        paper_summaries.append(summary)
+    
+    research_context = "\n".join(paper_summaries)
+    
+    # Generate LLM reasoning
+    prompt = f"""Based on the research below, explain in 1-2 sentences why {supplement} would or wouldn't be beneficial for a {profile_desc} person with {profile.goal} goals.
+    
+Research papers:
+{research_context}
+
+Focus on:
+1. How the research applies to this specific demographic
+2. Benefits for their {profile.goal} goals
+3. Keep it concise and evidence-based
+
+Response format: "For your profile ({profile_desc}), {supplement} [benefits/concerns] because [research-based reasoning]."
+"""
+
+    try:
+        response = foundry_chat(
+            messages=[{"role": "user", "content": prompt}],
+            model=os.getenv("FOUNDATION_CHAT_MODEL", "gpt-4o-mini"),
+            max_tokens=150,
+            temperature=0.3
+        )
+        
+        # Clean up response and add evidence grade
+        reasoning = response.strip()
+        if not reasoning.endswith('.'):
+            reasoning += '.'
+        reasoning += f" (Grade {evidence_grade} evidence)"
+        
+        return reasoning
+        
+    except Exception as e:
+        print(f"LLM reasoning failed for {supplement}: {e}")
+        # Fallback reasoning
+        return f"Research suggests {supplement} may benefit {profile.goal} goals for your demographic (Grade {evidence_grade})"
+
 
 def apply_text_based_adjustments(items: List[StackItem], context: str, profile: UserProfile) -> List[StackItem]:
     """Apply real-time adjustments based on user text input"""
@@ -705,11 +856,15 @@ def build_creatine_item(
     if cautions:
         doses[0].notes.extend(cautions)
     
+    # Generate profile-specific reasoning for creatine from research papers
+    bank_key = generate_bank_key(profile)
+    profile_why = generate_profile_specific_reasoning("creatine", profile, "A", docs, bank_key)
+    
     return StackItem(
         supplement="creatine",
         evidence_grade="A",
         included=True,
-        why=plan["why"],
+        why=profile_why,
         doses=doses,
         citations=citations,
         tier="core"
@@ -1141,10 +1296,9 @@ def build_conversational_stack_with_banking(
     )
 
 def generate_base_stack_items(profile: UserProfile, docs: List[dict]) -> List[StackItem]:
-    """Generate base supplement recommendations using goal-based grades + weight-adjusted dosing"""
+    """Generate base supplement recommendations using Level 1 evidence banking + weight-adjusted dosing"""
     items = []
     goal = profile.goal
-    base_grades = BASE_GRADES.get(goal, BASE_GRADES["general"])
     
     # Get LLM suggestions for personalization
     llm_suggestions = _get_llm_supplement_suggestions(profile, "")
@@ -1153,12 +1307,12 @@ def generate_base_stack_items(profile: UserProfile, docs: List[dict]) -> List[St
     supplements_to_evaluate = set(COMMON_SUPPLEMENTS) | set(llm_suggestions)
     
     for supplement in supplements_to_evaluate:
-        # Get base grade for this goal (calculate dynamically from papers if not in base grades)
-        if supplement in base_grades:
-            base_grade = base_grades[supplement]
-        else:
-            # Calculate evidence grade dynamically from retrieved papers
-            base_grade = calculate_evidence_grade_from_papers(supplement, docs, goal)
+        # Level 1: Get evidence grade for this goal × supplement from research papers
+        base_grade = get_goal_evidence_grade(supplement, goal, docs)
+        
+        # Fallback to static grades if no papers found
+        if base_grade == "D" and supplement in FALLBACK_BASE_GRADES.get(goal, {}):
+            base_grade = FALLBACK_BASE_GRADES[goal][supplement]
         
         # Build supplement item based on type
         item = None
@@ -1238,17 +1392,9 @@ def build_generic_supplement_item(
         notes=[]
     )
     
-    # Generic "why" based on goal
-    why_templates = {
-        "strength": f"May support strength and power development",
-        "hypertrophy": f"May support muscle growth and recovery", 
-        "endurance": f"May support endurance performance and recovery",
-        "weight_loss": f"May support metabolism and body composition",
-        "performance": f"May support athletic performance",
-        "general": f"May support general health and wellness"
-    }
-    
-    why = why_templates.get(profile.goal, "May provide health benefits")
+    # Generate profile-specific reasoning from research papers
+    bank_key = generate_bank_key(profile)
+    why = generate_profile_specific_reasoning(supplement, profile, base_grade, docs, bank_key)
     
     return StackItem(
         supplement=supplement,

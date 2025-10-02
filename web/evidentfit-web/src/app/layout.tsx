@@ -31,6 +31,9 @@ export default function RootLayout({
             <Link href="/stack-chat" className="text-gray-600 hover:text-blue-600 font-medium transition-colors">
               Stack Planner
             </Link>
+            <Link href="/supplements" className="text-gray-600 hover:text-blue-600 font-medium transition-colors">
+              Supplements
+            </Link>
             <Link href="/methodology" className="text-gray-600 hover:text-blue-600 font-medium transition-colors">
               Methodology
             </Link>
