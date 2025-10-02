@@ -26,19 +26,19 @@ class BankingLoader:
             if os.path.exists("level1_evidence_bank.json"):
                 with open("level1_evidence_bank.json", "r") as f:
                     self.level1_bank = json.load(f)
-                print(f"✅ Level 1 bank loaded: {len(self.level1_bank)} evidence grades")
+                print(f"SUCCESS: Level 1 bank loaded: {len(self.level1_bank)} evidence grades")
             
             # Load Level 2 bank
             if os.path.exists("level2_reasoning_bank.json"):
                 with open("level2_reasoning_bank.json", "r") as f:
                     self.level2_bank = json.load(f)
-                print(f"✅ Level 2 bank loaded: {len(self.level2_bank)} profile reasoning sets")
+                print(f"SUCCESS: Level 2 bank loaded: {len(self.level2_bank)} profile reasoning sets")
             
             self.loaded = True
             return True
             
         except Exception as e:
-            print(f"❌ Failed to load banking data: {e}")
+            print(f"ERROR: Failed to load banking data: {e}")
             return False
     
     def get_evidence_grade(self, supplement: str, goal: str) -> Optional[str]:

@@ -1,4 +1,4 @@
-# EvidentFit — Cursor Project Rules (v6, single file)
+# EvidentFit — Cursor Project Rules (v7, updated October 2024)
 
 ## Project overview
 - Purpose: Evidence-based lifting supplement guidance with transparent citations.
@@ -11,18 +11,23 @@
 
 ## Repo structure (monorepo)
 evidentfit/
-  api/                         # Agent B + Agent D
+  api/                         # Agent B + Agent D + Banking System
     Dockerfile
     requirements.txt
-    main.py                    # /stream, /healthz, /summaries/{supp}, /stack*
-    stack_rules.py             # Agent D: deterministic stack builder (incl. protein GAP + creatine CME)
+    main.py                    # /stream, /healthz, /summaries/{supp}, /stack*, /supplements/evidence
+    stack_builder.py           # Agent D: hybrid LLM + rule-based stack builder with banking
+    stack_rules.py             # deterministic dosing rules (creatine CME, protein GAP)
+    banking_loader.py          # loads Level 1 & 2 banking caches at startup
+    initialize_banking.py      # builds banking caches from research papers + LLM
+    run_banking_init.py        # script to run banking initialization with Key Vault
+    keyvault_client.py         # Azure Key Vault integration for secrets
     clients/
       search_read.py           # reads with QUERY key
-      search_write.py          # upserts with ADMIN key
       foundry_chat.py          # chat completions (Project endpoint)
       foundry_embed.py         # embeddings (Project endpoint)
-      openfda.py               # label lookups (keyword scan)
-    __init__.py
+    level1_evidence_bank.json  # Goal × Supplement evidence grades (162 entries)
+    level2_reasoning_bank.json # Profile-specific reasoning (360 profiles × 27 supplements)
+    banking_summary.json       # banking initialization metadata
   agents/
     ingest/                    # Agent A (PubMed → Search)
       Dockerfile
@@ -32,20 +37,25 @@ evidentfit/
       Dockerfile
       requirements.txt
       run.py
-  shared/                      # tiny common lib (installed editable in each image)
+  shared/                      # common lib (installed editable in each image)
     pyproject.toml             # project = evidentfit_shared
     evidentfit_shared/
-      foundry_client.py        # chat(), embed() — uses api-key header + api-version
+      types.py                 # Pydantic models: UserProfile, StackItem, Dose, Citation, StackPlan
+      guardrails.py            # safety rules: contraindications, age restrictions, interactions
       search_client.py         # search_docs(), upsert_docs(), ensure_index()
-      dosing.py                # creatine(CME), caffeine, beta-alanine, protein GAP helpers
-      interactions.py          # openFDA scan + safety gate
-      profile_bucket.py        # make_bucket_key(), normalize_meds()
       utils.py                 # read_index_version() from VERSION file
       __init__.py
   web/                         # Next.js SWA (static export)
-    package.json
-    next.config.js
-    src/pages/agent.tsx
+    evidentfit-web/
+      package.json
+      next.config.js
+      src/app/
+        page.tsx               # landing page with navigation
+        agent/page.tsx         # research chat interface
+        stack-chat/page.tsx    # conversational stack planner with toggles & checkboxes
+        supplements/page.tsx   # supplement database with Level 1 banking data
+        methodology/page.tsx   # public methodology documentation
+        layout.tsx             # global navigation bar
   docs/
     architecture.md
     api-contracts.md
@@ -91,10 +101,20 @@ evidentfit/
 - evidence_grade: string  # A/B/C/D
 - index_version: string
 
-### Stacks index (optional durable store for Agent D; else Postgres)
-- id: string (key)  # equals bucket_key
-- bucket_key: string; profile_sig: string (JSON); recipe: string (JSON)
-- index_version: string; updated_at: datetime
+### Banking System (Three-Level Evidence Banking)
+**Level 1**: Goal × Supplement Evidence (local JSON cache)
+- File: `level1_evidence_bank.json`
+- 162 combinations (6 goals × 27 supplements)
+- Evidence grades (A/B/C/D) calculated from research papers
+
+**Level 2**: Profile-Specific Reasoning (local JSON cache)  
+- File: `level2_reasoning_bank.json`
+- 360 profile combinations (goal × weight_bin × sex × age_bin)
+- LLM-generated personalized reasoning per supplement
+
+**Level 3**: Real-Time Adjustments (never cached)
+- Dynamic safety rules, contraindications, user context
+- Applied in real-time during API calls
 
 ## Agents (roles & boundaries)
 - Agent A (ingest job):
@@ -109,10 +129,12 @@ evidentfit/
   - Read Papers → rank (meta > RCT > crossover > other; newer first)
   - Compose overview + last-12-months; infer grade; upsert Summaries
 - Agent D (stack recommender; in API):
-  - Deterministic **tiered** stack (Core/Optional/Conditional/Experimental) from profile
-  - Attach doses, evidence grade, ≤3 citations per item (prefer meta/RCT)
-  - Interactions + safety, then recompose if items removed
-  - **Bank** by `bucket_key` (cache + optional durable store)
+  - **Hybrid LLM + rule-based** approach: LLM suggests candidates, rules ensure safety
+  - **Three-tier system**: Recommended/Optional/Not Recommended with evidence grades
+  - **Three-level banking**: Level 1 (goal×supplement grades), Level 2 (profile reasoning), Level 3 (real-time)
+  - Dynamic evidence grading from research papers, personalized explanations
+  - Deterministic safety guardrails, dosing rules, interaction checks
+  - Interactive UI: toggles, checkboxes, custom stack building
 
 ## API contracts (Agent B)
 ### GET /healthz
@@ -135,21 +157,26 @@ evidentfit/
     "index_version":"v1-YYYY-MM-DD"
   }
 
-### POST /stack   (Agent D)
+### POST /stack/conversational   (Agent D)
 - Input JSON:
   {
+    "thread_id": string,
+    "messages": [{role:"user"|"system"|"assistant", content:string}],
     "profile": {
-      "goal": "strength"|"hypertrophy"|"endurance"|"weight_loss"|"general",
+      "goal": "strength"|"hypertrophy"|"endurance"|"weight_loss"|"performance"|"general",
       "weight_kg": number,
+      "age": number|null,
+      "sex": "male"|"female"|"other"|null,
       "caffeine_sensitive": boolean,
+      "pregnancy": boolean,
       "meds": string[],
-      "diet": "any"|"vegan"|null,
+      "conditions": string[],
+      "diet": "any"|"vegan"|"vegetarian"|null,
       "training_freq": "low"|"med"|"high"|null,
-      "diet_protein_g_per_day": number|null,   // optional
-      "diet_protein_g_per_kg": number|null,    // optional
-      "creatine_form": "monohydrate"|"anhydrous"|"hcl"|null  // optional
-    },
-    "tier": "core"|"standard"|"full"|"experimental"|null
+      "diet_protein_g_per_day": number|null,
+      "diet_protein_g_per_kg": number|null,
+      "creatine_form": "monohydrate"|"anhydrous"|"hcl"|null
+    }
   }
 - Behavior:
   - Build deterministic stack (tiers below), attach ≤3 citations per item from Papers.
@@ -173,21 +200,24 @@ evidentfit/
     "updated_at":"ISO8601"
   }
 
-### GET /stack/bucket/{bucket_key}
-- Return banked recipe if found; 404 if missing.
+### GET /stack/creatine-forms
+- Returns detailed comparison of creatine forms (monohydrate, anhydrous, HCl)
+- Includes CME conversion factors, solubility, research backing
 
-### GET /stack/buckets  (optional admin)
-- List known buckets.
+### GET /supplements/evidence
+- Returns Level 1 banking data (goal × supplement evidence grades)
+- JSON: {"evidence_data": {supplement: {goal: {grade, available}}}, "goals": [...], "supplements": [...]}
+- Used by supplement database page for independent research
 
 ## Profile buckets (banking)
 - Components:
-  - goal ∈ {strength,hypertrophy,endurance,weight_loss,general}
-  - weight_bin = nearest 5 kg (e.g., 78 → 80)
-  - stim = "sens" if caffeine_sensitive else "ok"
-  - meds_class ∈ {none,ssri,maoi,anticoag,bp,others}
-  - diet ∈ {any,vegan} (default any)
-  - training_freq ∈ {low,med,high} (default med)
-- `bucket_key = "{index_version}:{goal}:{weight_bin}:{stim}:{meds_class}:{diet}:{training_freq}"`
+  - goal ∈ {strength,hypertrophy,endurance,weight_loss,performance,general}  # 6 options
+  - weight_bin ∈ {xs,small,medium,large,xl} (<60, 60-70, 70-85, 85-100, 100+ kg)  # 5 bins
+  - sex ∈ {male,female,other}  # 3 options
+  - age_bin ∈ {minor,young,adult,mature} (13-17, 18-29, 30-49, 50+ years)  # 4 bins
+- Total Level 2 combinations: 6 × 5 × 3 × 4 = 360 profiles
+- `bank_key = "{goal}:{weight_bin}:{sex}:{age_bin}"`
+- Real-time adjustments: conditions, medications, caffeine sensitivity, pregnancy (Level 3)
 
 ## Deterministic dosing rules (no LLM math)
 - Creatine **CME (Creatine Monohydrate Equivalent) dosing**
@@ -270,7 +300,7 @@ LOG_LEVEL=info
 # Agent B (API)
 SEARCH_INDEX=evidentfit-index
 SEARCH_SUMMARIES_INDEX=evidentfit-summaries
-STACKS_INDEX=evidentfit-stacks     # optional if using Search to store stacks
+BANKING_CACHE_DIR=banking_cache     # local directory for banking JSON files
 PORT=8000
 BASIC_AUTH_USER, BASIC_AUTH_PASS   # optional preview gate
 

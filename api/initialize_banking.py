@@ -42,8 +42,8 @@ class BankingInitializer:
         
     def initialize_all_banks(self):
         """Initialize both Level 1 and Level 2 banking"""
-        print("🏦 Starting Banking Initialization...")
-        print(f"📊 Will process:")
+        print("Starting Banking Initialization...")
+        print(f"Will process:")
         print(f"   - Level 1: {len(BANKING_BUCKETS['goal'])} goals × {len(COMMON_SUPPLEMENTS)} supplements = {len(BANKING_BUCKETS['goal']) * len(COMMON_SUPPLEMENTS)} evidence grades")
         print(f"   - Level 2: {6 * 5 * 3 * 4} profile combinations × {len(COMMON_SUPPLEMENTS)} supplements = {6 * 5 * 3 * 4 * len(COMMON_SUPPLEMENTS)} reasoning entries")
         
@@ -56,11 +56,11 @@ class BankingInitializer:
         # Step 3: Save banks to storage
         self.save_banks()
         
-        print("✅ Banking initialization complete!")
+        print("SUCCESS: Banking initialization complete!")
         
     def initialize_level1_banking(self):
         """Pre-compute evidence grades for all goal × supplement combinations"""
-        print("\n📈 Level 1: Computing Goal × Supplement Evidence Grades...")
+        print("\n=== Level 1: Computing Goal × Supplement Evidence Grades ===")
         
         goals = BANKING_BUCKETS['goal']
         total_combinations = len(goals) * len(COMMON_SUPPLEMENTS)
@@ -90,11 +90,11 @@ class BankingInitializer:
                 if processed % 20 == 0:
                     print(f"   Progress: {processed}/{total_combinations} ({processed/total_combinations*100:.1f}%)")
         
-        print(f"✅ Level 1 complete: {len(self.level1_bank)} evidence grades computed")
+        print(f"SUCCESS: Level 1 complete: {len(self.level1_bank)} evidence grades computed")
     
     def initialize_level2_banking(self):
         """Pre-compute profile-specific reasoning for all profile combinations"""
-        print("\n👤 Level 2: Computing Profile-Specific Reasoning...")
+        print("\n=== Level 2: Computing Profile-Specific Reasoning ===")
         
         # Generate all profile combinations
         profiles = self.generate_all_profiles()
@@ -149,7 +149,7 @@ class BankingInitializer:
                 "index_version": os.getenv("INDEX_VERSION", "v1")
             }
         
-        print(f"✅ Level 2 complete: {len(self.level2_bank)} profile reasoning sets computed")
+        print(f"SUCCESS: Level 2 complete: {len(self.level2_bank)} profile reasoning sets computed")
     
     def generate_all_profiles(self) -> List[UserProfile]:
         """Generate all possible profile combinations for banking"""
@@ -231,7 +231,7 @@ class BankingInitializer:
     
     def save_banks(self):
         """Save banking data to files"""
-        print("\n💾 Saving banking data...")
+        print("\nSaving banking data...")
         
         # Save Level 1 bank
         with open("level1_evidence_bank.json", "w") as f:
@@ -257,12 +257,12 @@ class BankingInitializer:
         with open("banking_summary.json", "w") as f:
             json.dump(summary, f, indent=2)
         
-        print("✅ All banking data saved successfully!")
+        print("SUCCESS: All banking data saved successfully!")
 
 
 def main():
     """Main initialization function"""
-    print("🚀 EvidentFit Banking Initialization")
+    print("=== EvidentFit Banking Initialization ===")
     print("=" * 50)
     
     # Initialize banking system

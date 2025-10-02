@@ -1,0 +1,1298 @@
+{
+  "strength:creatine": {
+    "grade": "A",
+    "goal": "strength",
+    "supplement": "creatine",
+    "paper_count": 10,
+    "last_updated": "2025-10-01T22:29:23.207048",
+    "index_version": "v1-2025-09-25"
+  },
+  "strength:protein": {
+    "grade": "A",
+    "goal": "strength",
+    "supplement": "protein",
+    "paper_count": 10,
+    "last_updated": "2025-10-01T22:29:23.207068",
+    "index_version": "v1-2025-09-25"
+  },
+  "strength:caffeine": {
+    "grade": "A",
+    "goal": "strength",
+    "supplement": "caffeine",
+    "paper_count": 10,
+    "last_updated": "2025-10-01T22:29:23.207070",
+    "index_version": "v1-2025-09-25"
+  },
+  "strength:beta-alanine": {
+    "grade": "B",
+    "goal": "strength",
+    "supplement": "beta-alanine",
+    "paper_count": 5,
+    "last_updated": "2025-10-01T22:29:23.207072",
+    "index_version": "v1-2025-09-25"
+  },
+  "strength:citrulline": {
+    "grade": "C",
+    "goal": "strength",
+    "supplement": "citrulline",
+    "paper_count": 2,
+    "last_updated": "2025-10-01T22:29:23.207073",
+    "index_version": "v1-2025-09-25"
+  },
+  "strength:nitrate": {
+    "grade": "C",
+    "goal": "strength",
+    "supplement": "nitrate",
+    "paper_count": 2,
+    "last_updated": "2025-10-01T22:29:23.207075",
+    "index_version": "v1-2025-09-25"
+  },
+  "strength:hmb": {
+    "grade": "B",
+    "goal": "strength",
+    "supplement": "hmb",
+    "paper_count": 5,
+    "last_updated": "2025-10-01T22:29:23.207076",
+    "index_version": "v1-2025-09-25"
+  },
+  "strength:bcaa": {
+    "grade": "D",
+    "goal": "strength",
+    "supplement": "bcaa",
+    "paper_count": 2,
+    "last_updated": "2025-10-01T22:29:23.207077",
+    "index_version": "v1-2025-09-25"
+  },
+  "strength:taurine": {
+    "grade": "C",
+    "goal": "strength",
+    "supplement": "taurine",
+    "paper_count": 2,
+    "last_updated": "2025-10-01T22:29:23.207079",
+    "index_version": "v1-2025-09-25"
+  },
+  "strength:carnitine": {
+    "grade": "C",
+    "goal": "strength",
+    "supplement": "carnitine",
+    "paper_count": 2,
+    "last_updated": "2025-10-01T22:29:23.207080",
+    "index_version": "v1-2025-09-25"
+  },
+  "strength:glutamine": {
+    "grade": "D",
+    "goal": "strength",
+    "supplement": "glutamine",
+    "paper_count": 2,
+    "last_updated": "2025-10-01T22:29:23.207081",
+    "index_version": "v1-2025-09-25"
+  },
+  "strength:ashwagandha": {
+    "grade": "C",
+    "goal": "strength",
+    "supplement": "ashwagandha",
+    "paper_count": 2,
+    "last_updated": "2025-10-01T22:29:23.207083",
+    "index_version": "v1-2025-09-25"
+  },
+  "strength:rhodiola": {
+    "grade": "C",
+    "goal": "strength",
+    "supplement": "rhodiola",
+    "paper_count": 2,
+    "last_updated": "2025-10-01T22:29:23.207084",
+    "index_version": "v1-2025-09-25"
+  },
+  "strength:omega-3": {
+    "grade": "B",
+    "goal": "strength",
+    "supplement": "omega-3",
+    "paper_count": 5,
+    "last_updated": "2025-10-01T22:29:23.207085",
+    "index_version": "v1-2025-09-25"
+  },
+  "strength:vitamin-d": {
+    "grade": "B",
+    "goal": "strength",
+    "supplement": "vitamin-d",
+    "paper_count": 5,
+    "last_updated": "2025-10-01T22:29:23.207088",
+    "index_version": "v1-2025-09-25"
+  },
+  "strength:magnesium": {
+    "grade": "C",
+    "goal": "strength",
+    "supplement": "magnesium",
+    "paper_count": 2,
+    "last_updated": "2025-10-01T22:29:23.207089",
+    "index_version": "v1-2025-09-25"
+  },
+  "strength:collagen": {
+    "grade": "D",
+    "goal": "strength",
+    "supplement": "collagen",
+    "paper_count": 2,
+    "last_updated": "2025-10-01T22:29:23.207091",
+    "index_version": "v1-2025-09-25"
+  },
+  "strength:curcumin": {
+    "grade": "C",
+    "goal": "strength",
+    "supplement": "curcumin",
+    "paper_count": 2,
+    "last_updated": "2025-10-01T22:29:23.207093",
+    "index_version": "v1-2025-09-25"
+  },
+  "strength:b12": {
+    "grade": "D",
+    "goal": "strength",
+    "supplement": "b12",
+    "paper_count": 2,
+    "last_updated": "2025-10-01T22:29:23.207094",
+    "index_version": "v1-2025-09-25"
+  },
+  "strength:iron": {
+    "grade": "D",
+    "goal": "strength",
+    "supplement": "iron",
+    "paper_count": 2,
+    "last_updated": "2025-10-01T22:29:23.207096",
+    "index_version": "v1-2025-09-25"
+  },
+  "strength:folate": {
+    "grade": "D",
+    "goal": "strength",
+    "supplement": "folate",
+    "paper_count": 2,
+    "last_updated": "2025-10-01T22:29:23.207097",
+    "index_version": "v1-2025-09-25"
+  },
+  "strength:leucine": {
+    "grade": "B",
+    "goal": "strength",
+    "supplement": "leucine",
+    "paper_count": 5,
+    "last_updated": "2025-10-01T22:29:23.207098",
+    "index_version": "v1-2025-09-25"
+  },
+  "strength:betaine": {
+    "grade": "C",
+    "goal": "strength",
+    "supplement": "betaine",
+    "paper_count": 2,
+    "last_updated": "2025-10-01T22:29:23.207100",
+    "index_version": "v1-2025-09-25"
+  },
+  "strength:zma": {
+    "grade": "C",
+    "goal": "strength",
+    "supplement": "zma",
+    "paper_count": 2,
+    "last_updated": "2025-10-01T22:29:23.207101",
+    "index_version": "v1-2025-09-25"
+  },
+  "strength:tribulus": {
+    "grade": "D",
+    "goal": "strength",
+    "supplement": "tribulus",
+    "paper_count": 2,
+    "last_updated": "2025-10-01T22:29:23.207102",
+    "index_version": "v1-2025-09-25"
+  },
+  "strength:d-aspartic-acid": {
+    "grade": "D",
+    "goal": "strength",
+    "supplement": "d-aspartic-acid",
+    "paper_count": 2,
+    "last_updated": "2025-10-01T22:29:23.207104",
+    "index_version": "v1-2025-09-25"
+  },
+  "strength:tongkat-ali": {
+    "grade": "D",
+    "goal": "strength",
+    "supplement": "tongkat-ali",
+    "paper_count": 2,
+    "last_updated": "2025-10-01T22:29:23.207105",
+    "index_version": "v1-2025-09-25"
+  },
+  "hypertrophy:creatine": {
+    "grade": "A",
+    "goal": "hypertrophy",
+    "supplement": "creatine",
+    "paper_count": 10,
+    "last_updated": "2025-10-01T22:29:23.207107",
+    "index_version": "v1-2025-09-25"
+  },
+  "hypertrophy:protein": {
+    "grade": "A",
+    "goal": "hypertrophy",
+    "supplement": "protein",
+    "paper_count": 10,
+    "last_updated": "2025-10-01T22:29:23.207108",
+    "index_version": "v1-2025-09-25"
+  },
+  "hypertrophy:caffeine": {
+    "grade": "B",
+    "goal": "hypertrophy",
+    "supplement": "caffeine",
+    "paper_count": 5,
+    "last_updated": "2025-10-01T22:29:23.207109",
+    "index_version": "v1-2025-09-25"
+  },
+  "hypertrophy:beta-alanine": {
+    "grade": "B",
+    "goal": "hypertrophy",
+    "supplement": "beta-alanine",
+    "paper_count": 5,
+    "last_updated": "2025-10-01T22:29:23.207111",
+    "index_version": "v1-2025-09-25"
+  },
+  "hypertrophy:citrulline": {
+    "grade": "B",
+    "goal": "hypertrophy",
+    "supplement": "citrulline",
+    "paper_count": 5,
+    "last_updated": "2025-10-01T22:29:23.207112",
+    "index_version": "v1-2025-09-25"
+  },
+  "hypertrophy:nitrate": {
+    "grade": "C",
+    "goal": "hypertrophy",
+    "supplement": "nitrate",
+    "paper_count": 2,
+    "last_updated": "2025-10-01T22:29:23.207113",
+    "index_version": "v1-2025-09-25"
+  },
+  "hypertrophy:hmb": {
+    "grade": "B",
+    "goal": "hypertrophy",
+    "supplement": "hmb",
+    "paper_count": 5,
+    "last_updated": "2025-10-01T22:29:23.207115",
+    "index_version": "v1-2025-09-25"
+  },
+  "hypertrophy:bcaa": {
+    "grade": "D",
+    "goal": "hypertrophy",
+    "supplement": "bcaa",
+    "paper_count": 2,
+    "last_updated": "2025-10-01T22:29:23.207116",
+    "index_version": "v1-2025-09-25"
+  },
+  "hypertrophy:taurine": {
+    "grade": "C",
+    "goal": "hypertrophy",
+    "supplement": "taurine",
+    "paper_count": 2,
+    "last_updated": "2025-10-01T22:29:23.207118",
+    "index_version": "v1-2025-09-25"
+  },
+  "hypertrophy:carnitine": {
+    "grade": "C",
+    "goal": "hypertrophy",
+    "supplement": "carnitine",
+    "paper_count": 2,
+    "last_updated": "2025-10-01T22:29:23.207120",
+    "index_version": "v1-2025-09-25"
+  },
+  "hypertrophy:glutamine": {
+    "grade": "D",
+    "goal": "hypertrophy",
+    "supplement": "glutamine",
+    "paper_count": 2,
+    "last_updated": "2025-10-01T22:29:23.207121",
+    "index_version": "v1-2025-09-25"
+  },
+  "hypertrophy:ashwagandha": {
+    "grade": "C",
+    "goal": "hypertrophy",
+    "supplement": "ashwagandha",
+    "paper_count": 2,
+    "last_updated": "2025-10-01T22:29:23.207122",
+    "index_version": "v1-2025-09-25"
+  },
+  "hypertrophy:rhodiola": {
+    "grade": "C",
+    "goal": "hypertrophy",
+    "supplement": "rhodiola",
+    "paper_count": 2,
+    "last_updated": "2025-10-01T22:29:23.207123",
+    "index_version": "v1-2025-09-25"
+  },
+  "hypertrophy:omega-3": {
+    "grade": "B",
+    "goal": "hypertrophy",
+    "supplement": "omega-3",
+    "paper_count": 5,
+    "last_updated": "2025-10-01T22:29:23.207125",
+    "index_version": "v1-2025-09-25"
+  },
+  "hypertrophy:vitamin-d": {
+    "grade": "B",
+    "goal": "hypertrophy",
+    "supplement": "vitamin-d",
+    "paper_count": 5,
+    "last_updated": "2025-10-01T22:29:23.207126",
+    "index_version": "v1-2025-09-25"
+  },
+  "hypertrophy:magnesium": {
+    "grade": "C",
+    "goal": "hypertrophy",
+    "supplement": "magnesium",
+    "paper_count": 2,
+    "last_updated": "2025-10-01T22:29:23.207127",
+    "index_version": "v1-2025-09-25"
+  },
+  "hypertrophy:collagen": {
+    "grade": "C",
+    "goal": "hypertrophy",
+    "supplement": "collagen",
+    "paper_count": 2,
+    "last_updated": "2025-10-01T22:29:23.207129",
+    "index_version": "v1-2025-09-25"
+  },
+  "hypertrophy:curcumin": {
+    "grade": "C",
+    "goal": "hypertrophy",
+    "supplement": "curcumin",
+    "paper_count": 2,
+    "last_updated": "2025-10-01T22:29:23.207130",
+    "index_version": "v1-2025-09-25"
+  },
+  "hypertrophy:b12": {
+    "grade": "D",
+    "goal": "hypertrophy",
+    "supplement": "b12",
+    "paper_count": 2,
+    "last_updated": "2025-10-01T22:29:23.207132",
+    "index_version": "v1-2025-09-25"
+  },
+  "hypertrophy:iron": {
+    "grade": "D",
+    "goal": "hypertrophy",
+    "supplement": "iron",
+    "paper_count": 2,
+    "last_updated": "2025-10-01T22:29:23.207133",
+    "index_version": "v1-2025-09-25"
+  },
+  "hypertrophy:folate": {
+    "grade": "D",
+    "goal": "hypertrophy",
+    "supplement": "folate",
+    "paper_count": 2,
+    "last_updated": "2025-10-01T22:29:23.207134",
+    "index_version": "v1-2025-09-25"
+  },
+  "hypertrophy:leucine": {
+    "grade": "A",
+    "goal": "hypertrophy",
+    "supplement": "leucine",
+    "paper_count": 10,
+    "last_updated": "2025-10-01T22:29:23.207135",
+    "index_version": "v1-2025-09-25"
+  },
+  "hypertrophy:betaine": {
+    "grade": "C",
+    "goal": "hypertrophy",
+    "supplement": "betaine",
+    "paper_count": 2,
+    "last_updated": "2025-10-01T22:29:23.207137",
+    "index_version": "v1-2025-09-25"
+  },
+  "hypertrophy:zma": {
+    "grade": "C",
+    "goal": "hypertrophy",
+    "supplement": "zma",
+    "paper_count": 2,
+    "last_updated": "2025-10-01T22:29:23.207138",
+    "index_version": "v1-2025-09-25"
+  },
+  "hypertrophy:tribulus": {
+    "grade": "D",
+    "goal": "hypertrophy",
+    "supplement": "tribulus",
+    "paper_count": 2,
+    "last_updated": "2025-10-01T22:29:23.207139",
+    "index_version": "v1-2025-09-25"
+  },
+  "hypertrophy:d-aspartic-acid": {
+    "grade": "D",
+    "goal": "hypertrophy",
+    "supplement": "d-aspartic-acid",
+    "paper_count": 2,
+    "last_updated": "2025-10-01T22:29:23.207140",
+    "index_version": "v1-2025-09-25"
+  },
+  "hypertrophy:tongkat-ali": {
+    "grade": "C",
+    "goal": "hypertrophy",
+    "supplement": "tongkat-ali",
+    "paper_count": 2,
+    "last_updated": "2025-10-01T22:29:23.207142",
+    "index_version": "v1-2025-09-25"
+  },
+  "endurance:creatine": {
+    "grade": "C",
+    "goal": "endurance",
+    "supplement": "creatine",
+    "paper_count": 2,
+    "last_updated": "2025-10-01T22:29:23.207144",
+    "index_version": "v1-2025-09-25"
+  },
+  "endurance:protein": {
+    "grade": "B",
+    "goal": "endurance",
+    "supplement": "protein",
+    "paper_count": 5,
+    "last_updated": "2025-10-01T22:29:23.207145",
+    "index_version": "v1-2025-09-25"
+  },
+  "endurance:caffeine": {
+    "grade": "A",
+    "goal": "endurance",
+    "supplement": "caffeine",
+    "paper_count": 10,
+    "last_updated": "2025-10-01T22:29:23.207147",
+    "index_version": "v1-2025-09-25"
+  },
+  "endurance:beta-alanine": {
+    "grade": "A",
+    "goal": "endurance",
+    "supplement": "beta-alanine",
+    "paper_count": 10,
+    "last_updated": "2025-10-01T22:29:23.207148",
+    "index_version": "v1-2025-09-25"
+  },
+  "endurance:citrulline": {
+    "grade": "B",
+    "goal": "endurance",
+    "supplement": "citrulline",
+    "paper_count": 5,
+    "last_updated": "2025-10-01T22:29:23.207149",
+    "index_version": "v1-2025-09-25"
+  },
+  "endurance:nitrate": {
+    "grade": "A",
+    "goal": "endurance",
+    "supplement": "nitrate",
+    "paper_count": 10,
+    "last_updated": "2025-10-01T22:29:23.207150",
+    "index_version": "v1-2025-09-25"
+  },
+  "endurance:hmb": {
+    "grade": "D",
+    "goal": "endurance",
+    "supplement": "hmb",
+    "paper_count": 2,
+    "last_updated": "2025-10-01T22:29:23.207152",
+    "index_version": "v1-2025-09-25"
+  },
+  "endurance:bcaa": {
+    "grade": "C",
+    "goal": "endurance",
+    "supplement": "bcaa",
+    "paper_count": 2,
+    "last_updated": "2025-10-01T22:29:23.207153",
+    "index_version": "v1-2025-09-25"
+  },
+  "endurance:taurine": {
+    "grade": "C",
+    "goal": "endurance",
+    "supplement": "taurine",
+    "paper_count": 2,
+    "last_updated": "2025-10-01T22:29:23.207154",
+    "index_version": "v1-2025-09-25"
+  },
+  "endurance:carnitine": {
+    "grade": "B",
+    "goal": "endurance",
+    "supplement": "carnitine",
+    "paper_count": 5,
+    "last_updated": "2025-10-01T22:29:23.207155",
+    "index_version": "v1-2025-09-25"
+  },
+  "endurance:glutamine": {
+    "grade": "D",
+    "goal": "endurance",
+    "supplement": "glutamine",
+    "paper_count": 2,
+    "last_updated": "2025-10-01T22:29:23.207157",
+    "index_version": "v1-2025-09-25"
+  },
+  "endurance:ashwagandha": {
+    "grade": "B",
+    "goal": "endurance",
+    "supplement": "ashwagandha",
+    "paper_count": 5,
+    "last_updated": "2025-10-01T22:29:23.207159",
+    "index_version": "v1-2025-09-25"
+  },
+  "endurance:rhodiola": {
+    "grade": "B",
+    "goal": "endurance",
+    "supplement": "rhodiola",
+    "paper_count": 5,
+    "last_updated": "2025-10-01T22:29:23.207160",
+    "index_version": "v1-2025-09-25"
+  },
+  "endurance:omega-3": {
+    "grade": "B",
+    "goal": "endurance",
+    "supplement": "omega-3",
+    "paper_count": 5,
+    "last_updated": "2025-10-01T22:29:23.207161",
+    "index_version": "v1-2025-09-25"
+  },
+  "endurance:vitamin-d": {
+    "grade": "B",
+    "goal": "endurance",
+    "supplement": "vitamin-d",
+    "paper_count": 5,
+    "last_updated": "2025-10-01T22:29:23.207162",
+    "index_version": "v1-2025-09-25"
+  },
+  "endurance:magnesium": {
+    "grade": "B",
+    "goal": "endurance",
+    "supplement": "magnesium",
+    "paper_count": 5,
+    "last_updated": "2025-10-01T22:29:23.207164",
+    "index_version": "v1-2025-09-25"
+  },
+  "endurance:collagen": {
+    "grade": "D",
+    "goal": "endurance",
+    "supplement": "collagen",
+    "paper_count": 2,
+    "last_updated": "2025-10-01T22:29:23.207166",
+    "index_version": "v1-2025-09-25"
+  },
+  "endurance:curcumin": {
+    "grade": "C",
+    "goal": "endurance",
+    "supplement": "curcumin",
+    "paper_count": 2,
+    "last_updated": "2025-10-01T22:29:23.207167",
+    "index_version": "v1-2025-09-25"
+  },
+  "endurance:b12": {
+    "grade": "D",
+    "goal": "endurance",
+    "supplement": "b12",
+    "paper_count": 2,
+    "last_updated": "2025-10-01T22:29:23.207169",
+    "index_version": "v1-2025-09-25"
+  },
+  "endurance:iron": {
+    "grade": "D",
+    "goal": "endurance",
+    "supplement": "iron",
+    "paper_count": 2,
+    "last_updated": "2025-10-01T22:29:23.207170",
+    "index_version": "v1-2025-09-25"
+  },
+  "endurance:folate": {
+    "grade": "D",
+    "goal": "endurance",
+    "supplement": "folate",
+    "paper_count": 2,
+    "last_updated": "2025-10-01T22:29:23.207172",
+    "index_version": "v1-2025-09-25"
+  },
+  "endurance:leucine": {
+    "grade": "C",
+    "goal": "endurance",
+    "supplement": "leucine",
+    "paper_count": 2,
+    "last_updated": "2025-10-01T22:29:23.207173",
+    "index_version": "v1-2025-09-25"
+  },
+  "endurance:betaine": {
+    "grade": "C",
+    "goal": "endurance",
+    "supplement": "betaine",
+    "paper_count": 2,
+    "last_updated": "2025-10-01T22:29:23.207174",
+    "index_version": "v1-2025-09-25"
+  },
+  "endurance:zma": {
+    "grade": "C",
+    "goal": "endurance",
+    "supplement": "zma",
+    "paper_count": 2,
+    "last_updated": "2025-10-01T22:29:23.207175",
+    "index_version": "v1-2025-09-25"
+  },
+  "endurance:tribulus": {
+    "grade": "D",
+    "goal": "endurance",
+    "supplement": "tribulus",
+    "paper_count": 2,
+    "last_updated": "2025-10-01T22:29:23.207177",
+    "index_version": "v1-2025-09-25"
+  },
+  "endurance:d-aspartic-acid": {
+    "grade": "D",
+    "goal": "endurance",
+    "supplement": "d-aspartic-acid",
+    "paper_count": 2,
+    "last_updated": "2025-10-01T22:29:23.207178",
+    "index_version": "v1-2025-09-25"
+  },
+  "endurance:tongkat-ali": {
+    "grade": "D",
+    "goal": "endurance",
+    "supplement": "tongkat-ali",
+    "paper_count": 2,
+    "last_updated": "2025-10-01T22:29:23.207179",
+    "index_version": "v1-2025-09-25"
+  },
+  "weight_loss:creatine": {
+    "grade": "C",
+    "goal": "weight_loss",
+    "supplement": "creatine",
+    "paper_count": 2,
+    "last_updated": "2025-10-01T22:29:23.207181",
+    "index_version": "v1-2025-09-25"
+  },
+  "weight_loss:protein": {
+    "grade": "A",
+    "goal": "weight_loss",
+    "supplement": "protein",
+    "paper_count": 10,
+    "last_updated": "2025-10-01T22:29:23.207182",
+    "index_version": "v1-2025-09-25"
+  },
+  "weight_loss:caffeine": {
+    "grade": "A",
+    "goal": "weight_loss",
+    "supplement": "caffeine",
+    "paper_count": 10,
+    "last_updated": "2025-10-01T22:29:23.207183",
+    "index_version": "v1-2025-09-25"
+  },
+  "weight_loss:beta-alanine": {
+    "grade": "C",
+    "goal": "weight_loss",
+    "supplement": "beta-alanine",
+    "paper_count": 2,
+    "last_updated": "2025-10-01T22:29:23.207185",
+    "index_version": "v1-2025-09-25"
+  },
+  "weight_loss:citrulline": {
+    "grade": "C",
+    "goal": "weight_loss",
+    "supplement": "citrulline",
+    "paper_count": 2,
+    "last_updated": "2025-10-01T22:29:23.207186",
+    "index_version": "v1-2025-09-25"
+  },
+  "weight_loss:nitrate": {
+    "grade": "D",
+    "goal": "weight_loss",
+    "supplement": "nitrate",
+    "paper_count": 2,
+    "last_updated": "2025-10-01T22:29:23.207204",
+    "index_version": "v1-2025-09-25"
+  },
+  "weight_loss:hmb": {
+    "grade": "C",
+    "goal": "weight_loss",
+    "supplement": "hmb",
+    "paper_count": 2,
+    "last_updated": "2025-10-01T22:29:23.207206",
+    "index_version": "v1-2025-09-25"
+  },
+  "weight_loss:bcaa": {
+    "grade": "D",
+    "goal": "weight_loss",
+    "supplement": "bcaa",
+    "paper_count": 2,
+    "last_updated": "2025-10-01T22:29:23.207207",
+    "index_version": "v1-2025-09-25"
+  },
+  "weight_loss:taurine": {
+    "grade": "C",
+    "goal": "weight_loss",
+    "supplement": "taurine",
+    "paper_count": 2,
+    "last_updated": "2025-10-01T22:29:23.207208",
+    "index_version": "v1-2025-09-25"
+  },
+  "weight_loss:carnitine": {
+    "grade": "B",
+    "goal": "weight_loss",
+    "supplement": "carnitine",
+    "paper_count": 5,
+    "last_updated": "2025-10-01T22:29:23.207210",
+    "index_version": "v1-2025-09-25"
+  },
+  "weight_loss:glutamine": {
+    "grade": "D",
+    "goal": "weight_loss",
+    "supplement": "glutamine",
+    "paper_count": 2,
+    "last_updated": "2025-10-01T22:29:23.207211",
+    "index_version": "v1-2025-09-25"
+  },
+  "weight_loss:ashwagandha": {
+    "grade": "C",
+    "goal": "weight_loss",
+    "supplement": "ashwagandha",
+    "paper_count": 2,
+    "last_updated": "2025-10-01T22:29:23.207213",
+    "index_version": "v1-2025-09-25"
+  },
+  "weight_loss:rhodiola": {
+    "grade": "C",
+    "goal": "weight_loss",
+    "supplement": "rhodiola",
+    "paper_count": 2,
+    "last_updated": "2025-10-01T22:29:23.207215",
+    "index_version": "v1-2025-09-25"
+  },
+  "weight_loss:omega-3": {
+    "grade": "B",
+    "goal": "weight_loss",
+    "supplement": "omega-3",
+    "paper_count": 5,
+    "last_updated": "2025-10-01T22:29:23.207216",
+    "index_version": "v1-2025-09-25"
+  },
+  "weight_loss:vitamin-d": {
+    "grade": "B",
+    "goal": "weight_loss",
+    "supplement": "vitamin-d",
+    "paper_count": 5,
+    "last_updated": "2025-10-01T22:29:23.207217",
+    "index_version": "v1-2025-09-25"
+  },
+  "weight_loss:magnesium": {
+    "grade": "C",
+    "goal": "weight_loss",
+    "supplement": "magnesium",
+    "paper_count": 2,
+    "last_updated": "2025-10-01T22:29:23.207218",
+    "index_version": "v1-2025-09-25"
+  },
+  "weight_loss:collagen": {
+    "grade": "D",
+    "goal": "weight_loss",
+    "supplement": "collagen",
+    "paper_count": 2,
+    "last_updated": "2025-10-01T22:29:23.207220",
+    "index_version": "v1-2025-09-25"
+  },
+  "weight_loss:curcumin": {
+    "grade": "C",
+    "goal": "weight_loss",
+    "supplement": "curcumin",
+    "paper_count": 2,
+    "last_updated": "2025-10-01T22:29:23.207221",
+    "index_version": "v1-2025-09-25"
+  },
+  "weight_loss:b12": {
+    "grade": "D",
+    "goal": "weight_loss",
+    "supplement": "b12",
+    "paper_count": 2,
+    "last_updated": "2025-10-01T22:29:23.207222",
+    "index_version": "v1-2025-09-25"
+  },
+  "weight_loss:iron": {
+    "grade": "D",
+    "goal": "weight_loss",
+    "supplement": "iron",
+    "paper_count": 2,
+    "last_updated": "2025-10-01T22:29:23.207223",
+    "index_version": "v1-2025-09-25"
+  },
+  "weight_loss:folate": {
+    "grade": "D",
+    "goal": "weight_loss",
+    "supplement": "folate",
+    "paper_count": 2,
+    "last_updated": "2025-10-01T22:29:23.207225",
+    "index_version": "v1-2025-09-25"
+  },
+  "weight_loss:leucine": {
+    "grade": "B",
+    "goal": "weight_loss",
+    "supplement": "leucine",
+    "paper_count": 5,
+    "last_updated": "2025-10-01T22:29:23.207227",
+    "index_version": "v1-2025-09-25"
+  },
+  "weight_loss:betaine": {
+    "grade": "C",
+    "goal": "weight_loss",
+    "supplement": "betaine",
+    "paper_count": 2,
+    "last_updated": "2025-10-01T22:29:23.207228",
+    "index_version": "v1-2025-09-25"
+  },
+  "weight_loss:zma": {
+    "grade": "C",
+    "goal": "weight_loss",
+    "supplement": "zma",
+    "paper_count": 2,
+    "last_updated": "2025-10-01T22:29:23.207230",
+    "index_version": "v1-2025-09-25"
+  },
+  "weight_loss:tribulus": {
+    "grade": "D",
+    "goal": "weight_loss",
+    "supplement": "tribulus",
+    "paper_count": 2,
+    "last_updated": "2025-10-01T22:29:23.207231",
+    "index_version": "v1-2025-09-25"
+  },
+  "weight_loss:d-aspartic-acid": {
+    "grade": "D",
+    "goal": "weight_loss",
+    "supplement": "d-aspartic-acid",
+    "paper_count": 2,
+    "last_updated": "2025-10-01T22:29:23.207232",
+    "index_version": "v1-2025-09-25"
+  },
+  "weight_loss:tongkat-ali": {
+    "grade": "D",
+    "goal": "weight_loss",
+    "supplement": "tongkat-ali",
+    "paper_count": 2,
+    "last_updated": "2025-10-01T22:29:23.207233",
+    "index_version": "v1-2025-09-25"
+  },
+  "performance:creatine": {
+    "grade": "A",
+    "goal": "performance",
+    "supplement": "creatine",
+    "paper_count": 10,
+    "last_updated": "2025-10-01T22:29:23.207235",
+    "index_version": "v1-2025-09-25"
+  },
+  "performance:protein": {
+    "grade": "B",
+    "goal": "performance",
+    "supplement": "protein",
+    "paper_count": 5,
+    "last_updated": "2025-10-01T22:29:23.207236",
+    "index_version": "v1-2025-09-25"
+  },
+  "performance:caffeine": {
+    "grade": "A",
+    "goal": "performance",
+    "supplement": "caffeine",
+    "paper_count": 10,
+    "last_updated": "2025-10-01T22:29:23.207237",
+    "index_version": "v1-2025-09-25"
+  },
+  "performance:beta-alanine": {
+    "grade": "A",
+    "goal": "performance",
+    "supplement": "beta-alanine",
+    "paper_count": 10,
+    "last_updated": "2025-10-01T22:29:23.207240",
+    "index_version": "v1-2025-09-25"
+  },
+  "performance:citrulline": {
+    "grade": "B",
+    "goal": "performance",
+    "supplement": "citrulline",
+    "paper_count": 5,
+    "last_updated": "2025-10-01T22:29:23.207241",
+    "index_version": "v1-2025-09-25"
+  },
+  "performance:nitrate": {
+    "grade": "B",
+    "goal": "performance",
+    "supplement": "nitrate",
+    "paper_count": 5,
+    "last_updated": "2025-10-01T22:29:23.207243",
+    "index_version": "v1-2025-09-25"
+  },
+  "performance:hmb": {
+    "grade": "C",
+    "goal": "performance",
+    "supplement": "hmb",
+    "paper_count": 2,
+    "last_updated": "2025-10-01T22:29:23.207244",
+    "index_version": "v1-2025-09-25"
+  },
+  "performance:bcaa": {
+    "grade": "C",
+    "goal": "performance",
+    "supplement": "bcaa",
+    "paper_count": 2,
+    "last_updated": "2025-10-01T22:29:23.207245",
+    "index_version": "v1-2025-09-25"
+  },
+  "performance:taurine": {
+    "grade": "C",
+    "goal": "performance",
+    "supplement": "taurine",
+    "paper_count": 2,
+    "last_updated": "2025-10-01T22:29:23.207246",
+    "index_version": "v1-2025-09-25"
+  },
+  "performance:carnitine": {
+    "grade": "B",
+    "goal": "performance",
+    "supplement": "carnitine",
+    "paper_count": 5,
+    "last_updated": "2025-10-01T22:29:23.207248",
+    "index_version": "v1-2025-09-25"
+  },
+  "performance:glutamine": {
+    "grade": "D",
+    "goal": "performance",
+    "supplement": "glutamine",
+    "paper_count": 2,
+    "last_updated": "2025-10-01T22:29:23.207249",
+    "index_version": "v1-2025-09-25"
+  },
+  "performance:ashwagandha": {
+    "grade": "B",
+    "goal": "performance",
+    "supplement": "ashwagandha",
+    "paper_count": 5,
+    "last_updated": "2025-10-01T22:29:23.207250",
+    "index_version": "v1-2025-09-25"
+  },
+  "performance:rhodiola": {
+    "grade": "B",
+    "goal": "performance",
+    "supplement": "rhodiola",
+    "paper_count": 5,
+    "last_updated": "2025-10-01T22:29:23.207251",
+    "index_version": "v1-2025-09-25"
+  },
+  "performance:omega-3": {
+    "grade": "B",
+    "goal": "performance",
+    "supplement": "omega-3",
+    "paper_count": 5,
+    "last_updated": "2025-10-01T22:29:23.207253",
+    "index_version": "v1-2025-09-25"
+  },
+  "performance:vitamin-d": {
+    "grade": "B",
+    "goal": "performance",
+    "supplement": "vitamin-d",
+    "paper_count": 5,
+    "last_updated": "2025-10-01T22:29:23.207254",
+    "index_version": "v1-2025-09-25"
+  },
+  "performance:magnesium": {
+    "grade": "C",
+    "goal": "performance",
+    "supplement": "magnesium",
+    "paper_count": 2,
+    "last_updated": "2025-10-01T22:29:23.207255",
+    "index_version": "v1-2025-09-25"
+  },
+  "performance:collagen": {
+    "grade": "D",
+    "goal": "performance",
+    "supplement": "collagen",
+    "paper_count": 2,
+    "last_updated": "2025-10-01T22:29:23.207256",
+    "index_version": "v1-2025-09-25"
+  },
+  "performance:curcumin": {
+    "grade": "C",
+    "goal": "performance",
+    "supplement": "curcumin",
+    "paper_count": 2,
+    "last_updated": "2025-10-01T22:29:23.207258",
+    "index_version": "v1-2025-09-25"
+  },
+  "performance:b12": {
+    "grade": "D",
+    "goal": "performance",
+    "supplement": "b12",
+    "paper_count": 2,
+    "last_updated": "2025-10-01T22:29:23.207259",
+    "index_version": "v1-2025-09-25"
+  },
+  "performance:iron": {
+    "grade": "D",
+    "goal": "performance",
+    "supplement": "iron",
+    "paper_count": 2,
+    "last_updated": "2025-10-01T22:29:23.207260",
+    "index_version": "v1-2025-09-25"
+  },
+  "performance:folate": {
+    "grade": "D",
+    "goal": "performance",
+    "supplement": "folate",
+    "paper_count": 2,
+    "last_updated": "2025-10-01T22:29:23.207261",
+    "index_version": "v1-2025-09-25"
+  },
+  "performance:leucine": {
+    "grade": "B",
+    "goal": "performance",
+    "supplement": "leucine",
+    "paper_count": 5,
+    "last_updated": "2025-10-01T22:29:23.207263",
+    "index_version": "v1-2025-09-25"
+  },
+  "performance:betaine": {
+    "grade": "C",
+    "goal": "performance",
+    "supplement": "betaine",
+    "paper_count": 2,
+    "last_updated": "2025-10-01T22:29:23.207264",
+    "index_version": "v1-2025-09-25"
+  },
+  "performance:zma": {
+    "grade": "C",
+    "goal": "performance",
+    "supplement": "zma",
+    "paper_count": 2,
+    "last_updated": "2025-10-01T22:29:23.207266",
+    "index_version": "v1-2025-09-25"
+  },
+  "performance:tribulus": {
+    "grade": "D",
+    "goal": "performance",
+    "supplement": "tribulus",
+    "paper_count": 2,
+    "last_updated": "2025-10-01T22:29:23.207267",
+    "index_version": "v1-2025-09-25"
+  },
+  "performance:d-aspartic-acid": {
+    "grade": "D",
+    "goal": "performance",
+    "supplement": "d-aspartic-acid",
+    "paper_count": 2,
+    "last_updated": "2025-10-01T22:29:23.207269",
+    "index_version": "v1-2025-09-25"
+  },
+  "performance:tongkat-ali": {
+    "grade": "D",
+    "goal": "performance",
+    "supplement": "tongkat-ali",
+    "paper_count": 2,
+    "last_updated": "2025-10-01T22:29:23.207270",
+    "index_version": "v1-2025-09-25"
+  },
+  "general:creatine": {
+    "grade": "B",
+    "goal": "general",
+    "supplement": "creatine",
+    "paper_count": 5,
+    "last_updated": "2025-10-01T22:29:23.207272",
+    "index_version": "v1-2025-09-25"
+  },
+  "general:protein": {
+    "grade": "A",
+    "goal": "general",
+    "supplement": "protein",
+    "paper_count": 10,
+    "last_updated": "2025-10-01T22:29:23.207274",
+    "index_version": "v1-2025-09-25"
+  },
+  "general:caffeine": {
+    "grade": "C",
+    "goal": "general",
+    "supplement": "caffeine",
+    "paper_count": 2,
+    "last_updated": "2025-10-01T22:29:23.207275",
+    "index_version": "v1-2025-09-25"
+  },
+  "general:beta-alanine": {
+    "grade": "C",
+    "goal": "general",
+    "supplement": "beta-alanine",
+    "paper_count": 2,
+    "last_updated": "2025-10-01T22:29:23.207276",
+    "index_version": "v1-2025-09-25"
+  },
+  "general:citrulline": {
+    "grade": "C",
+    "goal": "general",
+    "supplement": "citrulline",
+    "paper_count": 2,
+    "last_updated": "2025-10-01T22:29:23.207277",
+    "index_version": "v1-2025-09-25"
+  },
+  "general:nitrate": {
+    "grade": "D",
+    "goal": "general",
+    "supplement": "nitrate",
+    "paper_count": 2,
+    "last_updated": "2025-10-01T22:29:23.207279",
+    "index_version": "v1-2025-09-25"
+  },
+  "general:hmb": {
+    "grade": "C",
+    "goal": "general",
+    "supplement": "hmb",
+    "paper_count": 2,
+    "last_updated": "2025-10-01T22:29:23.207280",
+    "index_version": "v1-2025-09-25"
+  },
+  "general:bcaa": {
+    "grade": "D",
+    "goal": "general",
+    "supplement": "bcaa",
+    "paper_count": 2,
+    "last_updated": "2025-10-01T22:29:23.207281",
+    "index_version": "v1-2025-09-25"
+  },
+  "general:taurine": {
+    "grade": "C",
+    "goal": "general",
+    "supplement": "taurine",
+    "paper_count": 2,
+    "last_updated": "2025-10-01T22:29:23.207282",
+    "index_version": "v1-2025-09-25"
+  },
+  "general:carnitine": {
+    "grade": "C",
+    "goal": "general",
+    "supplement": "carnitine",
+    "paper_count": 2,
+    "last_updated": "2025-10-01T22:29:23.207284",
+    "index_version": "v1-2025-09-25"
+  },
+  "general:glutamine": {
+    "grade": "D",
+    "goal": "general",
+    "supplement": "glutamine",
+    "paper_count": 2,
+    "last_updated": "2025-10-01T22:29:23.207285",
+    "index_version": "v1-2025-09-25"
+  },
+  "general:ashwagandha": {
+    "grade": "B",
+    "goal": "general",
+    "supplement": "ashwagandha",
+    "paper_count": 5,
+    "last_updated": "2025-10-01T22:29:23.207286",
+    "index_version": "v1-2025-09-25"
+  },
+  "general:rhodiola": {
+    "grade": "C",
+    "goal": "general",
+    "supplement": "rhodiola",
+    "paper_count": 2,
+    "last_updated": "2025-10-01T22:29:23.207287",
+    "index_version": "v1-2025-09-25"
+  },
+  "general:omega-3": {
+    "grade": "A",
+    "goal": "general",
+    "supplement": "omega-3",
+    "paper_count": 10,
+    "last_updated": "2025-10-01T22:29:23.207289",
+    "index_version": "v1-2025-09-25"
+  },
+  "general:vitamin-d": {
+    "grade": "A",
+    "goal": "general",
+    "supplement": "vitamin-d",
+    "paper_count": 10,
+    "last_updated": "2025-10-01T22:29:23.207290",
+    "index_version": "v1-2025-09-25"
+  },
+  "general:magnesium": {
+    "grade": "B",
+    "goal": "general",
+    "supplement": "magnesium",
+    "paper_count": 5,
+    "last_updated": "2025-10-01T22:29:23.207292",
+    "index_version": "v1-2025-09-25"
+  },
+  "general:collagen": {
+    "grade": "C",
+    "goal": "general",
+    "supplement": "collagen",
+    "paper_count": 2,
+    "last_updated": "2025-10-01T22:29:23.207293",
+    "index_version": "v1-2025-09-25"
+  },
+  "general:curcumin": {
+    "grade": "B",
+    "goal": "general",
+    "supplement": "curcumin",
+    "paper_count": 5,
+    "last_updated": "2025-10-01T22:29:23.207295",
+    "index_version": "v1-2025-09-25"
+  },
+  "general:b12": {
+    "grade": "D",
+    "goal": "general",
+    "supplement": "b12",
+    "paper_count": 2,
+    "last_updated": "2025-10-01T22:29:23.207296",
+    "index_version": "v1-2025-09-25"
+  },
+  "general:iron": {
+    "grade": "D",
+    "goal": "general",
+    "supplement": "iron",
+    "paper_count": 2,
+    "last_updated": "2025-10-01T22:29:23.207297",
+    "index_version": "v1-2025-09-25"
+  },
+  "general:folate": {
+    "grade": "D",
+    "goal": "general",
+    "supplement": "folate",
+    "paper_count": 2,
+    "last_updated": "2025-10-01T22:29:23.207298",
+    "index_version": "v1-2025-09-25"
+  },
+  "general:leucine": {
+    "grade": "C",
+    "goal": "general",
+    "supplement": "leucine",
+    "paper_count": 2,
+    "last_updated": "2025-10-01T22:29:23.207300",
+    "index_version": "v1-2025-09-25"
+  },
+  "general:betaine": {
+    "grade": "C",
+    "goal": "general",
+    "supplement": "betaine",
+    "paper_count": 2,
+    "last_updated": "2025-10-01T22:29:23.207301",
+    "index_version": "v1-2025-09-25"
+  },
+  "general:zma": {
+    "grade": "C",
+    "goal": "general",
+    "supplement": "zma",
+    "paper_count": 2,
+    "last_updated": "2025-10-01T22:29:23.207302",
+    "index_version": "v1-2025-09-25"
+  },
+  "general:tribulus": {
+    "grade": "D",
+    "goal": "general",
+    "supplement": "tribulus",
+    "paper_count": 2,
+    "last_updated": "2025-10-01T22:29:23.207303",
+    "index_version": "v1-2025-09-25"
+  },
+  "general:d-aspartic-acid": {
+    "grade": "D",
+    "goal": "general",
+    "supplement": "d-aspartic-acid",
+    "paper_count": 2,
+    "last_updated": "2025-10-01T22:29:23.207305",
+    "index_version": "v1-2025-09-25"
+  },
+  "general:tongkat-ali": {
+    "grade": "D",
+    "goal": "general",
+    "supplement": "tongkat-ali",
+    "paper_count": 2,
+    "last_updated": "2025-10-01T22:29:23.207307",
+    "index_version": "v1-2025-09-25"
+  }
+}
