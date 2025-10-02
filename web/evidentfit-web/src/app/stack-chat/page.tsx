@@ -36,6 +36,20 @@ type StackItem = {
   doses: Dose[]
   citations?: Citation[]
   tier: string
+  // Form selection fields
+  selected_form?: string
+  form_display_name?: string
+  form_options?: FormOption[]
+}
+
+type FormOption = {
+  form_key: string
+  name: string
+  research_grade: string
+  cost_factor: number
+  advantages: string[]
+  recommended_for: string
+  reference_form: boolean
 }
 
 type Profile = {
@@ -59,6 +73,7 @@ export default function StackChatPage() {
   const [loading, setLoading] = useState(false)
   const [currentStack, setCurrentStack] = useState<StackItem[]>([])
   const [customStack, setCustomStack] = useState<Set<string>>(new Set()) // Track user's custom selections
+  const [selectedForms, setSelectedForms] = useState<Record<string, string>>({}) // Track form selections
   const [exclusions, setExclusions] = useState<string[]>([])
   const [warnings, setWarnings] = useState<string[]>([])
   
@@ -518,7 +533,9 @@ export default function StackChatPage() {
                                     onChange={() => toggleSupplement(item.supplement)}
                                     className="w-4 h-4 text-green-600 bg-gray-100 border-gray-300 rounded focus:ring-green-500 focus:ring-2"
                                   />
-                                  <h4 className="font-bold text-gray-900 capitalize text-base">{item.supplement}</h4>
+                                  <h4 className="font-bold text-gray-900 capitalize text-base">
+                                    {item.form_display_name || item.supplement}
+                                  </h4>
                                 </div>
                                 <span className={`px-2 py-1 rounded text-xs font-bold ${
                                   item.evidence_grade === 'A' ? 'bg-green-100 text-green-800' :
@@ -528,6 +545,56 @@ export default function StackChatPage() {
                                   Grade {item.evidence_grade}
                                 </span>
                               </div>
+                              
+                              {/* Form Selection */}
+                              {item.form_options && item.form_options.length > 1 && (
+                                <div className="mb-3 bg-gray-50 p-3 rounded border">
+                                  <p className="text-sm font-semibold text-gray-700 mb-2">📋 Form Selection:</p>
+                                  <div className="space-y-2">
+                                    {item.form_options.map((formOption) => (
+                                      <label key={formOption.form_key} className="flex items-start gap-2 cursor-pointer">
+                                        <input
+                                          type="radio"
+                                          name={`form-${item.supplement}`}
+                                          value={formOption.form_key}
+                                          checked={selectedForms[item.supplement] === formOption.form_key || 
+                                                  (!selectedForms[item.supplement] && formOption.reference_form)}
+                                          onChange={(e) => {
+                                            setSelectedForms(prev => ({
+                                              ...prev,
+                                              [item.supplement]: e.target.value
+                                            }))
+                                          }}
+                                          className="mt-1 w-4 h-4 text-green-600 bg-gray-100 border-gray-300 rounded focus:ring-green-500 focus:ring-2"
+                                        />
+                                        <div className="flex-1">
+                                          <div className="flex items-center gap-2">
+                                            <span className="text-sm font-medium">{formOption.name}</span>
+                                            <span className={`px-1.5 py-0.5 rounded text-xs font-bold ${
+                                              formOption.research_grade === 'A' ? 'bg-green-100 text-green-800' :
+                                              formOption.research_grade === 'B' ? 'bg-blue-100 text-blue-800' :
+                                              'bg-yellow-100 text-yellow-800'
+                                            }`}>
+                                              {formOption.research_grade}
+                                            </span>
+                                            {formOption.reference_form && (
+                                              <span className="px-1.5 py-0.5 bg-purple-100 text-purple-800 rounded text-xs font-bold">
+                                                Most Researched
+                                              </span>
+                                            )}
+                                          </div>
+                                          <p className="text-xs text-gray-600 mt-1">{formOption.recommended_for}</p>
+                                          {formOption.advantages.length > 0 && (
+                                            <p className="text-xs text-green-700 mt-1">
+                                              ✓ {formOption.advantages.join(', ')}
+                                            </p>
+                                          )}
+                                        </div>
+                                      </label>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
                               
                               <div className="mb-3">
                                 <p className="text-sm font-semibold text-gray-700 mb-1">Why It&apos;s Recommended:</p>

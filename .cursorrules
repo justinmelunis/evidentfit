@@ -293,7 +293,7 @@ PM_SEARCH_QUERY=<PubMed boolean with RT context; exclude NO₂ pollution terms>
 NCBI_EMAIL=<you@example.com>
 NCBI_API_KEY=<optional>
 WATERMARK_KEY=meta:last_ingest
-INGEST_LIMIT=2000
+INGEST_LIMIT=15000
 LOG_LEVEL=info
 
 # Agent B (API)

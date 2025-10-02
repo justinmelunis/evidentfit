@@ -13,34 +13,68 @@ except ImportError:
 INDEX_VERSION = os.getenv("INDEX_VERSION", "v1")
 SEARCH_INDEX   = os.getenv("SEARCH_INDEX", "evidentfit-index")
 PM_SEARCH_QUERY = os.getenv("PM_SEARCH_QUERY") or \
-  '(creatine OR "beta-alanine" OR caffeine OR citrulline OR nitrate OR "nitric oxide" OR HMB OR "branched chain amino acids" OR BCAA OR tribulus OR "d-aspartic acid" OR betaine OR taurine OR carnitine OR ZMA OR glutamine OR CLA OR ecdysterone OR "deer antler") AND (resistance OR "strength" OR "1RM" OR hypertrophy OR "lean mass") NOT ("nitrogen dioxide" OR NO2 OR pollution)'
+  '(creatine OR "beta-alanine" OR caffeine OR citrulline OR nitrate OR "nitric oxide" OR HMB OR "branched chain amino acids" OR BCAA OR tribulus OR "d-aspartic acid" OR betaine OR taurine OR carnitine OR ZMA OR glutamine OR CLA OR ecdysterone OR "deer antler" OR "whey protein" OR "protein supplementation") AND (resistance OR "strength training" OR "1RM" OR hypertrophy OR "lean mass" OR "muscle mass" OR "exercise" OR "athletic performance") AND (humans[MeSH] OR adult OR adults OR participants OR subjects OR volunteers OR athletes) NOT ("nitrogen dioxide" OR NO2 OR pollution OR "cardiac hypertrophy" OR "ventricular hypertrophy" OR "fish" OR "rat" OR "mice" OR "mouse" OR "in vitro" OR "cell culture" OR animals[MeSH])'
 
 NCBI_EMAIL = os.getenv("NCBI_EMAIL","you@example.com")
 NCBI_API_KEY = os.getenv("NCBI_API_KEY")  # optional
 WATERMARK_KEY = os.getenv("WATERMARK_KEY","meta:last_ingest")
-INGEST_LIMIT = int(os.getenv("INGEST_LIMIT","8000"))  # Final target (fits free tier)
-MAX_TEMP_LIMIT = int(os.getenv("MAX_TEMP_LIMIT","12000"))  # Temporary limit during processing
+INGEST_LIMIT = int(os.getenv("INGEST_LIMIT","15000"))  # Final target (~36MB, fits 50MB limit with buffer)
+MAX_TEMP_LIMIT = int(os.getenv("MAX_TEMP_LIMIT","20000"))  # Temporary limit during processing
 
 # --- Enhanced maps/heuristics ---
+# Enhanced supplement keywords with form-specific detection
 SUPP_KEYWORDS = {
-  "creatine": [r"\bcreatine\b"],
-  "caffeine": [r"\bcaffeine\b", r"\bcoffee\b"],
-  "beta-alanine": [r"\bbeta-?alanine\b"],
-  "citrulline": [r"\bcitrulline\b"],
-  "nitrate": [r"\bnitrate(s)?\b", r"\bbeet(root)?\b", r"\bnitric oxide\b"],
-  "protein": [r"\bwhey\b", r"\bcasein\b", r"\bprotein supplement\b"],
-  "hmb": [r"\bhmb\b", r"\b(beta-hydroxy beta-methylbutyrate)\b"],
+  "creatine": [r"\bcreatine\b", r"\bcreatine monohydrate\b", r"\bcreatine supplementation\b"],
+  "creatine-monohydrate": [r"\bcreatine monohydrate\b", r"\bcreatine monohydrate supplementation\b"],
+  "creatine-hcl": [r"\bcreatine hcl\b", r"\bcreatine hydrochloride\b", r"\bcreatine HCl\b"],
+  "creatine-anhydrous": [r"\bcreatine anhydrous\b", r"\banhydrous creatine\b"],
+  "creatine-ethyl-ester": [r"\bcreatine ethyl ester\b", r"\bCEE\b"],
+  
+  "caffeine": [r"\bcaffeine\b", r"\bcoffee\b", r"\bcaffeinated\b"],
+  "caffeine-anhydrous": [r"\bcaffeine anhydrous\b", r"\banhydrous caffeine\b"],
+  "caffeine-citrate": [r"\bcaffeine citrate\b"],
+  
+  "beta-alanine": [r"\bbeta-?alanine\b", r"\bβ-alanine\b"],
+  
+  "citrulline": [r"\bcitrulline\b", r"\bl-citrulline\b"],
+  "citrulline-malate": [r"\bcitrulline malate\b", r"\bl-citrulline malate\b"],
+  
+  "nitrate": [r"\bnitrate(s)?\b", r"\bbeet(root)?\b", r"\bnitric oxide\b", r"\bNO3\b"],
+  "beetroot": [r"\bbeet(root)?\b", r"\bbeetroot extract\b", r"\bbeet juice\b"],
+  
+  "protein": [r"\bprotein supplement(ation)?\b", r"\bprotein powder\b", r"\bprotein intake\b"],
+  "whey-protein": [r"\bwhey\b", r"\bwhey protein\b", r"\bwhey isolate\b", r"\bwhey concentrate\b"],
+  "casein-protein": [r"\bcasein\b", r"\bcasein protein\b", r"\bmicellar casein\b"],
+  "soy-protein": [r"\bsoy protein\b", r"\bsoy isolate\b"],
+  "pea-protein": [r"\bpea protein\b", r"\bpea isolate\b"],
+  
+  "hmb": [r"\bhmb\b", r"\bbeta-hydroxy beta-methylbutyrate\b", r"\bβ-hydroxy β-methylbutyrate\b"],
+  "hmb-ca": [r"\bhmb-ca\b", r"\bhmb calcium\b"],
+  "hmb-fa": [r"\bhmb-fa\b", r"\bhmb free acid\b"],
+  
   "bcaa": [r"\bbcaa(s)?\b", r"\bbranched[- ]chain amino acids\b"],
-  "tribulus": [r"\btribulus\b"],
-  "d-aspartic-acid": [r"\bd-?aspartic\b"],
-  "betaine": [r"\bbetaine\b"],
+  "leucine": [r"\bleucine\b", r"\bl-leucine\b"],
+  "isoleucine": [r"\bisoleucine\b", r"\bl-isoleucine\b"],
+  "valine": [r"\bvaline\b", r"\bl-valine\b"],
+  
+  "tribulus": [r"\btribulus\b", r"\btribulus terrestris\b"],
+  "d-aspartic-acid": [r"\bd-?aspartic\b", r"\bD-aspartic acid\b", r"\bDAA\b"],
+  "betaine": [r"\bbetaine\b", r"\btrimethylglycine\b"],
   "taurine": [r"\btaurine\b"],
+  
   "carnitine": [r"\bcarnitine\b"],
-  "zma": [r"\bzma\b"],
-  "glutamine": [r"\bglutamine\b"],
+  "l-carnitine": [r"\bl-carnitine\b", r"\bl-carnitine tartrate\b"],
+  "acetyl-l-carnitine": [r"\bacetyl-l-carnitine\b", r"\bALCAR\b"],
+  
+  "zma": [r"\bzma\b", r"\bzinc magnesium aspartate\b"],
+  "glutamine": [r"\bglutamine\b", r"\bl-glutamine\b"],
   "cla": [r"\bconjugated linoleic acid\b", r"\bCLA\b"],
-  "ecdysteroids": [r"\becdyster(one|oid)s?\b", r"\brhaponticum\b", r"\b20-HE\b"],
-  "deer-antler": [r"\bdeer antler\b", r"\bIGF-1\b"],
+  "ecdysteroids": [r"\becdyster(one|oid)s?\b", r"\brhaponticum\b", r"\b20-HE\b", r"\b20-hydroxyecdysone\b"],
+  "deer-antler": [r"\bdeer antler\b", r"\bIGF-1\b", r"\bvelvet antler\b"],
+  
+  "arginine": [r"\barginine\b", r"\bl-arginine\b"],
+  "arginine-akg": [r"\barginine akg\b", r"\barginine alpha-ketoglutarate\b"],
+  "nitric-oxide": [r"\bnitric oxide\b", r"\bNO\b"],
 }
 
 # Enhanced outcome categories
@@ -102,13 +136,13 @@ def calculate_reliability_score(rec: dict, dynamic_weights: dict = None) -> floa
     """Calculate reliability score based on study type, sample size, and quality indicators"""
     score = 0.0
     
-    # Study type scoring (highest to lowest)
+    # Enhanced study type scoring (prioritize high-quality designs for 15K papers)
     study_type = classify_study_type(rec.get("MedlineCitation", {}).get("Article", {}).get("PublicationTypeList", {}).get("PublicationType", []))
-    if study_type == "meta-analysis": score += 10.0
-    elif study_type == "RCT": score += 8.0
-    elif study_type == "crossover": score += 6.0
-    elif study_type == "cohort": score += 4.0
-    else: score += 2.0
+    if study_type == "meta-analysis": score += 12.0  # Highest priority
+    elif study_type == "RCT": score += 10.0  # Very high priority
+    elif study_type == "crossover": score += 7.0  # Good priority
+    elif study_type == "cohort": score += 4.0  # Medium priority
+    else: score += 1.0  # Lower priority for other designs
     
     # Sample size scoring (extract from abstract if possible)
     abstract = rec.get("MedlineCitation", {}).get("Article", {}).get("Abstract", {})
@@ -412,6 +446,42 @@ def pubmed_efetch_xml(pmids: list[str]) -> dict:
                 print(f"PubMed API failed after {max_retries} attempts: {e}")
                 raise
 
+def is_relevant_human_study(title: str, content: str) -> bool:
+    """Check if study is relevant human research for supplement effectiveness"""
+    text = f"{title} {content}".lower()
+    
+    # Must be human studies
+    human_indicators = [
+        r"\bhuman(s)?\b", r"\badult(s)?\b", r"\bmen\b", r"\bwomen\b", 
+        r"\bmale(s)?\b", r"\bfemale(s)?\b", r"\bparticipant(s)?\b",
+        r"\bsubject(s)?\b", r"\bvolunteer(s)?\b", r"\bathlete(s)?\b"
+    ]
+    
+    # Exclude animal/in-vitro studies
+    exclusion_patterns = [
+        r"\brat(s)?\b", r"\bmice\b", r"\bmouse\b", r"\bmurine\b",
+        r"\bin vitro\b", r"\bcell culture\b", r"\bcellular\b",
+        r"\bfish\b", r"\bzebrafish\b", r"\bporcine\b", r"\bbovine\b",
+        r"\bcanine\b", r"\bfeline\b", r"\bprimate(s)?\b"
+    ]
+    
+    # Must have human indicators
+    has_human = any(re.search(pattern, text, re.I) for pattern in human_indicators)
+    
+    # Must not have exclusion patterns
+    has_exclusions = any(re.search(pattern, text, re.I) for pattern in exclusion_patterns)
+    
+    # Must be about exercise/performance/supplementation
+    exercise_indicators = [
+        r"\bexercise\b", r"\btraining\b", r"\bworkout\b", r"\bresistance\b",
+        r"\bstrength\b", r"\bperformance\b", r"\bsupplement(ation)?\b",
+        r"\bmuscle\b", r"\bfitness\b", r"\bathletic\b", r"\bsport\b"
+    ]
+    
+    has_exercise = any(re.search(pattern, text, re.I) for pattern in exercise_indicators)
+    
+    return has_human and not has_exclusions and has_exercise
+
 def parse_pubmed_article(rec: dict, dynamic_weights: dict = None) -> dict:
     art = rec.get("MedlineCitation", {}).get("Article", {})
     pmid = rec.get("MedlineCitation", {}).get("PMID", {}).get("#text") or rec.get("MedlineCitation", {}).get("PMID")
@@ -467,6 +537,11 @@ def parse_pubmed_article(rec: dict, dynamic_weights: dict = None) -> dict:
     reliability_score = calculate_reliability_score(rec, dynamic_weights)
 
     text_for_tags = f"{title}\n{content}"
+    
+    # Check relevance - skip irrelevant studies early
+    if not is_relevant_human_study(title, content):
+        return None  # Skip this paper
+    
     supplements = extract_supplements(text_for_tags)
     outcomes = extract_outcomes(text_for_tags)
     
@@ -832,6 +907,7 @@ def run_ingest(mode: str):
 
         for rec in arts:
             d = parse_pubmed_article(rec, combination_weights) # Pass combination weights
+            if d is None: continue  # Skip irrelevant studies
             if not d["title"] and not d["content"]: continue
             
             # Calculate combination score for this paper
@@ -855,8 +931,8 @@ def run_ingest(mode: str):
         # Score all papers with combination-aware weighting
         all_docs.sort(key=lambda x: x.get("enhanced_score", 0), reverse=True)
         
-        # Quality threshold: Never select papers below minimum quality
-        min_quality_threshold = 3.0  # Minimum reliability score
+        # Enhanced quality threshold for 15K papers - be more selective
+        min_quality_threshold = 4.0  # Increased minimum reliability score for larger index
         quality_filtered_docs = [d for d in all_docs if d.get("reliability_score", 0) >= min_quality_threshold]
         print(f"Quality filter: {len(all_docs)} -> {len(quality_filtered_docs)} papers (removed {len(all_docs) - len(quality_filtered_docs)} low-quality)")
         
@@ -924,8 +1000,8 @@ def run_ingest(mode: str):
             # Sort by enhanced score (reliability + combination)
             unique_docs.sort(key=lambda x: x.get("enhanced_score", x.get("reliability_score", 0)), reverse=True)
             
-            # Quality threshold: Never select papers below minimum quality
-            min_quality_threshold = 3.0  # Minimum reliability score
+            # Enhanced quality threshold for 15K papers - be more selective  
+            min_quality_threshold = 4.0  # Increased minimum reliability score for larger index
             quality_filtered_docs = [d for d in unique_docs if d.get("reliability_score", 0) >= min_quality_threshold]
             print(f"Quality filter: {len(unique_docs)} -> {len(quality_filtered_docs)} papers (removed {len(unique_docs) - len(quality_filtered_docs)} low-quality)")
             

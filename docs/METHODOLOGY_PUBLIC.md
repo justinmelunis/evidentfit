@@ -29,23 +29,26 @@ The U.S. National Library of Medicine's database of 35+ million peer-reviewed bi
 - ✅ Multiple study types: meta-analyses, RCTs, crossover trials, observational studies
 
 **What We Exclude:**
-- ❌ Animal studies (except for mechanistic context)
+- ❌ Animal studies (rats, mice, fish, in vitro cell cultures)
 - ❌ Industry marketing materials and non-peer-reviewed sources
 - ❌ Environmental/pollution research (e.g., nitrogen dioxide air quality studies)
+- ❌ Cardiac hypertrophy and other medical conditions unrelated to exercise
 - ❌ Studies with severe methodological flaws
+- ❌ Non-human populations or irrelevant contexts
 
-**Current Database**: ~8,000 carefully curated research papers, selected from 50,000+ available studies, updated monthly.
+**Current Database**: ~15,000 carefully curated research papers, selected from 50,000+ available studies, updated monthly.
 
 ### How We Evaluate Quality
 
 Not all studies are created equal. We assess research using multiple objective criteria:
 
-#### 1. Study Design Quality
-Research designs are ranked by strength of evidence:
-- **Meta-analyses & systematic reviews** (highest): Synthesize findings across multiple studies
-- **Randomized controlled trials (RCTs)**: Gold standard for testing interventions  
-- **Crossover studies**: Strong within-subject designs
-- **Observational studies**: Useful context but lower causal certainty
+#### 1. Enhanced Study Design Quality Scoring
+Research designs are ranked by strength of evidence with enhanced weighting for 15,000+ paper selection:
+- **Meta-analyses & systematic reviews** (12.0 points): Highest priority for evidence synthesis
+- **Randomized controlled trials (RCTs)** (10.0 points): Gold standard for testing interventions  
+- **Crossover studies** (7.0 points): Strong within-subject designs
+- **Cohort studies** (4.0 points): Longitudinal observational data
+- **Other study designs** (1.0 points): Lower priority but may provide context
 
 #### 2. Sample Size & Statistical Power
 - Larger, well-powered studies carry more weight
@@ -62,6 +65,54 @@ Research designs are ranked by strength of evidence:
 - Seminal older papers that established the evidence base remain valuable
 - We balance both to give you the full picture
 
+### Enhanced Relevance Filtering
+
+To ensure we capture only the most relevant human exercise research, we use multi-layer filtering:
+
+#### **PubMed Query Optimization**
+Our search specifically targets human exercise studies using MeSH terms and keywords:
+- **Required**: Supplement names + exercise terms + human indicators
+- **Enhanced inclusion**: `humans[MeSH]`, `participants`, `athletes`, `adults`
+- **Strong exclusions**: `animals[MeSH]`, `in vitro`, `cardiac hypertrophy`, `pollution`
+
+#### **Content-Based Relevance Screening**
+Every paper undergoes automated relevance checking:
+
+**✅ Must Include (Human Indicators):**
+- Participants, subjects, volunteers, athletes
+- Adults, men, women, males, females
+- Human studies terminology
+
+**❌ Must Exclude (Non-Relevant):**
+- Animal subjects: rats, mice, fish, primates
+- Laboratory studies: in vitro, cell culture, cellular
+- Medical conditions: cardiac hypertrophy, disease models
+
+**✅ Must Include (Exercise Context):**
+- Exercise, training, workout, resistance
+- Strength, performance, supplementation
+- Muscle, fitness, athletic, sport
+
+**Result**: Only studies directly relevant to human exercise supplementation make it into our database.
+
+#### **Enhanced Supplement Identification**
+Our system identifies supplements using comprehensive pattern matching:
+
+**Protein Supplements:**
+- Whey protein, casein protein, milk protein, soy protein, pea protein
+- Protein supplementation, protein intake, protein powder
+
+**Creatine Forms:**
+- Creatine monohydrate, creatine supplementation
+- Alternative forms with conversion to monohydrate equivalents
+
+**Specific Compounds:**
+- L-carnitine, L-glutamine, β-alanine (beta-alanine)
+- D-aspartic acid (DAA), trimethylglycine (betaine)
+- Scientific names and common abbreviations
+
+**Coverage**: 27+ supplement categories with multiple identification patterns per supplement.
+
 ### Balanced Coverage Strategy
 
 To prevent our database from being dominated by a few over-studied supplements, we use dynamic scoring:
@@ -77,10 +128,11 @@ To prevent our database from being dominated by a few over-studied supplements, 
   (Iterative processing over multiple cycles)
        ↓
 ┌─────────────────────┐
-│ Quality Scoring     │ → Study design (meta > RCT > crossover)
+│ Quality Scoring     │ → Enhanced study design scoring (12.0-1.0 points)
 │ (Phase 1)           │ → Sample size and duration
-│                     │ → Journal quality
-│                     │ → Recency
+│                     │ → Journal quality and impact
+│                     │ → Recency and relevance
+│                     │ → Minimum threshold: 4.0 points
 └─────────────────────┘
        ↓
 ┌─────────────────────┐
@@ -91,11 +143,11 @@ To prevent our database from being dominated by a few over-studied supplements, 
 │                     │   • Various goals
 └─────────────────────┘
        ↓
-  Final Selection: ~8,000 Papers
+  Final Selection: ~15,000 Papers
   Highest quality by combined scoring
 ```
 
-**Result**: We evaluate 50,000+ supplement studies and select only the top 8,000 papers. Our recommendations reflect comprehensive evidence across the supplement landscape, not just the most-studied topics.
+**Result**: We evaluate 50,000+ supplement studies and select only the top 15,000 papers. Our recommendations reflect comprehensive evidence across the supplement landscape, not just the most-studied topics.
 
 ---
 
@@ -115,7 +167,7 @@ When you ask a question about supplements, here's what happens:
   "What does research say about creatine for strength?"
        ↓
 ┌─────────────────────┐
-│  STEP 1: Search     │  → Semantic search across 8,000+ papers
+│  STEP 1: Search     │  → Semantic search across 15,000+ papers
 │  Retrieve Papers    │  → Returns top 10-15 most relevant studies
 └─────────────────────┘
        ↓
@@ -139,7 +191,7 @@ When you ask a question about supplements, here's what happens:
 #### What Happens at Each Step
 
 **Step 1: Semantic Search**
-Your question is converted into a mathematical representation (embedding) and matched against our 8,000+ paper database. We retrieve the 10-15 most relevant studies for your specific question.
+Your question is converted into a mathematical representation (embedding) and matched against our 15,000+ paper database. We retrieve the 10-15 most relevant studies for your specific question.
 
 **Step 2: Evidence Synthesis**
 An AI model (GPT-4o-mini via Azure AI Foundry) reads the retrieved papers and synthesizes findings into a clear, accurate answer. The AI is strictly limited to citing papers it actually retrieved—it cannot invent citations.
@@ -187,8 +239,9 @@ The Stack Planner builds a complete, personalized supplement protocol tailored t
 │                                                                  │
 │  Level 1: Goal × Supplement Evidence (Always cached)           │
 │  ┌─────────────────┐    ┌─────────────────┐                    │
-│  │ "creatine +     │ ──→│ Grade A         │                    │
-│  │  hypertrophy"   │    │ (67 studies)    │                    │
+│  │ "creatine +     │ ──→│ LLM Research    │ ──→ Grade A        │
+│  │  hypertrophy"   │    │ Agent Analysis  │    (67 studies)    │
+│  │                 │    │ (reads papers)  │                    │
 │  └─────────────────┘    └─────────────────┘                    │
 │                                                                  │
 │  Level 2: Profile-Specific Reasoning (Banking Check)           │
@@ -223,11 +276,8 @@ The Stack Planner builds a complete, personalized supplement protocol tailored t
 │  │ "Interested in  │    │ Include creatine│                    │
 │  │  creatine"      │    │ with details    │                    │
 │  └─────────────────┘    └─────────────────┘                    │
-└──────────────────────────────────────────────────────────────────┘
-                ↓
-┌──────────────────────────────────────────────────────────────────┐
-│  PHASE 2: Real-Time Personalization                             │
-│  Apply conversation context to cached base recommendations:     │
+│                                                                  │
+│  Real-Time Personalization Process:                             │
 │  • Extract conditions: "I have anxiety" → block caffeine       │
 │  • Extract medications: "I take SSRIs" → interaction check     │
 │  • Extract preferences: "I'm interested in creatine" → include │
@@ -235,7 +285,7 @@ The Stack Planner builds a complete, personalized supplement protocol tailored t
 └──────────────────────────────────────────────────────────────────┘
        ↓
 ┌──────────────────────────────────────────────────────────────────┐
-│  PHASE 3: Safety Guardrails (Deterministic Rules)              │
+│  PHASE 2: Safety Guardrails (Deterministic Rules)              │
 │  Hard Blocks:    Age (<18) | Pregnancy | Meds | Conditions     │
 │  Dose Caps:      Based on weight, age, pregnancy, conditions   │
 │  Interactions:   FDA drug label screening                       │
@@ -243,7 +293,7 @@ The Stack Planner builds a complete, personalized supplement protocol tailored t
 └──────────────────────────────────────────────────────────────────┘
        ↓
 ┌──────────────────────────────────────────────────────────────────┐
-│  PHASE 4: Weight-Adjusted Dosing (No AI Math)                   │
+│  PHASE 3: Weight-Adjusted Dosing (No AI Math)                   │
 │  Evidence-based formulas by weight bin:                        │
 │  • Weight bin: "medium" (70-85kg) for 176 lbs                 │
 │  • Creatine: 5g CME/day (standard dose for medium weight)     │
@@ -254,7 +304,7 @@ The Stack Planner builds a complete, personalized supplement protocol tailored t
 └──────────────────────────────────────────────────────────────────┘
        ↓
 ┌──────────────────────────────────────────────────────────────────┐
-│  PHASE 5: Interactive UI Presentation                           │
+│  PHASE 4: Interactive UI Presentation                           │
 │                                                                  │
 │  🎯 Your Custom Stack (3 supplements)                          │
 │  [Creatine A] [Protein A] [B12 A] ← Interactive summary        │
@@ -286,11 +336,12 @@ The Stack Planner builds a complete, personalized supplement protocol tailored t
 **Why Three Levels?**
 Our banking system operates at three distinct levels to balance performance, personalization, and accuracy:
 
-**Level 1: Goal × Supplement Evidence (216 combinations)**
-- Pre-computed evidence grades for every supplement × goal combination
-- Based on dynamic analysis of research papers for goal-specific outcomes
+**Level 1: Goal × Supplement Evidence (162 combinations)**
+- Pre-computed evidence grades for every supplement × goal combination (6 goals × 27 supplements)
+- **LLM Research Agent**: Reads and analyzes research papers to assign evidence grades (A/B/C/D)
+- Grades based on research outcomes (positive/negative/mixed results), not just paper count
 - Updated monthly when new research is ingested
-- Example: "Creatine + strength = Grade A (67 studies), Creatine + endurance = Grade C (12 studies)"
+- Example: "Creatine + strength = Grade A (LLM analyzed 67 studies showing consistent 5-15% strength gains)"
 
 **Level 2: Profile-Specific Reasoning (360 combinations)**
 - Personalized "why" explanations based on demographics
@@ -343,30 +394,7 @@ The AI considers your demographics and context to suggest supplements proven eff
 - Example: Vegan female athlete → B12, iron, algae-based omega-3
 - Example: "I'm stressed" → Ashwagandha if evidence supports it for your goals
 
-#### Phase 2: Real-Time Personalization
-
-**Text Analysis:**
-Your conversational input is analyzed to extract:
-- **Medical conditions**: "I have anxiety" → caffeine contraindication
-- **Medications**: "I take blood pressure meds" → interaction screening
-- **Specific interests**: "I'm curious about creatine" → include in recommendations
-- **Lifestyle factors**: "I train fasted" → timing adjustments
-- **Concerns**: "I'm worried about side effects" → conservative dosing
-
-**Dynamic Adjustments:**
-The cached base recommendations are modified in real-time:
-- **Add supplements** mentioned in your text (if evidence supports them)
-- **Remove supplements** contraindicated by conditions/medications
-- **Adjust doses** based on sensitivities or medical conditions
-- **Update explanations** to address your specific context
-
-**Why This Approach Works:**
-- **Fast**: Base recommendations are pre-computed (instant)
-- **Personalized**: Real-time adjustments based on your unique situation
-- **Safe**: All adjustments go through the same safety guardrails
-- **Consistent**: Same base profile gets same foundation, personalized by context
-
-#### Phase 3: Safety Guardrails (Deterministic Rules)
+#### Phase 2: Safety Guardrails (Deterministic Rules)
 Every supplement goes through strict safety checks:
 
 **Hard Blocks:**
@@ -384,7 +412,7 @@ Every supplement goes through strict safety checks:
 **Interaction Screening:**
 Using FDA drug label data, we check for potential supplement-medication interactions and surface warnings.
 
-#### Phase 4: Weight-Adjusted Dosing (No AI Math)
+#### Phase 3: Weight-Adjusted Dosing (No AI Math)
 Dosing is **never done by the AI**—it uses evidence-based formulas tailored to your weight bin:
 
 **Weight Bin System:**
@@ -414,7 +442,7 @@ Your weight determines dosing ranges proven effective in research:
 - **Citrulline**: 6g (small) to 8g (large) pre-workout
 - **HMB**: 3g daily (all weights) with meals
 
-#### Phase 5: Presentation
+#### Phase 4: Presentation
 Your final stack includes:
 
 **✅ Recommended Supplements:**
@@ -436,6 +464,142 @@ Your final stack includes:
 
 ---
 
+## System Architecture: How Our Agents Work Together
+
+Our platform operates through four specialized AI agents that work in concert to deliver evidence-based supplement recommendations:
+
+```
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│                           EVIDENTFIT AGENT ECOSYSTEM                            │
+└─────────────────────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│  AGENT A: Research Ingestion & Indexing (Monthly Job)                          │
+│                                                                                 │
+│  PubMed Database                 Enhanced Processing                            │
+│  ┌─────────────────┐            ┌─────────────────┐                            │
+│  │ 50,000+         │ ──────────→│ • Relevance     │ ──┐                        │
+│  │ Candidate       │  Search    │   Filtering     │   │                        │
+│  │ Papers          │  Query     │ • Quality       │   │                        │
+│  └─────────────────┘            │   Scoring       │   │                        │
+│                                 │ • Supplement    │   │                        │
+│                                 │   Tagging       │   │                        │
+│                                 └─────────────────┘   │                        │
+│                                                       ▼                        │
+│                                 Azure AI Search Index                          │
+│                                 ┌─────────────────┐                            │
+│                                 │ ~15,000 Papers  │                            │
+│                                 │ • Embeddings    │                            │
+│                                 │ • Metadata      │                            │
+│                                 │ • Citations     │                            │
+│                                 └─────────────────┘                            │
+└─────────────────────────────────────────────────────────────────────────────────┘
+                                         │
+                                         ▼
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│  AGENT C: Evidence Summarization (Monthly Job)                                 │
+│                                                                                 │
+│  Research Analysis              Summary Generation                              │
+│  ┌─────────────────┐            ┌─────────────────┐                            │
+│  │ Read Papers     │ ──────────→│ • Overview      │                            │
+│  │ by Supplement   │  LLM       │ • Recent Trends │                            │
+│  │ • Rank Quality  │  Analysis  │ • Key Studies   │                            │
+│  │ • Extract Key   │            │ • Evidence      │                            │
+│  │   Findings      │            │   Grade         │                            │
+│  └─────────────────┘            └─────────────────┘                            │
+│                                                                                 │
+│                                 Public Summaries                               │
+│                                 ┌─────────────────┐                            │
+│                                 │ 27 Supplements  │                            │
+│                                 │ • Methodology   │                            │
+│                                 │ • Evidence      │                            │
+│                                 │ • Citations     │                            │
+│                                 └─────────────────┘                            │
+└─────────────────────────────────────────────────────────────────────────────────┘
+                                         │
+                                         ▼
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│  AGENT D: Banking Initialization (As Needed)                                   │
+│                                                                                 │
+│  Level 1 Banking                Level 2 Banking                               │
+│  ┌─────────────────┐            ┌─────────────────┐                            │
+│  │ LLM Research    │            │ LLM Profile     │                            │
+│  │ Agent Reads     │            │ Analysis        │                            │
+│  │ Papers for Each │            │ • Demographics  │                            │
+│  │ Goal×Supplement │            │ • Personalized  │                            │
+│  │ Combination     │            │   Reasoning     │                            │
+│  └─────────────────┘            └─────────────────┘                            │
+│           │                              │                                     │
+│           ▼                              ▼                                     │
+│  ┌─────────────────┐            ┌─────────────────┐                            │
+│  │ 162 Evidence    │            │ 360 Profile     │                            │
+│  │ Grades Cached   │            │ Explanations    │                            │
+│  │ (A/B/C/D)       │            │ Cached          │                            │
+│  └─────────────────┘            └─────────────────┘                            │
+└─────────────────────────────────────────────────────────────────────────────────┘
+                                         │
+                                         ▼
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│  AGENT B: Real-Time User API (Always Running)                                  │
+│                                                                                 │
+│  User Request                   Intelligence Layer                             │
+│  ┌─────────────────┐            ┌─────────────────┐                            │
+│  │ Profile +       │ ──────────→│ • Search Papers │                            │
+│  │ Question        │  Process   │ • Load Banking  │                            │
+│  │ "Best creatine  │            │ • Apply Safety  │                            │
+│  │ for strength?"  │            │ • Form Selection│                            │
+│  └─────────────────┘            └─────────────────┘                            │
+│                                          │                                     │
+│                                          ▼                                     │
+│  Personalized Response          Stack Generation                               │
+│  ┌─────────────────┐            ┌─────────────────┐                            │
+│  │ • Evidence      │ ←──────────│ • Recommended   │                            │
+│  │ • Dosing        │  Compose   │ • Optional      │                            │
+│  │ • Citations     │            │ • Not Recommended│                           │
+│  │ • Form Options  │            │ • Form Selection│                            │
+│  │ • Safety Notes  │            │ • Custom Stack  │                            │
+│  └─────────────────┘            └─────────────────┘                            │
+└─────────────────────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│  DATA FLOW SUMMARY                                                             │
+│                                                                                 │
+│  Monthly: Agent A → New Papers → Agent C → Updated Summaries                   │
+│  As Needed: Agent D → Banking Cache Updates                                    │
+│  Real-Time: User → Agent B → Cached Banking + Live Search → Response          │
+│                                                                                 │
+│  🎯 Result: Fast, personalized, evidence-based supplement recommendations      │
+└─────────────────────────────────────────────────────────────────────────────────┘
+```
+
+### Agent Responsibilities
+
+**🔍 Agent A (Research Ingestion)**
+- **Purpose**: Keep our research database current and comprehensive
+- **Frequency**: Monthly automated runs
+- **Process**: Search PubMed → Filter relevance → Score quality → Index papers
+- **Output**: 15,000+ high-quality research papers in searchable index
+
+**📊 Agent C (Evidence Summarization)**  
+- **Purpose**: Create public-facing supplement summaries
+- **Frequency**: Monthly after Agent A completes
+- **Process**: Analyze papers by supplement → Rank by quality → Generate summaries
+- **Output**: 27 supplement summaries with evidence grades and key studies
+
+**🏦 Agent D (Banking Initialization)**
+- **Purpose**: Pre-compute evidence grades and personalized reasoning
+- **Frequency**: When evidence base changes or new profiles needed
+- **Process**: LLM reads papers → Assigns grades → Generates profile-specific explanations
+- **Output**: 162 evidence grades + 360 personalized reasoning sets
+
+**💬 Agent B (User API)**
+- **Purpose**: Deliver real-time personalized recommendations
+- **Frequency**: Always running, responds to user requests
+- **Process**: Search papers → Load banking → Apply safety → Generate stack
+- **Output**: Personalized supplement recommendations with evidence and dosing
+
+---
+
 ## Banking System: Speed Meets Personalization
 
 ### How We Balance Speed and Customization
@@ -444,21 +608,46 @@ Your final stack includes:
 
 **Our Solution**: A **three-level evidence banking system** that pre-computes evidence at different granularities while allowing real-time personalization.
 
+### LLM Research Agent Methodology
+
+**How Our AI Evaluates Evidence:**
+
+Our LLM Research Agent doesn't just count papers—it **reads and analyzes** research content to make evidence-based determinations:
+
+**📚 Paper Analysis Process:**
+1. **Retrieval**: Fetch top relevant studies for each supplement × goal combination
+2. **Content Review**: LLM reads study abstracts, methodologies, and key findings
+3. **Quality Assessment**: Evaluates study design (meta-analysis > RCT > crossover > observational)
+4. **Outcome Analysis**: Determines if results are positive, negative, or mixed for the specific goal
+5. **Consistency Check**: Looks for agreement across multiple studies
+6. **Effect Size Evaluation**: Considers clinical significance, not just statistical significance
+
+**🎯 Evidence Grading Criteria:**
+- **Grade A**: Multiple high-quality studies showing consistent, clinically meaningful benefits
+- **Grade B**: Some quality studies with generally positive effects, minor inconsistencies
+- **Grade C**: Limited studies with mixed results or small effect sizes
+- **Grade D**: Insufficient evidence or studies consistently showing no benefit
+
+**🔬 Example Analysis:**
+*"Creatine for Strength": LLM reads 67 studies → finds multiple meta-analyses showing 5-15% strength gains → consistent across RCTs → clinically meaningful effects → assigns Grade A*
+
 ### Three-Level Architecture
 
 #### **Level 1: Goal × Supplement Evidence Banking**
 - **What**: Evidence grades (A/B/C/D) for each supplement × goal combination
-- **Cached**: 216 combinations (6 goals × 36 supplements)
-- **Source**: Dynamic analysis of research papers for goal-specific outcomes
+- **Cached**: 162 combinations (6 goals × 27 supplements)
+- **Source**: **LLM Research Agent** reads and analyzes research papers for goal-specific outcomes
+- **Methodology**: AI evaluates study quality, consistency, effect sizes, and relevance to assign grades
 - **Updated**: Monthly when new research is ingested
-- **Example**: "Creatine for strength = Grade A, Creatine for endurance = Grade C"
+- **Example**: "Creatine for strength = Grade A (LLM analyzed 67 studies, found consistent 5-15% strength gains across multiple meta-analyses)"
 
 #### **Level 2: Profile-Specific Reasoning Banking**
 - **What**: Personalized "why" explanations based on demographics and research
 - **Cached**: 360 profile combinations (goal × weight bin × sex × age bin)
-- **Source**: LLM analysis of retrieved papers tailored to user demographics
+- **Source**: **LLM Research Agent** analyzes retrieved papers and generates profile-specific reasoning
+- **Methodology**: AI reads research papers and creates personalized explanations based on user demographics
 - **Updated**: When evidence base changes or new profiles are encountered
-- **Example**: "For your profile (28yo male, strength), creatine enhances power output because studies in male athletes show 5g/day increases 1RM by 8-15%"
+- **Example**: "For your profile (28yo male, strength), creatine enhances power output because studies in male athletes show 5g/day increases 1RM by 8-15% (LLM analyzed 12 relevant studies in this demographic)"
 
 #### **Level 3: Real-Time Adjustments**
 - **What**: Dynamic modifications based on conversation context
@@ -508,6 +697,178 @@ Your final stack includes:
 - Dose adjustments for sensitivities
 - Explanations tailored to your context
 - Final safety screening with your exact profile
+
+---
+
+## Part 4: Independent Supplement Research Database
+
+For users who want to research supplements independently before using the Stack Planner, we provide a comprehensive supplement database at `/supplements` that exposes our Level 1 banking data.
+
+### How the Supplement Database Works
+
+```
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│                        SUPPLEMENT DATABASE ARCHITECTURE                         │
+└─────────────────────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│  LEVEL 1 BANKING DATA (Source)                                                 │
+│                                                                                 │
+│  Evidence Banking Cache                Research Paper Analysis                  │
+│  ┌─────────────────┐                  ┌─────────────────┐                      │
+│  │ 162 Combinations│ ←──────────────── │ LLM Research    │                      │
+│  │ • 6 Goals       │  Pre-computed    │ Agent Reads     │                      │
+│  │ • 27 Supplements│  Evidence        │ Papers for Each │                      │
+│  │ • A/B/C/D Grades│  Grades          │ Goal×Supplement │                      │
+│  │ • Paper Counts  │                  │ Combination     │                      │
+│  └─────────────────┘                  └─────────────────┘                      │
+└─────────────────────────────────────────────────────────────────────────────────┘
+                         │
+                         ▼
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│  API ENDPOINT: GET /supplements/evidence                                        │
+│                                                                                 │
+│  Data Transformation            Public API Response                             │
+│  ┌─────────────────┐            ┌─────────────────┐                            │
+│  │ Load Banking    │ ──────────→│ JSON Structure: │                            │
+│  │ Files:          │  Format    │ • Goals list    │                            │
+│  │ • level1_*.json │  for Web   │ • Supplements   │                            │
+│  │ • Supplement    │            │ • Evidence grid │                            │
+│  │   metadata      │            │ • Paper counts  │                            │
+│  └─────────────────┘            └─────────────────┘                            │
+└─────────────────────────────────────────────────────────────────────────────────┘
+                         │
+                         ▼
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│  FRONTEND: /supplements PAGE                                                   │
+│                                                                                 │
+│  Interactive Interface          Goal-Based Filtering                           │
+│  ┌─────────────────┐            ┌─────────────────┐                            │
+│  │ • Search bar    │            │ • Goal selector │                            │
+│  │ • Supplement    │ ←──────────│ • Evidence      │                            │
+│  │   cards         │  Filter    │   highlighting  │                            │
+│  │ • Evidence      │  Results   │ • Grade colors  │                            │
+│  │   grades        │            │ • Paper counts  │                            │
+│  └─────────────────┘            └─────────────────┘                            │
+│                                                                                 │
+│  User Experience Flow:                                                         │
+│  1. Select goal (strength, hypertrophy, endurance, etc.)                      │
+│  2. Browse supplements with evidence grades for that goal                      │
+│  3. Click supplement for detailed mechanism and research                       │
+│  4. See transparent paper counts and evidence reasoning                        │
+│  5. Optional: Use findings to inform Stack Planner decisions                   │
+└─────────────────────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│  EXAMPLE USER JOURNEY                                                          │
+│                                                                                 │
+│  User Goal: "I want to research creatine for strength training"               │
+│       ↓                                                                        │
+│  1. Visit /supplements → Select "Strength" goal                               │
+│       ↓                                                                        │
+│  2. See: Creatine (Grade A, 67 studies), Caffeine (Grade A, 45 studies)      │
+│       ↓                                                                        │
+│  3. Click "Creatine" → Detailed page with:                                    │
+│     • Mechanism: "Increases phosphocreatine stores..."                        │
+│     • Evidence: "Grade A for strength (5-15% improvements)"                   │
+│     • Research: Links to key meta-analyses and RCTs                           │
+│     • Safety: Contraindications and dosing considerations                     │
+│       ↓                                                                        │
+│  4. Armed with knowledge → Use Stack Planner for personalized dosing          │
+│                                                                                │
+│  🎯 Result: Informed user makes evidence-based supplement decisions           │
+└─────────────────────────────────────────────────────────────────────────────────┘
+```
+
+### Database Features & Functionality
+
+#### **Goal-Specific Evidence Display**
+- **Dynamic Filtering**: Select your primary goal (strength, hypertrophy, endurance, weight loss, performance, general health)
+- **Evidence Grades**: See how each supplement's evidence changes based on your goal
+- **Visual Hierarchy**: A-grade supplements highlighted, D-grade supplements clearly marked
+- **Paper Transparency**: Exact number of studies analyzed for each grade
+
+#### **Supplement Detail Pages**
+Each supplement includes comprehensive information:
+
+**📋 Mechanism of Action**
+- How the supplement works in the body
+- Biochemical pathways and physiological effects
+- Time course of effects (acute vs. chronic)
+
+**📊 Evidence by Goal**
+- Separate evidence grades for each fitness goal
+- Explanation of why grades differ between goals
+- Key findings from the research for each application
+
+**⚖️ Dosing & Timing**
+- Evidence-based dosing ranges
+- Optimal timing relative to training
+- Loading phases where applicable
+- Form considerations (e.g., creatine monohydrate vs. HCl)
+
+**⚠️ Safety Profile**
+- Known contraindications and precautions
+- Drug interactions and medical conditions
+- Age and pregnancy considerations
+- Common side effects from research
+
+#### **Search & Discovery**
+- **Text Search**: Find supplements by name or description
+- **Goal Filtering**: See evidence grades specific to your objectives
+- **Grade Filtering**: Show only A/B grade supplements, or include all grades
+- **Alphabetical Sorting**: Easy browsing of the complete database
+
+### Data Source: Level 1 Banking
+
+The supplement database directly exposes our Level 1 banking data, providing transparency into our evidence evaluation:
+
+**What You See:**
+- **Evidence Grades**: The exact A/B/C/D grades our LLM research agent assigned
+- **Paper Counts**: How many studies were analyzed for each supplement × goal combination
+- **Goal Specificity**: Why creatine might be Grade A for strength but Grade C for endurance
+- **Research Transparency**: Understanding what evidence supports (or doesn't support) each supplement
+
+**What This Means:**
+- **No Hidden Algorithms**: The same evidence grades used in personalized stacks
+- **Independent Research**: Make informed decisions before using the Stack Planner
+- **Verification**: Cross-reference our recommendations with your own research
+- **Education**: Understand why certain supplements are recommended for specific goals
+
+### Integration with Stack Planner
+
+The supplement database and Stack Planner work together:
+
+**Research First, Personalize Second:**
+1. **Explore** supplements independently on `/supplements`
+2. **Learn** about mechanisms, evidence, and safety considerations
+3. **Decide** which supplements interest you based on evidence
+4. **Personalize** using the Stack Planner for dosing, timing, and safety screening
+
+**Informed Decision Making:**
+- Users can research supplements independently before committing to a personalized stack
+- Understanding the evidence helps users make better decisions about optional supplements
+- Transparency builds trust in the personalized recommendations
+
+### Technical Implementation
+
+**Backend (`GET /supplements/evidence`):**
+- Loads Level 1 banking files (`level1_evidence_bank.json`)
+- Transforms banking data into user-friendly format
+- Includes supplement metadata (mechanisms, descriptions, safety notes)
+- Returns structured JSON for frontend consumption
+
+**Frontend (`/supplements` page):**
+- React-based interface with goal filtering
+- Real-time search and filtering
+- Responsive design for mobile and desktop
+- Integration with Stack Planner for seamless user flow
+
+**Data Flow:**
+1. LLM research agent analyzes papers → Level 1 banking cache
+2. API endpoint exposes banking data → Structured JSON
+3. Frontend displays evidence grades → User research and discovery
+4. User insights inform → Stack Planner decisions
 
 ---
 
@@ -622,20 +983,16 @@ Our Stack Planner provides an interactive, user-friendly interface for exploring
 
 ### Supplement Database
 
-For users who want to research independently, we provide a comprehensive supplement database:
+For users who want to research independently, we provide a comprehensive supplement database that directly exposes our Level 1 banking data:
 
-#### **Individual Supplement Pages** (`/supplements`)
-- **Mechanism of action**: How each supplement works in the body
-- **Evidence by goal**: See how research applies to different fitness goals
-- **Dosing and timing**: Evidence-based recommendations
-- **Safety considerations**: Contraindications and precautions
-- **Goal-specific filtering**: View evidence grades for your specific goals
+#### **Independent Research Interface** (`/supplements`)
+- **Goal-specific evidence**: See exactly how our LLM research agent graded each supplement for your goals
+- **Transparent paper counts**: Know how many studies were analyzed for each grade
+- **Mechanism explanations**: Understand how each supplement works in the body
+- **Safety profiles**: Complete contraindications and interaction information
+- **Research verification**: Direct links to the studies that support each recommendation
 
-#### **Search and Discovery**
-- **Search functionality**: Find supplements by name or description
-- **Goal filtering**: See how evidence changes based on your objectives
-- **Paper counts**: Transparent about the research volume behind each grade
-- **Direct citations**: Every claim links to specific PubMed studies
+*See Part 4 above for complete technical details on how the supplement database works and integrates with our banking system.*
 
 ### Mobile-First Design
 
