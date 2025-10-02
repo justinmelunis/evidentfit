@@ -189,10 +189,9 @@ evidentfit/
     "bucket_key":"<index_version>:<goal>:<weight_bin>:<stim>:<meds_class>:<diet>:<freq>",
     "profile_sig": {...},
     "tiers": {
-      "core":[ {supp,doses:[{value,unit,days?}],timing,evidence,why,citations:[...],notes?} ],
+      "recommended":[ {supp,doses:[{value,unit,days?}],timing,evidence,why,citations:[...],notes?} ],
       "optional":[ ... ],
-      "conditional":[ ... ],
-      "experimental":[ ... ]
+      "not_recommended":[ ... ]
     },
     "exclusions":[ "..."],
     "safety":[ "..."],
@@ -285,7 +284,7 @@ FOUNDATION_EMBED_MODEL=text-embedding-3-small
 SEARCH_ENDPOINT
 SEARCH_QUERY_KEY
 SEARCH_ADMIN_KEY
-INDEX_VERSION=v1-YYYY-MM-DD     # OR set INDEX_VERSION_FILE=VERSION to auto-read
+INDEX_VERSION=v1-2025-09-25     # Current index version (update when schema changes)
 CORS_ALLOW_ORIGINS=https://www.evidentfit.com
 
 # Agent A (ingest job)
@@ -300,7 +299,7 @@ LOG_LEVEL=info
 # Agent B (API)
 SEARCH_INDEX=evidentfit-index
 SEARCH_SUMMARIES_INDEX=evidentfit-summaries
-BANKING_CACHE_DIR=banking_cache     # local directory for banking JSON files
+BANKING_CACHE_DIR=.                 # banking JSON files stored in API directory
 PORT=8000
 BASIC_AUTH_USER, BASIC_AUTH_PASS   # optional preview gate
 
