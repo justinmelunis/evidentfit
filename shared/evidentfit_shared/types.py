@@ -21,9 +21,12 @@ class UserProfile(BaseModel):
     """
     goal: Literal["strength", "hypertrophy", "endurance", "weight_loss", "performance", "general"]
     weight_kg: float = Field(gt=40, lt=250, description="Body weight in kilograms")
+    age: Optional[int] = Field(default=None, ge=13, le=120, description="Age in years")
+    sex: Optional[Literal["male", "female", "other"]] = Field(default=None)
     
     # Sensitivity & preferences
     caffeine_sensitive: bool = Field(default=False, description="Sensitive to caffeine/stimulants")
+    pregnancy: bool = Field(default=False, description="Currently pregnant or breastfeeding")
     diet: Optional[Literal["any", "vegan", "vegetarian"]] = Field(default="any")
     
     # Dietary intake (for gap analysis)

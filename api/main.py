@@ -449,9 +449,10 @@ async def stack_conversational(request: ConversationalStackRequest, _=Depends(gu
         print(f"Search failed: {e}")
         docs = []
     
-    # Build stack plan with conversation context
+    # Build stack plan with conversation context using banking system
     try:
-        stack_plan = build_conversational_stack(
+        from stack_builder import build_conversational_stack_with_banking
+        stack_plan = build_conversational_stack_with_banking(
             profile=user_profile,
             retrieved_docs=docs,
             conversation_context=user_msg

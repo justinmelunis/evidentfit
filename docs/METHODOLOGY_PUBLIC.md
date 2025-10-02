@@ -182,26 +182,47 @@ The Stack Planner builds a complete, personalized supplement protocol tailored t
   Context: "I'm vegan and train 5x/week. Interested in creatine."
        ↓
 ┌──────────────────────────────────────────────────────────────────┐
-│  PHASE 1: AI Profile Analysis (Hybrid)                          │
-│  ┌────────────┐              ┌─────────────┐                    │
-│  │  AI Model  │ ────────────→│ Suggestions │                    │
-│  └────────────┘              └─────────────┘                    │
-│  Analyzes demographics +     → creatine (asked about)           │
-│  context to suggest          → protein (vegan, muscle growth)   │
-│  personalized supplements    → b12 (vegan)                      │
-│                              → iron (female athlete)            │
-│                              → beta-alanine (training 5x/week)  │
+│  PHASE 1: Banking Check (Performance Optimization)              │
+│  ┌─────────────────┐    ┌─────────────────┐                    │
+│  │ Generate Key    │ ──→│ Check Cache     │                    │
+│  └─────────────────┘    └─────────────────┘                    │
+│  Key: "hypertrophy:medium:female:young"                        │
+│  Cache: 360 pre-computed profile combinations                   │
+│  Result: Base recommendations + evidence grades                 │
 └──────────────────────────────────────────────────────────────────┘
-       ↓
+       ↓ (if cached)         ↓ (if not cached)
+       │               ┌──────────────────────────────────────────┐
+       │               │  AI Profile Analysis (Hybrid)           │
+       │               │  ┌────────────┐    ┌─────────────┐      │
+       │               │  │  AI Model  │ ──→│ Suggestions │      │
+       │               │  └────────────┘    └─────────────┘      │
+       │               │  Analyzes demographics + context:       │
+       │               │  → creatine (asked about)               │
+       │               │  → protein (vegan, muscle growth)       │
+       │               │  → b12 (vegan)                          │
+       │               │  → iron (female athlete)                │
+       │               │  → beta-alanine (training 5x/week)      │
+       │               └──────────────────────────────────────────┘
+       │                        ↓
+       │               ┌──────────────────────────────────────────┐
+       │               │  Evidence Validation & Banking           │
+       │               │  ✅ creatine → Grade A (cached/computed) │
+       │               │  ✅ protein → Grade A                    │
+       │               │  ✅ b12 → Grade A (vegan-specific)       │
+       │               │  ✅ iron → Grade B (female athlete)      │
+       │               │  ✅ beta-alanine → Grade B               │
+       │               │  💾 Save to cache for future users      │
+       │               └──────────────────────────────────────────┘
+       │                        ↓
+       └────────────────────────┘
+                ↓
 ┌──────────────────────────────────────────────────────────────────┐
-│  PHASE 2: Evidence Validation                                   │
-│  Check each AI suggestion against research database:            │
-│  ✅ creatine → Grade A (multiple meta-analyses)                 │
-│  ✅ protein → Grade A (extensive RCT evidence)                  │
-│  ✅ b12 → Grade A (proven deficiency in vegans)                 │
-│  ✅ iron → Grade B (women's sports nutrition research)          │
-│  ✅ beta-alanine → Grade B (endurance/training research)        │
-│  ❌ [Example rejection: "tribulus" → Grade D, filtered out]     │
+│  PHASE 2: Real-Time Personalization                             │
+│  Apply conversation context to cached base recommendations:     │
+│  • Extract conditions: "I have anxiety" → block caffeine       │
+│  • Extract medications: "I take SSRIs" → interaction check     │
+│  • Extract preferences: "I'm interested in creatine" → include │
+│  • Apply safety rules: pregnancy, age, sensitivities          │
 └──────────────────────────────────────────────────────────────────┘
        ↓
 ┌──────────────────────────────────────────────────────────────────┐
@@ -213,13 +234,14 @@ The Stack Planner builds a complete, personalized supplement protocol tailored t
 └──────────────────────────────────────────────────────────────────┘
        ↓
 ┌──────────────────────────────────────────────────────────────────┐
-│  PHASE 4: Deterministic Dosing (No AI Math)                     │
-│  Evidence-based formulas:                                       │
-│  • Creatine: 5g CME/day (weight-adjusted)                      │
-│  • Protein: Gap analysis (target - diet intake)                │
-│  • B12: 2.4 mcg/day (RDA)                                      │
-│  • Iron: 18 mg/day for women (RDA)                             │
-│  • Beta-alanine: 3.2-6.4 g/day split doses                     │
+│  PHASE 4: Weight-Adjusted Dosing (No AI Math)                   │
+│  Evidence-based formulas by weight bin:                        │
+│  • Weight bin: "medium" (70-85kg) for 176 lbs                 │
+│  • Creatine: 5g CME/day (standard dose for medium weight)     │
+│  • Protein: Gap analysis (target 1.8g/kg - current intake)    │
+│  • B12: 2.4 mcg/day (RDA, higher for vegans)                 │
+│  • Iron: 18 mg/day (female RDA)                               │
+│  • Beta-alanine: 6.4g/day split doses (medium weight)         │
 └──────────────────────────────────────────────────────────────────┘
        ↓
 ┌──────────────────────────────────────────────────────────────────┐
@@ -241,8 +263,32 @@ The Stack Planner builds a complete, personalized supplement protocol tailored t
 
 ### Detailed Phase Breakdown
 
-#### Phase 1: Profile Analysis (Hybrid AI + Rules)
-An AI model analyzes your complete profile to suggest relevant supplements:
+#### Phase 1: Banking Check (Performance Optimization)
+
+**Why Banking?**
+To provide fast, consistent recommendations, we pre-compute base supplement stacks for common profile combinations. This ensures:
+- ⚡ **Speed**: Instant recommendations instead of 10-15 second processing
+- 🎯 **Consistency**: Same profile = same base recommendations
+- 📊 **Quality**: More time to validate evidence grades and dosing
+
+**Banking Buckets:**
+Your profile maps to one of 360 pre-computed combinations:
+- **6 Goals**: Strength, muscle growth, endurance, weight loss, performance, general health
+- **5 Weight Bins**: XS (<60kg), Small (60-70kg), Medium (70-85kg), Large (85-100kg), XL (100kg+)
+- **3 Sex Categories**: Male, female, other/unspecified  
+- **4 Age Bins**: Minor (13-17), young (18-29), adult (30-49), mature (50+)
+
+**Banking Key Example:**
+- 28-year-old, 176 lb (80kg) female, muscle growth goal
+- **Key**: `"hypertrophy:medium:female:young"`
+- **Result**: Pre-computed base recommendations with evidence grades
+
+**Cache Hit vs. Miss:**
+- **Cache Hit** (99% of cases): Instant base recommendations + real-time personalization
+- **Cache Miss** (rare profiles): Full AI analysis + evidence validation + save to cache
+
+#### Phase 1B: AI Profile Analysis (For Cache Misses or New Profiles)
+When a profile combination hasn't been pre-computed, an AI model analyzes your complete profile to suggest relevant supplements:
 
 **Profile Inputs:**
 - Primary goal (strength, muscle growth, endurance, weight loss, performance, general health)
@@ -269,13 +315,28 @@ The AI considers your demographics and context to suggest supplements proven eff
 - Example: Vegan female athlete → B12, iron, algae-based omega-3
 - Example: "I'm stressed" → Ashwagandha if evidence supports it for your goals
 
-#### Phase 2: Evidence Filtering
-AI suggestions are validated against our research database:
-- ✅ **Must have Grade A or B evidence** for your specific goal
-- ✅ **Must have 2+ supporting studies** from our curated database
-- ❌ **Rejected if evidence is weak or missing** (Grade C/D)
+#### Phase 2: Real-Time Personalization
 
-This prevents the AI from suggesting supplements without solid research backing.
+**Text Analysis:**
+Your conversational input is analyzed to extract:
+- **Medical conditions**: "I have anxiety" → caffeine contraindication
+- **Medications**: "I take blood pressure meds" → interaction screening
+- **Specific interests**: "I'm curious about creatine" → include in recommendations
+- **Lifestyle factors**: "I train fasted" → timing adjustments
+- **Concerns**: "I'm worried about side effects" → conservative dosing
+
+**Dynamic Adjustments:**
+The cached base recommendations are modified in real-time:
+- **Add supplements** mentioned in your text (if evidence supports them)
+- **Remove supplements** contraindicated by conditions/medications
+- **Adjust doses** based on sensitivities or medical conditions
+- **Update explanations** to address your specific context
+
+**Why This Approach Works:**
+- **Fast**: Base recommendations are pre-computed (instant)
+- **Personalized**: Real-time adjustments based on your unique situation
+- **Safe**: All adjustments go through the same safety guardrails
+- **Consistent**: Same base profile gets same foundation, personalized by context
 
 #### Phase 3: Safety Guardrails (Deterministic Rules)
 Every supplement goes through strict safety checks:
@@ -295,24 +356,35 @@ Every supplement goes through strict safety checks:
 **Interaction Screening:**
 Using FDA drug label data, we check for potential supplement-medication interactions and surface warnings.
 
-#### Phase 4: Deterministic Dosing
-Dosing is **never done by the AI**—it uses evidence-based formulas:
+#### Phase 4: Weight-Adjusted Dosing (No AI Math)
+Dosing is **never done by the AI**—it uses evidence-based formulas tailored to your weight bin:
 
-**Creatine Monohydrate Equivalent (CME) Dosing:**
-- All creatine dosing anchored to monohydrate equivalents (the form with the most research)
-- Maintenance: 3-5g CME/day based on body weight
+**Weight Bin System:**
+Your weight determines dosing ranges proven effective in research:
+- **XS (<60kg)**: Lower doses, conservative approach
+- **Small (60-70kg)**: Standard doses with some adjustments  
+- **Medium (70-85kg)**: Standard research-based doses (most studies)
+- **Large (85-100kg)**: Higher doses for weight-dependent supplements
+- **XL (100kg+)**: Maximum effective doses, loading phases where beneficial
+
+**Supplement-Specific Dosing:**
+
+**Creatine Monohydrate Equivalent (CME):**
+- XS/Small: 3g CME/day | Medium: 5g CME/day | Large/XL: 5-7g CME/day
+- All dosing anchored to monohydrate equivalents (the form with the most research)
 - Conversion formulas for alternative forms (anhydrous, HCl)
 
 **Protein Gap Analysis:**
-- Calculate your target protein intake based on goal and weight
-- Compare to your current dietary intake
+- Calculate target: 1.6-2.2g/kg based on goal and weight
+- Compare to your reported dietary intake
 - Recommend supplemental protein only if gap ≥ 20g/day
-- "Diet-first" philosophy
+- "Diet-first" philosophy: food sources prioritized
 
-**Weight-Adjusted Dosing:**
-- Caffeine: 3-6 mg/kg based on sensitivity
-- Beta-alanine: Fixed dose with split timing
-- Other supplements: Evidence-based ranges from research protocols
+**Other Weight-Adjusted Supplements:**
+- **Caffeine**: 3-6 mg/kg (capped by sensitivity and conditions)
+- **Beta-alanine**: 3.2g (small) to 6.4g (large) split into multiple doses
+- **Citrulline**: 6g (small) to 8g (large) pre-workout
+- **HMB**: 3g daily (all weights) with meals
 
 #### Phase 5: Presentation
 Your final stack includes:
@@ -333,6 +405,58 @@ Your final stack includes:
 - Supplements excluded due to safety concerns
 - Supplements with insufficient evidence for your goals
 - Clear explanations of why (e.g., "Caffeine excluded due to anxiety diagnosis")
+
+---
+
+## Banking System: Speed Meets Personalization
+
+### How We Balance Speed and Customization
+
+**The Challenge**: Providing both fast responses and deeply personalized recommendations.
+
+**Our Solution**: A hybrid banking system that pre-computes base recommendations while allowing real-time personalization.
+
+### Technical Implementation
+
+**360 Pre-Computed Profiles:**
+- Every combination of goal × weight bin × sex × age bin
+- Each profile contains base supplement recommendations with evidence grades
+- Updated monthly as new research is published
+- Stored for instant retrieval (< 100ms response time)
+
+**Real-Time Layer:**
+- Your conversational input adds personalization on top of the base profile
+- Medical conditions, medications, and preferences modify recommendations
+- Safety guardrails applied to all adjustments
+- Final dosing calculated using your exact weight
+
+**Storage Efficiency:**
+- 360 profiles × ~6KB each = ~2.2MB total storage
+- Fits easily within our infrastructure limits
+- Allows for comprehensive coverage without performance impact
+
+### Benefits for You
+
+**⚡ Speed**: Recommendations in seconds, not minutes  
+**🎯 Consistency**: Same profile always gets same evidence-based foundation  
+**🔒 Safety**: All cached recommendations go through the same safety validation  
+**📊 Quality**: More time to validate evidence means higher-quality base recommendations  
+**🎨 Personalization**: Your unique context still shapes the final recommendations  
+
+### What Gets Banked vs. What's Real-Time
+
+**Banked (Pre-Computed):**
+- Base supplement candidates for your demographic
+- Evidence grades based on research for your goal
+- Standard dosing ranges for your weight category
+- Core safety contraindications
+
+**Real-Time (Personalized):**
+- Medical conditions and medication interactions
+- Specific supplement requests from your conversation
+- Dose adjustments for sensitivities
+- Explanations tailored to your context
+- Final safety screening with your exact profile
 
 ---
 
