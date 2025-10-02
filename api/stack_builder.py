@@ -37,13 +37,87 @@ INDEX_VERSION = os.getenv("INDEX_VERSION", "v1")
 # Candidate Selection
 # ============================================================================
 
+def _get_llm_supplement_suggestions(profile: UserProfile, context: Optional[str] = None) -> List[str]:
+    """
+    Use LLM to suggest supplement candidates based on user profile and context.
+    
+    Returns:
+        List of supplement names suggested by LLM
+    """
+    try:
+        from clients.foundry_chat import foundry_chat
+    except ImportError:
+        print("Warning: foundry_chat not available for LLM suggestions")
+        return []
+    
+    # Build prompt for LLM
+    profile_summary = f"""
+User Profile:
+- Goal: {profile.goal}
+- Weight: {profile.weight_kg} kg
+- Age: {profile.age or 'Not specified'}
+- Sex: {getattr(profile, 'sex', 'Not specified')}
+- Caffeine sensitive: {'Yes' if profile.caffeine_sensitive else 'No'}
+- Pregnant/breastfeeding: {'Yes' if profile.pregnancy else 'No'}
+- Diet: {getattr(profile, 'diet', 'any')}
+- Training frequency: {getattr(profile, 'training_freq', 'medium')}
+- Medical conditions: {', '.join(profile.conditions) if profile.conditions else 'None'}
+- Medications: {', '.join(profile.meds) if profile.meds else 'None'}
+"""
+    
+    if context:
+        profile_summary += f"\nUser's additional context: {context}"
+    
+    prompt = f"""Based on this user's profile, suggest specific supplements that would be most beneficial.
+
+{profile_summary}
+
+Instructions:
+1. Consider their age, sex, goal, and any conditions/medications
+2. Suggest supplements that have research support for their specific demographic
+3. Be specific - if they're over 50, suggest supplements proven for older adults
+4. If they mention specific concerns (stress, sleep, joints), address those
+5. Only suggest supplements from this list: creatine, caffeine, protein, beta-alanine, citrulline, nitrate, hmb, bcaa, taurine, carnitine, glutamine, zma, ashwagandha, rhodiola, fish-oil, omega-3, vitamin-d, magnesium, glycine, collagen, glucosamine, curcumin, b12, iron, folate, leucine, betaine
+
+Return ONLY a comma-separated list of supplement names, nothing else.
+Example: creatine, protein, hmb, vitamin-d"""
+    
+    try:
+        response = foundry_chat(
+            prompt=prompt,
+            model=os.getenv("FOUNDATION_CHAT_MODEL", "gpt-4o-mini"),
+            max_tokens=150,
+            temperature=0.3  # Lower temperature for more consistent suggestions
+        )
+        
+        # Parse response
+        suggestions_text = response.strip().lower()
+        suggestions = [s.strip() for s in suggestions_text.split(',')]
+        
+        # Normalize names
+        normalized = []
+        for sugg in suggestions:
+            # Remove any extra text, just get the supplement name
+            sugg_clean = sugg.split('(')[0].strip()
+            if sugg_clean and len(sugg_clean) < 30:  # Sanity check
+                normalized.append(sugg_clean)
+        
+        print(f"LLM suggested supplements: {normalized}")
+        return normalized
+        
+    except Exception as e:
+        print(f"LLM suggestion failed: {e}")
+        return []
+
+
 def select_candidates(
     profile: UserProfile,
     retrieved_docs: List[dict],
     conversation_context: Optional[str] = None
 ) -> List[str]:
     """
-    Select supplement candidates based on profile, evidence, and conversation.
+    HYBRID approach: Use LLM to suggest personalized candidates, then filter through
+    deterministic guardrails and evidence base.
     
     Args:
         profile: User profile
@@ -53,19 +127,36 @@ def select_candidates(
     Returns:
         List of supplement names to consider
     """
+    # Get LLM-suggested candidates based on user profile and context
+    llm_candidates = _get_llm_supplement_suggestions(profile, conversation_context)
+    
+    # Start with LLM suggestions as the primary list
+    base = list(llm_candidates) if llm_candidates else []
+    
     goal = profile.goal
     
-    # Base stacks by goal (evidence-backed core supplements)
-    base_stacks = {
-        "strength": ["creatine", "caffeine", "protein"],
-        "hypertrophy": ["creatine", "protein", "beta-alanine"],
-        "endurance": ["caffeine", "beta-alanine", "nitrate", "protein"],
-        "weight_loss": ["caffeine", "protein"],
-        "performance": ["creatine", "caffeine", "beta-alanine", "citrulline", "protein"],
-        "general": ["protein"]
-    }
+    # Fallback: If LLM didn't suggest anything, use goal-based foundation
+    if not base:
+        base_stacks = {
+            "strength": ["creatine", "protein", "caffeine"],
+            "hypertrophy": ["creatine", "protein"],
+            "endurance": ["protein", "beta-alanine", "caffeine"],
+            "weight_loss": ["protein", "caffeine"],
+            "performance": ["creatine", "protein", "caffeine"],
+            "general": ["protein"]
+        }
+        base = base_stacks.get(goal, ["protein"])
     
-    base = base_stacks.get(goal, ["protein"])
+    # Always ensure protein is included (fundamental for all goals)
+    if "protein" not in base:
+        base.append("protein")
+    
+    # Analyze conversation context for explicitly mentioned supplements
+    if conversation_context:
+        mentioned_supplements = _extract_mentioned_supplements(conversation_context)
+        for supp in mentioned_supplements:
+            if supp not in base:
+                base.append(supp)
     
     # Analyze retrieved papers for additional evidence-backed candidates
     supplement_evidence = _analyze_paper_evidence(retrieved_docs, goal)
@@ -75,11 +166,72 @@ def select_candidates(
         if supp not in base and evidence["grade"] in ["A", "B"] and evidence["count"] >= 2:
             base.append(supp)
     
-    # Remove low-evidence supplements by default (unless explicitly mentioned)
+    # Keep low-evidence supplements if user explicitly mentioned them
+    mentioned_supplements_in_context = []
+    if conversation_context:
+        mentioned_supplements_in_context = _extract_mentioned_supplements(conversation_context)
+    
+    # Remove low-evidence supplements UNLESS user asked about them
     low_evidence = ["tribulus", "d-aspartic-acid", "deer-antler", "ecdysteroids"]
-    base = [s for s in base if s not in low_evidence]
+    base = [s for s in base if s not in low_evidence or s in mentioned_supplements_in_context]
     
     return base
+
+
+def _extract_mentioned_supplements(text: str) -> List[str]:
+    """
+    Extract supplement names mentioned in user's text.
+    
+    Returns:
+        List of supplement names found in text
+    """
+    text_lower = text.lower()
+    
+    # Comprehensive supplement keywords to check
+    supplement_keywords = {
+        "creatine": ["creatine", "monohydrate", "hcl", "anhydrous"],
+        "caffeine": ["caffeine", "coffee", "pre-workout"],
+        "protein": ["protein", "whey", "casein"],
+        "beta-alanine": ["beta-alanine", "beta alanine", "carnosine"],
+        "citrulline": ["citrulline", "l-citrulline"],
+        "nitrate": ["nitrate", "beetroot", "beet juice"],
+        "hmb": ["hmb", "beta-hydroxy"],
+        "bcaa": ["bcaa", "branched chain"],
+        "taurine": ["taurine"],
+        "carnitine": ["carnitine", "l-carnitine"],
+        "glutamine": ["glutamine", "l-glutamine"],
+        "zma": ["zma", "zinc magnesium"],
+        "ashwagandha": ["ashwagandha"],
+        "rhodiola": ["rhodiola"],
+        "fish-oil": ["fish oil", "omega-3", "omega 3", "omega3"],
+        "omega-3": ["omega-3", "omega 3", "fish oil", "dha", "epa"],
+        "vitamin-d": ["vitamin d", "vitamin-d", "vit d"],
+        "magnesium": ["magnesium", "mag"],
+        "glycine": ["glycine"],
+        "collagen": ["collagen"],
+        "glucosamine": ["glucosamine"],
+        "curcumin": ["curcumin", "turmeric"],
+        "b12": ["b12", "b-12", "vitamin b12", "cobalamin"],
+        "iron": ["iron", "ferrous"],
+        "folate": ["folate", "folic acid"],
+        "leucine": ["leucine", "l-leucine"],
+        "tribulus": ["tribulus"],
+        "d-aspartic-acid": ["d-aspartic", "daa", "d aspartic acid"],
+        "tongkat-ali": ["tongkat", "tongkat ali"],
+        "deer-antler": ["deer antler", "velvet antler"],
+        "ecdysteroids": ["ecdysteroid", "turkesterone"],
+        "betaine": ["betaine", "tmg"],
+        "cla": ["cla", "conjugated linoleic"]
+    }
+    
+    mentioned = []
+    for supplement, keywords in supplement_keywords.items():
+        for keyword in keywords:
+            if keyword in text_lower:
+                mentioned.append(supplement)
+                break  # Only add once per supplement
+    
+    return mentioned
 
 
 def _analyze_paper_evidence(docs: List[dict], goal: str) -> Dict[str, dict]:

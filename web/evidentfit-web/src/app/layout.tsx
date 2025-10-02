@@ -26,12 +26,9 @@ export default function RootLayout({
             </Link>
           <div className="flex gap-6">
             <Link href="/agent" className="text-gray-600 hover:text-blue-600 font-medium transition-colors">
-              Chat
+              Research Chat
             </Link>
             <Link href="/stack-chat" className="text-gray-600 hover:text-blue-600 font-medium transition-colors">
-              Stack Chat
-            </Link>
-            <Link href="/stack" className="text-gray-600 hover:text-blue-600 font-medium transition-colors">
               Stack Planner
             </Link>
             <Link href="/methodology" className="text-gray-600 hover:text-blue-600 font-medium transition-colors">

@@ -41,13 +41,14 @@ type StackItem = {
 type Profile = {
   goal: 'strength' | 'hypertrophy' | 'endurance' | 'weight_loss' | 'performance' | 'general'
   weight_kg: number
+  age?: number
+  sex?: 'male' | 'female' | 'other'
   caffeine_sensitive: boolean
+  pregnancy?: boolean
   meds: string[]
   conditions?: string[]
   diet?: 'any' | 'vegan' | 'vegetarian'
   training_freq?: 'low' | 'med' | 'high'
-  age?: number
-  pregnancy?: boolean
   diet_protein_g_per_day?: number
   creatine_form?: 'monohydrate' | 'anhydrous' | 'hcl'
 }
@@ -62,7 +63,9 @@ export default function StackChatPage() {
   
   const [profile, setProfile] = useState<Profile>({
     goal: 'hypertrophy',
-    weight_kg: 80,
+    weight_kg: 176, // Default 176 lbs = 80 kg
+    age: undefined,
+    sex: undefined,
     caffeine_sensitive: false,
     meds: [],
     conditions: [],
@@ -70,8 +73,8 @@ export default function StackChatPage() {
     training_freq: 'med'
   })
   
-  const [medInput, setMedInput] = useState('')
-  const [conditionInput, setConditionInput] = useState('')
+  const [weightLbs, setWeightLbs] = useState(176)
+  const [showExclusions, setShowExclusions] = useState(false)
   
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
@@ -94,6 +97,12 @@ export default function StackChatPage() {
     try {
       const apiBase = process.env.NEXT_PUBLIC_API_BASE || 'https://cae-evidentfit-api.whiteocean-6d9daede.eastus2.azurecontainerapps.io'
       
+      // Convert lbs to kg for API
+      const profileWithKg = {
+        ...profile,
+        weight_kg: Math.round(weightLbs / 2.20462 * 10) / 10 // Convert lbs to kg
+      }
+      
       const response = await fetch(`${apiBase}/stack/conversational`, {
         method: 'POST',
         headers: {
@@ -106,7 +115,7 @@ export default function StackChatPage() {
             ...messages,
             { role: 'user', content: userContext }
           ],
-          profile
+          profile: profileWithKg
         })
       })
 
@@ -138,27 +147,6 @@ export default function StackChatPage() {
     }
   }
 
-  const addMed = () => {
-    if (medInput.trim()) {
-      setProfile({...profile, meds: [...profile.meds, medInput.trim()]})
-      setMedInput('')
-    }
-  }
-
-  const removeMed = (index: number) => {
-    setProfile({...profile, meds: profile.meds.filter((_, i) => i !== index)})
-  }
-
-  const addCondition = () => {
-    if (conditionInput.trim()) {
-      setProfile({...profile, conditions: [...(profile.conditions || []), conditionInput.trim()]})
-      setConditionInput('')
-    }
-  }
-
-  const removeCondition = (index: number) => {
-    setProfile({...profile, conditions: (profile.conditions || []).filter((_, i) => i !== index)})
-  }
 
   const tierOrder = ['core', 'optional', 'conditional', 'experimental']
   const itemsByTier = currentStack.reduce((acc, item) => {
@@ -188,17 +176,17 @@ export default function StackChatPage() {
           <Link href="/" className="text-blue-600 hover:text-blue-800 font-medium">
             ← Back to Home
           </Link>
-          <h1 className="text-4xl font-bold text-gray-900 mt-4">Stack Builder</h1>
-          <p className="text-gray-600 mt-2">Build your personalized supplement stack with profile details and custom input</p>
+          <h1 className="text-4xl font-bold text-gray-900 mt-4">Supplement Stack Planner</h1>
+          <p className="text-gray-600 mt-2">Build your personalized supplement stack with detailed explanations and research citations</p>
         </div>
 
         {/* Profile Form */}
         <div className="bg-white rounded-lg shadow-md p-6 mb-6">
           <h2 className="text-2xl font-bold mb-4 text-gray-900">Your Profile</h2>
           
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Goal</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Goal *</label>
               <select 
                 value={profile.goal}
                 onChange={(e) => setProfile({...profile, goal: e.target.value as any})}
@@ -214,17 +202,17 @@ export default function StackChatPage() {
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Weight (kg)</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Weight (lbs) *</label>
               <input 
                 type="number"
-                value={profile.weight_kg}
-                onChange={(e) => setProfile({...profile, weight_kg: parseFloat(e.target.value) || 80})}
+                value={weightLbs}
+                onChange={(e) => setWeightLbs(parseFloat(e.target.value) || 176)}
                 className="w-full p-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500"
               />
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Age (optional)</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Age</label>
               <input 
                 type="number"
                 value={profile.age || ''}
@@ -233,32 +221,18 @@ export default function StackChatPage() {
                 placeholder="Optional"
               />
             </div>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Training Frequency</label>
-              <select 
-                value={profile.training_freq}
-                onChange={(e) => setProfile({...profile, training_freq: e.target.value as any})}
-                className="w-full p-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500"
-              >
-                <option value="low">Low (1-2x/week)</option>
-                <option value="med">Medium (3-4x/week)</option>
-                <option value="high">High (5+x/week)</option>
-              </select>
-            </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Diet</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Sex</label>
               <select 
-                value={profile.diet}
-                onChange={(e) => setProfile({...profile, diet: e.target.value as any})}
+                value={profile.sex || ''}
+                onChange={(e) => setProfile({...profile, sex: e.target.value ? e.target.value as any : undefined})}
                 className="w-full p-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500"
               >
-                <option value="any">Any</option>
-                <option value="vegetarian">Vegetarian</option>
-                <option value="vegan">Vegan</option>
+                <option value="">Prefer not to say</option>
+                <option value="male">Male</option>
+                <option value="female">Female</option>
+                <option value="other">Other</option>
               </select>
             </div>
           </div>
@@ -285,78 +259,20 @@ export default function StackChatPage() {
             </label>
           </div>
 
-          {/* Medications */}
-          <div className="mb-4">
-            <label className="block text-sm font-medium text-gray-700 mb-1">Medications (optional)</label>
-            <div className="flex gap-2 mb-2">
-              <input 
-                type="text"
-                value={medInput}
-                onChange={(e) => setMedInput(e.target.value)}
-                onKeyPress={(e) => e.key === 'Enter' && addMed()}
-                placeholder="e.g., lisinopril"
-                className="flex-1 p-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500"
-              />
-              <button 
-                onClick={addMed}
-                className="px-4 py-2 bg-gray-600 text-white rounded hover:bg-gray-700"
-              >
-                Add
-              </button>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              {profile.meds.map((med, i) => (
-                <span key={i} className="inline-flex items-center px-3 py-1 bg-gray-100 rounded-full text-sm">
-                  {med}
-                  <button onClick={() => removeMed(i)} className="ml-2 text-gray-600 hover:text-gray-900">×</button>
-                </span>
-              ))}
-            </div>
-          </div>
-
-          {/* Conditions */}
-          <div className="mb-6">
-            <label className="block text-sm font-medium text-gray-700 mb-1">Medical Conditions (optional)</label>
-            <div className="flex gap-2 mb-2">
-              <input 
-                type="text"
-                value={conditionInput}
-                onChange={(e) => setConditionInput(e.target.value)}
-                onKeyPress={(e) => e.key === 'Enter' && addCondition()}
-                placeholder="e.g., hypertension"
-                className="flex-1 p-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500"
-              />
-              <button 
-                onClick={addCondition}
-                className="px-4 py-2 bg-gray-600 text-white rounded hover:bg-gray-700"
-              >
-                Add
-              </button>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              {(profile.conditions || []).map((condition, i) => (
-                <span key={i} className="inline-flex items-center px-3 py-1 bg-gray-100 rounded-full text-sm">
-                  {condition}
-                  <button onClick={() => removeCondition(i)} className="ml-2 text-gray-600 hover:text-gray-900">×</button>
-                </span>
-              ))}
-            </div>
-          </div>
-
           {/* Custom Input & Build Button */}
           <div className="border-t pt-4">
             <label className="block text-sm font-medium text-gray-700 mb-2">
-              Additional Details (optional)
+              Tell us more about your goals and preferences (optional)
             </label>
             <p className="text-xs text-gray-600 mb-2">
-              Add any specific questions, concerns, or preferences about your stack
+              Share specific concerns, training schedule, dietary restrictions, or mention specific supplements you&apos;re interested in
             </p>
             <textarea
               value={input}
               onChange={(e) => setInput(e.target.value)}
-              placeholder="e.g., I'm particularly interested in creatine alternatives, or I train fasted in the mornings..."
+              placeholder="Example: I train early mornings before work and prefer supplements that won't upset my stomach. I'm also interested in ashwagandha for stress and want to know if beta-alanine is right for me..."
               className="w-full p-3 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 resize-none"
-              rows={3}
+              rows={4}
             />
             
             <button
@@ -364,7 +280,7 @@ export default function StackChatPage() {
               disabled={loading}
               className="mt-4 w-full py-4 bg-blue-600 text-white font-bold text-lg rounded-lg hover:bg-blue-700 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed"
             >
-              {loading ? 'Building Your Stack...' : '🚀 Build My Stack'}
+              {loading ? 'Building Your Stack...' : '🚀 Build My Personalized Stack'}
             </button>
           </div>
         </div>
@@ -380,6 +296,37 @@ export default function StackChatPage() {
             </ul>
           </div>
         )}
+
+        {/* Exclusions/Not Recommended - Collapsible */}
+        {exclusions.length > 0 && (
+          <div className="bg-gray-50 border-2 border-gray-300 rounded-lg p-4 mb-6">
+            <button
+              onClick={() => setShowExclusions(!showExclusions)}
+              className="w-full flex items-center justify-between text-left"
+            >
+              <h3 className="text-lg font-bold text-gray-900">
+                🚫 Supplements Not Recommended ({exclusions.length})
+              </h3>
+              <span className="text-2xl text-gray-600">
+                {showExclusions ? '−' : '+'}
+              </span>
+            </button>
+            
+            {showExclusions && (
+              <div className="mt-4 space-y-2">
+                {exclusions.map((exclusion, i) => (
+                  <div key={i} className="p-3 bg-white rounded border border-gray-300">
+                    <p className="text-sm text-gray-800">{exclusion}</p>
+                  </div>
+                ))}
+                <p className="text-xs text-gray-600 italic mt-3">
+                  These supplements were excluded based on your profile, medical conditions, or lack of strong evidence for your goals.
+                </p>
+              </div>
+            )}
+          </div>
+        )}
+
 
         {/* Conversation & Stack */}
         {messages.length > 0 && (
@@ -456,12 +403,211 @@ export default function StackChatPage() {
               )}
 
               {currentStack.length > 0 && (
-                <Link
-                  href="/stack"
-                  className="block w-full py-3 text-center bg-green-600 text-white font-medium rounded-lg hover:bg-green-700 transition-colors"
-                >
-                  View Full Stack Details →
-                </Link>
+                <div className="space-y-4 mt-4">
+                  {/* Core/Recommended Supplements */}
+                  {itemsByTier['core'] && itemsByTier['core'].length > 0 && (
+                    <div className="bg-white rounded-lg shadow-md p-4 border-l-4 border-green-500">
+                      <h3 className="text-xl font-bold text-green-900 mb-3">✅ Recommended Supplements</h3>
+                      <p className="text-sm text-gray-600 mb-4">These supplements have strong evidence for your goals and are safe based on your profile.</p>
+                      <div className="space-y-4">
+                        {itemsByTier['core'].map((item, i) => (
+                          <div key={i} className="border-l-4 border-green-500 pl-3 py-2 bg-green-50 rounded">
+                            <div className="flex items-start justify-between mb-2">
+                              <h4 className="font-bold text-gray-900 capitalize text-base">{item.supplement}</h4>
+                              <span className={`px-2 py-1 rounded text-xs font-bold ${
+                                item.evidence_grade === 'A' ? 'bg-green-100 text-green-800' :
+                                item.evidence_grade === 'B' ? 'bg-blue-100 text-blue-800' :
+                                'bg-yellow-100 text-yellow-800'
+                              }`}>
+                                Grade {item.evidence_grade}
+                              </span>
+                            </div>
+                            
+                            <div className="mb-3">
+                              <p className="text-sm font-semibold text-gray-700 mb-1">Why It&apos;s Recommended:</p>
+                              <p className="text-sm text-gray-700">{item.why}</p>
+                            </div>
+                            
+                            {item.doses.length > 0 && (
+                              <div className="mb-3 bg-white p-2 rounded border border-gray-200">
+                                <p className="text-sm font-semibold text-gray-700 mb-1">Dosing:</p>
+                                <p className="text-sm text-gray-900">
+                                  <strong>{item.doses[0].value} {item.doses[0].unit}</strong>
+                                  {item.doses[0].timing && <span className="text-gray-600"> • {item.doses[0].timing}</span>}
+                                </p>
+                                {item.doses[0]?.notes && item.doses[0].notes.length > 0 && (
+                                  <ul className="text-xs text-gray-600 list-disc list-inside mt-2">
+                                    {item.doses[0].notes.map((note, j) => (
+                                      <li key={j}>{note}</li>
+                                    ))}
+                                  </ul>
+                                )}
+                              </div>
+                            )}
+                            
+                            {item.citations && item.citations.length > 0 && (
+                              <div className="bg-blue-50 p-2 rounded border border-blue-200">
+                                <p className="text-sm font-semibold text-blue-900 mb-1">
+                                  📚 Supporting Research ({item.citations.length} {item.citations.length === 1 ? 'study' : 'studies'}):
+                                </p>
+                                <div className="space-y-1">
+                                  {item.citations.map((citation, j) => (
+                                    <a
+                                      key={j}
+                                      href={citation.url}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="block text-xs text-blue-700 hover:text-blue-900 hover:underline"
+                                    >
+                                      {j + 1}. {citation.title}
+                                      {citation.study_type && <span className="text-blue-600"> ({citation.study_type})</span>}
+                                    </a>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Optional/Maybe Supplements */}
+                  {itemsByTier['optional'] && itemsByTier['optional'].length > 0 && (
+                    <div className="bg-white rounded-lg shadow-md p-4 border-l-4 border-blue-500">
+                      <h3 className="text-xl font-bold text-blue-900 mb-3">💡 Optional Supplements (Maybe)</h3>
+                      <p className="text-sm text-gray-600 mb-4">These supplements may provide additional benefits but aren&apos;t essential for your goals.</p>
+                      <div className="space-y-4">
+                        {itemsByTier['optional'].map((item, i) => (
+                          <div key={i} className="border-l-4 border-blue-500 pl-3 py-2 bg-blue-50 rounded">
+                            <div className="flex items-start justify-between mb-2">
+                              <h4 className="font-bold text-gray-900 capitalize text-base">{item.supplement}</h4>
+                              <span className={`px-2 py-1 rounded text-xs font-bold ${
+                                item.evidence_grade === 'A' ? 'bg-green-100 text-green-800' :
+                                item.evidence_grade === 'B' ? 'bg-blue-100 text-blue-800' :
+                                'bg-yellow-100 text-yellow-800'
+                              }`}>
+                                Grade {item.evidence_grade}
+                              </span>
+                            </div>
+                            
+                            <div className="mb-3">
+                              <p className="text-sm font-semibold text-gray-700 mb-1">Potential Benefits:</p>
+                              <p className="text-sm text-gray-700">{item.why}</p>
+                            </div>
+                            
+                            {item.doses.length > 0 && (
+                              <div className="mb-3 bg-white p-2 rounded border border-gray-200">
+                                <p className="text-sm font-semibold text-gray-700 mb-1">Dosing:</p>
+                                <p className="text-sm text-gray-900">
+                                  <strong>{item.doses[0].value} {item.doses[0].unit}</strong>
+                                  {item.doses[0].timing && <span className="text-gray-600"> • {item.doses[0].timing}</span>}
+                                </p>
+                                {item.doses[0]?.notes && item.doses[0].notes.length > 0 && (
+                                  <ul className="text-xs text-gray-600 list-disc list-inside mt-2">
+                                    {item.doses[0].notes.map((note, j) => (
+                                      <li key={j}>{note}</li>
+                                    ))}
+                                  </ul>
+                                )}
+                              </div>
+                            )}
+                            
+                            {item.citations && item.citations.length > 0 && (
+                              <div className="bg-blue-50 p-2 rounded border border-blue-200">
+                                <p className="text-sm font-semibold text-blue-900 mb-1">
+                                  📚 Supporting Research ({item.citations.length} {item.citations.length === 1 ? 'study' : 'studies'}):
+                                </p>
+                                <div className="space-y-1">
+                                  {item.citations.map((citation, j) => (
+                                    <a
+                                      key={j}
+                                      href={citation.url}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="block text-xs text-blue-700 hover:text-blue-900 hover:underline"
+                                    >
+                                      {j + 1}. {citation.title}
+                                      {citation.study_type && <span className="text-blue-600"> ({citation.study_type})</span>}
+                                    </a>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Conditional/Experimental - if they exist */}
+                  {(itemsByTier['conditional']?.length > 0 || itemsByTier['experimental']?.length > 0) && (
+                    <div className="bg-white rounded-lg shadow-md p-4 border-l-4 border-yellow-500">
+                      <h3 className="text-xl font-bold text-yellow-900 mb-3">⚠️ Conditional/Experimental</h3>
+                      <p className="text-sm text-gray-600 mb-4">Limited evidence or specific use cases only.</p>
+                      <div className="space-y-4">
+                        {[...(itemsByTier['conditional'] || []), ...(itemsByTier['experimental'] || [])].map((item, i) => (
+                      <div key={i} className="border-l-4 border-blue-500 pl-3 py-2 bg-gray-50 rounded">
+                        <div className="flex items-start justify-between mb-2">
+                          <h4 className="font-bold text-gray-900 capitalize text-base">{item.supplement}</h4>
+                          <span className={`px-2 py-1 rounded text-xs font-bold ${
+                            item.evidence_grade === 'A' ? 'bg-green-100 text-green-800' :
+                            item.evidence_grade === 'B' ? 'bg-blue-100 text-blue-800' :
+                            'bg-yellow-100 text-yellow-800'
+                          }`}>
+                            Grade {item.evidence_grade}
+                          </span>
+                        </div>
+                        
+                        <div className="mb-3">
+                          <p className="text-sm font-semibold text-gray-700 mb-1">Why It&apos;s Recommended:</p>
+                          <p className="text-sm text-gray-700">{item.why}</p>
+                        </div>
+                        
+                        {item.doses.length > 0 && (
+                          <div className="mb-3 bg-white p-2 rounded border border-gray-200">
+                            <p className="text-sm font-semibold text-gray-700 mb-1">Dosing:</p>
+                            <p className="text-sm text-gray-900">
+                              <strong>{item.doses[0].value} {item.doses[0].unit}</strong>
+                              {item.doses[0].timing && <span className="text-gray-600"> • {item.doses[0].timing}</span>}
+                            </p>
+                            {item.doses[0]?.notes && item.doses[0].notes.length > 0 && (
+                              <ul className="text-xs text-gray-600 list-disc list-inside mt-2">
+                                {item.doses[0].notes.map((note, j) => (
+                                  <li key={j}>{note}</li>
+                                ))}
+                              </ul>
+                            )}
+                          </div>
+                        )}
+                        
+                        {item.citations && item.citations.length > 0 && (
+                          <div className="bg-blue-50 p-2 rounded border border-blue-200">
+                            <p className="text-sm font-semibold text-blue-900 mb-1">
+                              📚 Supporting Research ({item.citations.length} {item.citations.length === 1 ? 'study' : 'studies'}):
+                            </p>
+                            <div className="space-y-1">
+                              {item.citations.map((citation, j) => (
+                                <a
+                                  key={j}
+                                  href={citation.url}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="block text-xs text-blue-700 hover:text-blue-900 hover:underline"
+                                >
+                                  {j + 1}. {citation.title}
+                                  {citation.study_type && <span className="text-blue-600"> ({citation.study_type})</span>}
+                                </a>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
               )}
             </div>
           </div>
