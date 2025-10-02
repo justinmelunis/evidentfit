@@ -255,7 +255,7 @@ export default function SupplementsPage() {
                   <h3 className="font-semibold text-gray-900 mb-3">📊 Evidence by Goal</h3>
                   <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
                     {GOALS.map(goal => {
-                      const evidence = supplement.evidenceByGoal[goal]
+                      const evidence = supplement.evidenceByGoal[goal.key]
                       return (
                         <div 
                           key={goal.key}
