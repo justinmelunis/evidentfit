@@ -214,9 +214,8 @@ class BankingInitializer:
         query = goal_queries.get(goal, goal)
         
         try:
-            # Get papers from search index
-            search_response = search_docs(query=query, top=50)
-            papers = search_response.get('value', [])
+            # Get papers from search index (search_docs already returns the 'value' array)
+            papers = search_docs(query=query, top=50)
             
             # Cache the results
             self.papers_cache[goal] = papers

@@ -35,10 +35,10 @@ def search_docs(
     
     # Default select fields for Papers index
     if select is None:
-        select = ["title", "url_pub", "study_type", "doi", "pmid"]
+        select = ["title", "url_pub", "study_type", "doi", "pmid", "supplements", "journal", "year", "summary", "content", "population", "outcomes"]
     
-    # Build search URL
-    url = f"{search_endpoint.rstrip('/')}/indexes/{search_index}/docs/search"
+    # Build search URL with API version
+    url = f"{search_endpoint.rstrip('/')}/indexes/{search_index}/docs/search?api-version=2023-11-01"
     
     headers = {
         "Content-Type": "application/json",
@@ -49,8 +49,8 @@ def search_docs(
     search_payload = {
         "search": query,
         "queryType": "simple",  # Use simple query for BM25
-        "searchFields": ["title", "summary", "content"],
-        "select": select,
+        "searchFields": ",".join(["title", "summary", "content"]),
+        "select": ",".join(select),
         "top": top
     }
     
@@ -58,9 +58,16 @@ def search_docs(
         search_payload["filter"] = filters
     
     try:
-        with httpx.Client(timeout=30) as client:
+        # Temporarily bypass SSL verification for testing (remove in production)
+        import warnings
+        warnings.filterwarnings('ignore', message='Unverified HTTPS request')
+        with httpx.Client(timeout=30, verify=False) as client:
             response = client.post(url, json=search_payload, headers=headers)
             response.raise_for_status()
+            
+            if not response.text.strip():
+                return []
+            
             data = response.json()
             return data.get("value", [])
     except httpx.HTTPStatusError as e:

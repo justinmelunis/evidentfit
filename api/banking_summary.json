@@ -1,8 +1,44 @@
 {
-  "initialization_date": "2025-10-01T22:29:23.255397",
+  "initialization_date": "2025-10-01T23:51:37.112773",
   "index_version": "v1-2025-09-25",
   "level1_entries": 162,
   "level2_entries": 360,
-  "mode": "mock_testing",
-  "note": "Mock banking files for testing - not based on real research papers"
+  "goals": [
+    "strength",
+    "hypertrophy",
+    "endurance",
+    "weight_loss",
+    "performance",
+    "general"
+  ],
+  "supplements": [
+    "creatine",
+    "protein",
+    "caffeine",
+    "beta-alanine",
+    "citrulline",
+    "nitrate",
+    "hmb",
+    "bcaa",
+    "taurine",
+    "carnitine",
+    "glutamine",
+    "ashwagandha",
+    "rhodiola",
+    "omega-3",
+    "vitamin-d",
+    "magnesium",
+    "collagen",
+    "curcumin",
+    "b12",
+    "iron",
+    "folate",
+    "leucine",
+    "betaine",
+    "zma",
+    "tribulus",
+    "d-aspartic-acid",
+    "tongkat-ali"
+  ],
+  "profile_combinations": 360
 }

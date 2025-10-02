@@ -464,11 +464,23 @@ async def stack_conversational(request: ConversationalStackRequest, _=Depends(gu
     # Build stack plan with conversation context using banking system
     try:
         from stack_builder import build_conversational_stack_with_banking
+        from form_selection_system import enhance_stack_with_forms, get_user_form_context
+        
+        # Build base stack
         stack_plan = build_conversational_stack_with_banking(
             profile=user_profile,
             retrieved_docs=docs,
             conversation_context=user_msg
         )
+        
+        # Extract user form preferences from profile
+        user_form_preferences = {}
+        if hasattr(user_profile, 'creatine_form') and user_profile.creatine_form:
+            user_form_preferences['creatine'] = user_profile.creatine_form
+        
+        # Enhance stack with form selection capabilities
+        stack_plan = enhance_stack_with_forms(stack_plan, user_form_preferences)
+        
     except Exception as e:
         print(f"Stack building failed: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to build stack: {str(e)}")
@@ -490,14 +502,80 @@ async def stack_conversational(request: ConversationalStackRequest, _=Depends(gu
 @api.get("/stack/creatine-forms")
 def get_creatine_forms():
     """
-    Get detailed comparison of creatine forms.
+    Get detailed comparison of creatine forms for user selection.
     
-    Useful for users asking "which creatine should I take?"
+    Returns comprehensive information about different creatine forms
+    including dosing equivalents, pros/cons, and research backing.
     """
     if not CONVERSATIONAL_STACK_AVAILABLE:
         return {"error": "Not available"}
     
-    return get_creatine_form_comparison()
+    try:
+        from form_selection_system import form_selection
+        return form_selection.get_detailed_form_comparison("creatine")
+    except Exception as e:
+        return {"error": f"Failed to get form comparison: {str(e)}"}
+
+@api.get("/stack/{supplement}/forms")
+def get_supplement_forms(supplement: str):
+    """
+    Get detailed comparison of forms for any supplement.
+    
+    Returns form options, dosing conversions, and selection guidance.
+    """
+    if not CONVERSATIONAL_STACK_AVAILABLE:
+        return {"error": "Not available"}
+    
+    try:
+        from form_selection_system import form_selection
+        comparison = form_selection.get_detailed_form_comparison(supplement)
+        
+        if not comparison:
+            return {"error": f"No forms available for {supplement}"}
+        
+        return comparison
+    except Exception as e:
+        return {"error": f"Failed to get forms for {supplement}: {str(e)}"}
+
+@api.post("/stack/update-form")
+def update_stack_form(request: dict):
+    """
+    Update a supplement form in an existing stack and recalculate dosing.
+    
+    Allows users to change forms (e.g., creatine monohydrate -> HCl) 
+    and get updated dosing recommendations.
+    """
+    if not CONVERSATIONAL_STACK_AVAILABLE:
+        return {"error": "Not available"}
+    
+    try:
+        from form_selection_system import form_selection
+        
+        supplement = request.get("supplement")
+        new_form = request.get("new_form") 
+        current_stack = request.get("current_stack", {})
+        
+        if not supplement or not new_form:
+            return {"error": "Missing supplement or new_form"}
+        
+        # Find the supplement in current stack
+        updated_items = []
+        for item in current_stack.get("items", []):
+            if item.get("supplement") == supplement:
+                # Update this item with new form
+                updated_item = form_selection.enhance_stack_item_with_forms(item, new_form)
+                updated_items.append(updated_item)
+            else:
+                updated_items.append(item)
+        
+        # Return updated stack
+        updated_stack = current_stack.copy()
+        updated_stack["items"] = updated_items
+        
+        return updated_stack
+        
+    except Exception as e:
+        return {"error": f"Failed to update form: {str(e)}"}
 
 @api.get("/supplements/evidence")
 def get_supplement_evidence():

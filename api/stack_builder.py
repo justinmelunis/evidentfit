@@ -466,67 +466,226 @@ def apply_text_based_adjustments(items: List[StackItem], context: str, profile: 
 
 def calculate_evidence_grade_from_papers(supplement: str, docs: List[dict], goal: str) -> str:
     """
-    Dynamically calculate evidence grade based on retrieved papers.
+    Use our research agent to directly grade evidence based on reading the papers.
     
     Args:
-        supplement: Supplement name
+        supplement: Supplement name (may include form, e.g., "creatine-monohydrate")
         docs: Retrieved research papers
         goal: User's goal
         
     Returns:
-        Evidence grade: A, B, C, or D
+        Evidence grade: A, B, C, or D assigned by research agent
     """
+    # Handle supplement forms - map specific forms to base supplement for paper matching
+    base_supplement, form_info = _parse_supplement_form(supplement)
+    
     relevant_papers = []
     
     for doc in docs:
         doc_supplements = (doc.get("supplements") or "").lower().split(",")
-        if supplement.lower() in [s.strip() for s in doc_supplements]:
+        doc_supplements = [s.strip() for s in doc_supplements]
+        
+        # Check for base supplement or specific form
+        if (base_supplement.lower() in doc_supplements or 
+            supplement.lower() in doc_supplements or
+            any(form_variant in doc_supplements for form_variant in _get_supplement_variants(base_supplement))):
             relevant_papers.append(doc)
     
     if not relevant_papers:
         return "D"  # No evidence in our database
     
-    # Score based on study types and relevance to goal
-    score = 0
-    meta_count = 0
-    rct_count = 0
-    goal_relevant_count = 0
+    # Use research agent to directly assign evidence grade
+    try:
+        return _get_research_agent_grade(supplement, goal, relevant_papers, form_info)
+    except Exception as e:
+        print(f"Warning: Research agent grading failed for {supplement}, using fallback: {e}")
+        # Fallback to conservative grading
+        return _fallback_paper_count_grading(supplement, goal, relevant_papers)
+
+
+def _parse_supplement_form(supplement: str) -> Tuple[str, Optional[str]]:
+    """
+    Parse supplement name to extract base supplement and form.
     
-    for paper in relevant_papers:
-        study_type = (paper.get("study_type") or "").lower()
-        primary_goal = (paper.get("primary_goal") or "").lower()
-        reliability = paper.get("reliability_score", 0)
+    Args:
+        supplement: Supplement name (e.g., "creatine-monohydrate", "whey-protein")
         
-        # Study design scoring
-        if "meta" in study_type:
-            score += 3
-            meta_count += 1
-        elif "rct" in study_type or "randomized" in study_type:
-            score += 2
-            rct_count += 1
-        elif "crossover" in study_type:
-            score += 1.5
+    Returns:
+        Tuple of (base_supplement, form) where form is None if no specific form
+    """
+    if "-" in supplement:
+        parts = supplement.split("-", 1)
+        return parts[0], parts[1]
+    return supplement, None
+
+
+def _get_supplement_variants(base_supplement: str) -> List[str]:
+    """
+    Get known variants/forms of a supplement for paper matching.
+    
+    Args:
+        base_supplement: Base supplement name (e.g., "creatine", "protein")
+        
+    Returns:
+        List of variant names to check in papers
+    """
+    variants = {
+        "creatine": ["creatine-monohydrate", "creatine-hcl", "creatine-anhydrous", "creatine-ethyl-ester"],
+        "protein": ["whey-protein", "casein-protein", "soy-protein", "pea-protein", "whey", "casein"],
+        "hmb": ["hmb-ca", "hmb-fa", "hmb-calcium", "hmb-free-acid"],
+        "caffeine": ["caffeine-anhydrous", "caffeine-citrate"],
+        "citrulline": ["citrulline-malate", "l-citrulline"],
+        "carnitine": ["l-carnitine", "acetyl-l-carnitine"],
+        "arginine": ["l-arginine", "arginine-akg"]
+    }
+    return variants.get(base_supplement, [])
+
+
+def _get_research_agent_grade(supplement: str, goal: str, papers: List[dict], form_info: Optional[str] = None) -> str:
+    """
+    Use research agent to directly assign evidence grade based on comprehensive paper analysis.
+    
+    Returns:
+        Evidence grade: A, B, C, or D
+    """
+    from clients.foundry_chat import chat as foundry_chat
+    
+    # Prepare detailed paper analysis for research agent (limit to top 6 most relevant)
+    paper_summaries = []
+    for i, paper in enumerate(papers[:6]):  # Reduced count for more detail per paper
+        title = paper.get("title", "")
+        summary = paper.get("summary", "")
+        content = paper.get("content", "")[:1000]  # More content for better analysis
+        study_type = paper.get("study_type", "")
+        journal = paper.get("journal", "")
+        year = paper.get("year", "")
+        population = paper.get("population", "")
+        outcomes = paper.get("outcomes", "")
+        
+        paper_summaries.append(f"""
+=== PAPER {i+1} ===
+Title: {title}
+Journal: {journal} ({year})
+Study Design: {study_type}
+Population: {population}
+Outcomes Measured: {outcomes}
+
+Summary: {summary}
+
+Key Content: {content}...
+""")
+    
+    papers_text = "\n".join(paper_summaries)
+    
+    # Add form-specific context if available
+    form_context = ""
+    if form_info:
+        form_context = f"""
+IMPORTANT FORM CONTEXT:
+You are evaluating {supplement} (specifically the {form_info} form). Consider:
+- Most research may be on the standard/reference form (e.g., creatine monohydrate)
+- If papers study the reference form, this evidence generally applies to the specific form
+- If papers study the exact form requested, weight that evidence more heavily
+- Note any form-specific advantages/disadvantages mentioned in the research
+"""
+
+    prompt = f"""You are an expert research evidence grader evaluating {supplement} for {goal} goals.{form_context} 
+
+DETAILED GRADING CRITERIA:
+
+**Grade A - Strong Evidence:**
+- Multiple high-quality RCTs or systematic reviews/meta-analyses showing consistent benefits
+- Clear positive effects across studies with clinically meaningful effect sizes
+- Well-established supplements with decades of research (e.g., creatine for strength/power)
+- Meta-analyses from reputable journals showing significant improvements
+- Strong biological plausibility and mechanism of action
+- Effects directly relevant to {goal}
+
+**Grade B - Moderate Evidence:**
+- Some quality RCTs or one good meta-analysis showing benefits
+- Generally positive effects but may have some inconsistency
+- Moderate effect sizes or limited by study quality/size
+- Most studies show benefit but evidence base could be stronger
+- Effects reasonably relevant to {goal}
+
+**Grade C - Limited Evidence:**
+- Few studies, mostly observational or small RCTs
+- Mixed or inconsistent results across studies
+- Small effect sizes or studies with methodological limitations
+- Some suggestion of benefit but evidence is preliminary
+- Indirect relevance to {goal} or limited population studied
+
+**Grade D - Insufficient/Negative Evidence:**
+- No quality studies showing benefits for {goal}
+- Studies consistently show no effect or potential harm
+- Very poor study quality or extremely limited evidence base
+- No plausible mechanism or theoretical basis for benefits
+
+EVALUATION FRAMEWORK:
+1. **Study Quality**: What types of studies? Sample sizes? Control groups? Blinding?
+2. **Consistency**: Do studies agree on effects? Any contradictory findings?
+3. **Effect Size**: Are benefits clinically meaningful or just statistically significant?
+4. **Relevance**: How directly do outcomes relate to {goal} goals?
+5. **Population**: Do study populations match typical supplement users?
+6. **Mechanism**: Is there a plausible biological mechanism for effects?
+
+RESEARCH PAPERS TO ANALYZE:
+{papers_text}
+
+GRADING EXAMPLES FOR {goal.upper()} GOALS:
+- Creatine for strength/power: Grade A (multiple meta-analyses, consistent 5-15% strength gains, decades of research)
+- Protein for hypertrophy: Grade A (extensive RCT evidence, clear muscle protein synthesis benefits)
+- Beta-alanine for endurance: Grade B (good RCT evidence but mainly for 1-4 min high-intensity activities)
+- Caffeine for performance: Grade A (extensive meta-analysis evidence, 3-6% performance improvements)
+- Glutamine for strength: Grade D (RCTs consistently show no benefit over placebo)
+
+SPECIAL CONSIDERATIONS:
+- If you see multiple meta-analyses from reputable journals (like Nutrients, JISSN, Sports Medicine), this strongly suggests Grade A evidence
+- Creatine has over 30 years of research - if papers show strength/power benefits, this should typically be Grade A
+- Look for effect sizes: 5-15% improvements in strength/power are clinically meaningful
+- Recent meta-analyses (2020+) often provide the best evidence synthesis
+
+Based on your comprehensive analysis of study quality, consistency, effect sizes, and relevance to {goal}, what evidence grade would you assign?
+
+Respond with ONLY the single letter grade: A, B, C, or D
+
+Your grade:"""
+
+    try:
+        response = foundry_chat(
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=10,  # Just need single letter
+            temperature=0.1
+        )
+        
+        # Extract grade from response
+        grade = response.strip().upper()
+        if grade in ['A', 'B', 'C', 'D']:
+            return grade
         else:
-            score += 0.5
-        
-        # Goal relevance
-        if goal.lower() in primary_goal or primary_goal in goal.lower():
-            score += 1
-            goal_relevant_count += 1
-        
-        # High reliability bonus
-        if reliability >= 8:
-            score += 0.5
+            print(f"Invalid grade response: '{response}', defaulting to C")
+            return "C"
+            
+    except Exception as e:
+        print(f"Research agent grading failed: {e}")
+        return "C"  # Conservative default
+
+
+def _fallback_paper_count_grading(supplement: str, goal: str, papers: List[dict]) -> str:
+    """
+    Fallback grading based on paper count and study design (old method).
+    Used when LLM outcome analysis fails.
+    """
+    meta_count = sum(1 for p in papers if "meta" in (p.get("study_type") or "").lower())
+    rct_count = sum(1 for p in papers if "rct" in (p.get("study_type") or "").lower() or "randomized" in (p.get("study_type") or "").lower())
+    paper_count = len(papers)
     
-    # Determine grade based on score and paper count
-    paper_count = len(relevant_papers)
-    
-    if meta_count >= 1 and score >= 5 and paper_count >= 3:
-        return "A"  # Strong evidence: meta-analyses + multiple studies
-    elif (rct_count >= 2 or meta_count >= 1) and score >= 3:
-        return "B"  # Moderate evidence: RCTs or meta-analysis
-    elif paper_count >= 2 and score >= 1.5:
-        return "C"  # Limited evidence: some studies
+    if meta_count >= 1 and paper_count >= 3:
+        return "B"  # Moderate evidence (downgraded since we can't verify outcomes)
+    elif rct_count >= 2 or meta_count >= 1:
+        return "C"  # Limited evidence
+    elif paper_count >= 2:
+        return "C"  # Limited evidence
     else:
         return "D"  # Insufficient evidence
 

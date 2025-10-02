@@ -91,7 +91,24 @@ class KeyVaultClient:
             logger.error(f"Failed to retrieve secret '{secret_name}': {e}")
             return None
     
-# Removed set_secret and list_secrets methods - not needed for this application
+    def set_secret(self, secret_name: str, secret_value: str) -> bool:
+        """
+        Set/update a secret in Azure Key Vault.
+        
+        Args:
+            secret_name: Name of the secret in Key Vault
+            secret_value: Value to store
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            self.client.set_secret(secret_name, secret_value)
+            logger.info(f"Successfully set secret: {secret_name}")
+            return True
+        except Exception as e:
+            logger.error(f"Failed to set secret '{secret_name}': {e}")
+            return False
 
 # Global Key Vault client instance
 _keyvault_client = None
