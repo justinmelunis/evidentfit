@@ -12,7 +12,7 @@ export default function Home() {
         </p>
       </div>
       
-      <div className="grid md:grid-cols-2 gap-8">
+      <div className="grid md:grid-cols-3 gap-6">
         <Link href="/agent" className="block">
           <div className="border rounded-lg p-6 hover:shadow-lg transition-shadow">
             <h2 className="text-2xl font-semibold mb-4">💬 Chat Assistant</h2>
@@ -30,6 +30,16 @@ export default function Home() {
               Get personalized supplement recommendations based on your goals and profile.
             </p>
             <div className="text-blue-600 font-medium">Plan My Stack →</div>
+          </div>
+        </Link>
+
+        <Link href="/supplements" className="block">
+          <div className="border rounded-lg p-6 hover:shadow-lg transition-shadow">
+            <h2 className="text-2xl font-semibold mb-4">📊 Supplement Database</h2>
+            <p className="text-gray-600 mb-4">
+              Research individual supplements with evidence grades by goal and transparent paper counts.
+            </p>
+            <div className="text-blue-600 font-medium">Browse Database →</div>
           </div>
         </Link>
       </div>
