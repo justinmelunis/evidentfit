@@ -2,7 +2,7 @@
 
 ## Overview
 
-The EvidentFit Ingest Agent is responsible for discovering, scoring, selecting, and indexing high-quality research papers from PubMed into Azure AI Search. It implements a sophisticated **two-phase rolling window system** with **combination-aware dynamic scoring** to maintain a diverse, high-quality dataset of approximately 8,000 papers optimized for supplement research.
+The EvidentFit Ingest Agent is responsible for discovering, scoring, selecting, and indexing high-quality research papers from PubMed into Azure AI Search. It implements a sophisticated **multi-query strategy** with **iterative diversity filtering** to maintain a diverse, high-quality dataset of approximately 12,000 papers optimized for supplement research.
 
 ## Core Objectives
 
@@ -10,20 +10,21 @@ The EvidentFit Ingest Agent is responsible for discovering, scoring, selecting, 
 2. **Diversity**: Ensure balanced representation across supplements, training goals, populations, study types, and journals
 3. **Storage Optimization**: Maintain a curated dataset that fits within Azure AI Search free tier constraints (50 MB)
 4. **Continuous Improvement**: Support both bootstrap (initial) and monthly (incremental) update modes
+5. **Rate Limit Compliance**: Respect PubMed API limits with intelligent retry logic and delays
 
 ## Architecture
 
 ### Data Flow
 
 ```
-PubMed (E-utilities API)
-    ↓ [Search & Fetch]
+Multi-Query PubMed Search (30 supplements)
+    ↓ [Date-based chunking to bypass 10K limit]
 XML Parsing & Metadata Extraction
     ↓ [Parse Articles]
-Phase 1: Reliability Scoring
-    ↓ [Quality Filter]
-Phase 2: Combination-Aware Scoring
-    ↓ [Dynamic Selection]
+Phase 1: Reliability Scoring (4.0 threshold)
+    ↓ [Quality Filter - ~60,000 papers]
+Phase 2: Iterative Diversity Filtering
+    ↓ [Dynamic Selection - 12,000 papers]
 Azure AI Search Index
     ↓ [Upsert Documents]
 Watermark Update
@@ -33,15 +34,16 @@ Watermark Update
 
 #### **Bootstrap Mode**
 - Initial population of the index
-- Fetches papers from 2000-01-01 to present
-- Processes ~12,000 papers, selects best ~8,000
-- Uses two-phase scoring for optimal diversity
+- Multi-query search across 30 supplements from 1990-01-01 to present
+- Collects ~124,000 PMIDs, processes ~95,000 papers
+- Applies 4.0 quality threshold, selects best 12,000 papers
+- Uses iterative diversity filtering for optimal balance
 
 #### **Monthly Mode**
 - Incremental updates based on watermark
 - Fetches only papers published since last run
 - Integrates new papers with existing dataset
-- Re-applies combination scoring to maintain diversity
+- Re-applies iterative diversity filtering to maintain diversity
 
 ## Scoring Methodology
 
@@ -49,12 +51,12 @@ Watermark Update
 
 Every paper receives a **reliability score** based on objective quality indicators. This is a lightweight, reproducible heuristic designed to rank papers without requiring manual review or API lookups.
 
-#### 1. Study Type Score (2-10 points)
-- **Meta-analysis**: +10 points — highest evidence level, synthesis of multiple studies
-- **RCT (Randomized Controlled Trial)**: +8 points — gold standard for interventions
-- **Crossover**: +6 points — good control design, within-subject comparison
+#### 1. Study Type Score (1-12 points)
+- **Meta-analysis**: +12 points — highest evidence level, synthesis of multiple studies
+- **RCT (Randomized Controlled Trial)**: +10 points — gold standard for interventions
+- **Crossover**: +7 points — good control design, within-subject comparison
 - **Cohort**: +4 points — observational but useful for long-term outcomes
-- **Other**: +2 points — baseline for published work
+- **Other**: +1 point — baseline for published work
 
 #### 2. Sample Size Score (0-5 points)
 Extracted via regex patterns from abstract (e.g., "n=50", "100 participants"):
@@ -108,11 +110,11 @@ To prevent the corpus from being overwhelmed by creatine papers, we apply small 
 
 **Typical Score Range**: 0-20+ points (most papers fall in 5-15 range)
 
-**Quality Threshold**: Papers must score ≥3.0 points to proceed to Phase 2 (filters out extremely low-quality or off-topic papers).
+**Quality Threshold**: Papers must score ≥4.0 points to proceed to Phase 2 (filters out cohorts and other low-quality papers, keeps RCTs and crossovers).
 
-### Phase 2: Combination-Aware Scoring (variable adjustment)
+### Phase 2: Iterative Diversity Filtering
 
-After reliability scoring, papers are re-scored based on **diversity needs** to ensure balanced representation across multiple dimensions simultaneously. This prevents the corpus from being dominated by a few over-studied combinations (e.g., "creatine + strength + trained athletes + RCT").
+After reliability scoring, papers are processed through **iterative diversity filtering** to ensure balanced representation across multiple dimensions simultaneously. This prevents the corpus from being dominated by a few over-studied combinations (e.g., "creatine + strength + trained athletes + RCT").
 
 #### Tracked Combinations
 
@@ -124,24 +126,26 @@ The system analyzes existing papers and new candidates across five combination t
 4. **study_type × goal** (e.g., "meta-analysis_strength", "RCT_weight_loss")
 5. **journal × supplement** (e.g., "sports-med_creatine", "nutrients_beta-alanine")
 
-#### Dynamic Weights Calculation
+#### Iterative Elimination Process
 
-The system samples up to 1,000 existing documents and calculates weights based on representation:
+The system uses **iterative diversity filtering** with 1,000-paper elimination rounds:
 
-**Target percentage** (adaptive to corpus size):
-- Small corpus (<100 papers): 10% per combination
-- Medium corpus (100-1000): 5% per combination  
-- Large corpus (≥1000): 1% per combination
+**Process**:
+1. **Initial Set**: Start with all quality-filtered papers (~60,000)
+2. **Round 1**: Calculate combination weights, eliminate lowest 1,000 papers
+3. **Round 2**: Recalculate weights, eliminate next 1,000 papers
+4. **Continue**: Repeat until target count (12,000) is reached
+5. **Final Selection**: Best 12,000 papers with optimal diversity
 
-**Weight assignment** based on current representation:
-- **Severely over-represented** (>5× target): **-4.0** penalty
+**Weight Calculation** (recalculated each round):
+- **Target percentage**: 1% per combination for large corpus
 - **Over-represented** (>3× target): **-2.0** penalty
 - **Well-represented** (>2× target): **-1.0** penalty
 - **Adequately represented** (>1× target): **0.0** neutral
 - **Under-represented** (0.5-1× target): **+1.5** bonus
 - **Severely under-represented** (<0.5× target): **+3.0** bonus
 
-*Combinations not yet in the corpus receive maximum bonus (+3.0) for introducing new coverage.*
+*This iterative approach provides better diversity outcomes than single-pass selection.*
 
 #### Paper-Level Combination Score
 
@@ -189,14 +193,14 @@ Enhanced Score = Reliability Score + Combination Score
 
 ### Bootstrap Mode Workflow
 
-1. **PubMed Search**: Fetch ~12,000 papers matching supplement/training query
-2. **Parse & Extract**: Extract metadata, abstract, authors, journal, etc.
-3. **Reliability Scoring**: Calculate objective quality scores for all papers
-4. **Quality Filter**: Remove papers with reliability score <30
-5. **Combination Analysis**: Analyze distribution across all combination dimensions
-6. **Weight Calculation**: Calculate dynamic weights for underrepresented combinations
-7. **Combination Scoring**: Re-score all papers with combination-aware weights
-8. **Sort & Select**: Sort by enhanced score, select top 8,000 papers
+1. **Multi-Query Search**: Search 30 supplements individually, collect ~124,000 PMIDs
+2. **Date Chunking**: Use date-based chunking to bypass PubMed 10K limit
+3. **Parse & Extract**: Extract metadata, abstract, authors, journal, etc.
+4. **Reliability Scoring**: Calculate objective quality scores for all papers
+5. **Quality Filter**: Remove papers with reliability score <4.0 (~60,000 papers remain)
+6. **Iterative Diversity Filtering**: Eliminate papers in 1,000-paper rounds
+7. **Weight Recalculation**: Recalculate combination weights each round
+8. **Final Selection**: Select best 12,000 papers with optimal diversity
 9. **Upsert to Index**: Store selected papers in Azure AI Search
 10. **Watermark Update**: Record latest publication date for monthly runs
 
@@ -206,8 +210,8 @@ Enhanced Score = Reliability Score + Combination Score
 2. **PubMed Search**: Fetch new papers since watermark
 3. **Parse & Score**: Apply full two-phase scoring to new papers
 4. **Merge with Existing**: Combine new papers with existing index
-5. **Re-score & Select**: Re-apply combination scoring to full dataset
-6. **Maintain Limit**: Keep best 8,000 papers, remove lowest-scoring
+5. **Re-score & Select**: Re-apply iterative diversity filtering to full dataset
+6. **Maintain Limit**: Keep best 12,000 papers, remove lowest-scoring
 7. **Upsert Changes**: Update index with new selection
 8. **Update Watermark**: Record new last ingestion date
 
@@ -271,29 +275,90 @@ Each paper is enriched with extensive metadata for downstream processing:
 - `index_version`: Version tag (e.g., "v1-2025-09-25")
 - `outcomes`: Legacy field for backward compatibility
 
-## PubMed Query Strategy
+## Multi-Query Strategy
 
-### Base Query
+### Supplement-Specific Queries
+
+The system uses **30 individual supplement queries** instead of a single broad query to ensure comprehensive coverage:
+
+```python
+SUPPLEMENT_QUERIES = {
+    # Core performance supplements
+    "creatine": 'creatine AND (exercise OR training OR performance OR strength OR muscle) AND humans[MeSH]',
+    "caffeine": 'caffeine AND (exercise OR training OR performance OR endurance OR strength) AND humans[MeSH]',
+    "beta-alanine": '"beta-alanine" AND (exercise OR training OR performance OR muscle OR fatigue) AND humans[MeSH]',
+    "protein": '"protein supplementation" AND (exercise OR training OR muscle OR hypertrophy OR strength) AND humans[MeSH]',
+    
+    # Nitric oxide boosters
+    "citrulline": 'citrulline AND (exercise OR training OR performance) AND humans[MeSH]',
+    "nitrate": '(nitrate OR beetroot) AND (exercise OR training OR performance OR endurance) AND humans[MeSH] NOT pollution',
+    "arginine": 'arginine AND (exercise OR training OR performance) AND humans[MeSH]',
+    
+    # Amino acids and derivatives
+    "hmb": 'HMB AND (exercise OR training OR muscle OR strength OR recovery) AND humans[MeSH]',
+    "bcaa": 'BCAA AND (exercise OR training OR muscle OR recovery OR endurance) AND humans[MeSH]',
+    "leucine": 'leucine AND (exercise OR training OR muscle) AND humans[MeSH]',
+    "glutamine": 'glutamine AND (exercise OR training OR recovery OR muscle) AND humans[MeSH]',
+    
+    # Other performance compounds
+    "betaine": 'betaine AND (exercise OR training OR performance OR strength OR power) AND humans[MeSH]',
+    "taurine": 'taurine AND (exercise OR training OR performance OR endurance OR muscle) AND humans[MeSH]',
+    "carnitine": 'carnitine AND (exercise OR training OR performance) AND humans[MeSH]',
+    
+    # Hormonal/anabolic
+    "tribulus": 'tribulus AND (exercise OR training OR testosterone OR performance OR strength) AND humans[MeSH]',
+    "d-aspartic-acid": '"d-aspartic acid" AND (exercise OR training OR testosterone OR performance) AND humans[MeSH]',
+    
+    # Essential nutrients
+    "omega-3": 'omega-3 AND (exercise OR training OR performance OR recovery OR inflammation) AND humans[MeSH]',
+    "vitamin-d": 'vitamin D AND (exercise OR training OR performance OR muscle OR strength) AND humans[MeSH]',
+    "magnesium": 'magnesium AND (exercise OR training OR performance OR muscle OR recovery) AND humans[MeSH]',
+    "iron": 'iron AND (exercise OR training OR performance OR endurance OR fatigue) AND humans[MeSH]',
+    
+    # Performance enhancers
+    "sodium-bicarbonate": 'sodium bicarbonate AND (exercise OR training OR performance OR endurance) AND humans[MeSH]',
+    "glycerol": 'glycerol AND (exercise OR training OR performance OR hydration) AND humans[MeSH]',
+    
+    # Antioxidants
+    "curcumin": 'curcumin AND (exercise OR training OR performance OR recovery OR inflammation) AND humans[MeSH]',
+    "quercetin": 'quercetin AND (exercise OR training OR performance OR recovery OR inflammation) AND humans[MeSH]',
+    
+    # Adaptogens
+    "ashwagandha": 'ashwagandha AND (exercise OR training OR performance OR stress OR recovery) AND humans[MeSH]',
+    "rhodiola": 'rhodiola AND (exercise OR training OR performance OR stress OR endurance) AND humans[MeSH]',
+    "cordyceps": 'cordyceps AND (exercise OR training OR performance OR endurance) AND humans[MeSH]',
+    
+    # Amino acids
+    "tyrosine": 'tyrosine AND (exercise OR training OR performance OR stress OR cognitive OR focus) AND humans[MeSH]',
+    
+    # Other
+    "cla": 'CLA AND (exercise OR training OR performance OR weight OR fat) AND humans[MeSH]',
+    "zma": 'ZMA AND (exercise OR training OR recovery OR sleep OR testosterone) AND humans[MeSH]'
+}
 ```
-(creatine OR "beta-alanine" OR caffeine OR citrulline OR nitrate OR 
- "nitric oxide" OR HMB OR "branched chain amino acids" OR BCAA OR 
- tribulus OR "d-aspartic acid" OR betaine OR taurine OR carnitine OR 
- ZMA OR glutamine OR CLA OR ecdysterone OR "deer antler")
-AND
-(resistance OR "strength" OR "1RM" OR hypertrophy OR "lean mass")
-NOT
-("nitrogen dioxide" OR NO2 OR pollution)
+
+### Date-Based Chunking
+
+For supplements with >10,000 results, the system uses **date-based chunking** to bypass PubMed's 10K limit:
+
+```python
+def search_supplement_chunked(supplement: str, query: str, mindate: str) -> list:
+    # Split search into date ranges
+    # Chunk 1: 1990/01/01 to 2007/11/17
+    # Chunk 2: 2007/11/18 to 2025/10/03
+    # Each chunk gets up to 10,000 results
 ```
 
 ### Exclusions
 - **Pollution studies**: Excludes NO₂ (nitrogen dioxide) environmental research
-- **Animal studies**: No explicit filter (relies on PubMed defaults)
+- **Animal studies**: Minimal filter (trusts PubMed MeSH filtering)
 - **Non-English**: No explicit filter (PubMed tends toward English)
 
 ### API Rate Limiting
 - **Batch size**: 50 papers per PubMed EFetch call
-- **Delay**: 2-3 seconds between batches
-- **Retry logic**: 3 attempts with exponential backoff on 500 errors
+- **Delay**: 1.0 second between all requests (increased from 0.34s)
+- **Retry logic**: 3 attempts with exponential backoff
+- **429 Rate Limits**: 10s, 20s, 30s backoff for rate limit errors
 - **NCBI API key**: Optional but recommended for higher rate limits
 
 ## Storage Optimization
@@ -307,11 +372,11 @@ To fit within Azure AI Search free tier (50 MB), we store:
 
 ### Storage Calculations
 
-- **Target**: 8,000 papers
+- **Target**: 12,000 papers
 - **Average abstract**: 2,000 characters (2 KB)
 - **Metadata**: ~1 KB per paper
 - **Total per paper**: ~3 KB
-- **Total dataset**: 8,000 × 3 KB = 24 MB (fits in 50 MB limit)
+- **Total dataset**: 12,000 × 3 KB = 36 MB (fits in 50 MB limit with buffer)
 
 ### Future Scaling
 
@@ -333,8 +398,8 @@ For full-text storage and embeddings, consider:
 ### Optional
 - `NCBI_API_KEY`: NCBI API key for higher rate limits
 - `INDEX_VERSION`: Version tag (default: `v1`)
-- `INGEST_LIMIT`: Final paper count (default: 8000)
-- `MAX_TEMP_LIMIT`: Temporary processing limit (default: 12000)
+- `INGEST_LIMIT`: Final paper count (default: 12000)
+- `MAX_TEMP_LIMIT`: Temporary processing limit (default: 20000)
 - `WATERMARK_KEY`: Watermark document ID (default: `meta:last_ingest`)
 - `PM_SEARCH_QUERY`: Custom PubMed query (overrides default)
 - `LOG_LEVEL`: Logging verbosity (default: info)
@@ -387,10 +452,10 @@ az containerapp job start --name evidentfit-ingest-job --resource-group evidentf
 
 ### Expected Runtimes
 
-- **Bootstrap mode**: 30-60 minutes
-  - PubMed fetch: 10-15 minutes (~12,000 papers)
-  - Parsing & scoring: 15-20 minutes
-  - Combination analysis: 5-10 minutes
+- **Bootstrap mode**: 25-40 minutes
+  - Multi-query search: 10-15 minutes (~124,000 PMIDs)
+  - Parsing & scoring: 10-15 minutes (~95,000 papers)
+  - Iterative diversity filtering: 5-10 minutes
   - Index upsert: 5-10 minutes
 
 - **Monthly mode**: 5-15 minutes
@@ -400,18 +465,20 @@ az containerapp job start --name evidentfit-ingest-job --resource-group evidentf
 
 ### Bottlenecks
 
-1. **PubMed API**: Rate limited; reduced batch size to 50 to avoid 500 errors
+1. **PubMed API**: Rate limited; 1-second delays between requests to avoid 429 errors
 2. **Parsing XML**: xmltodict can be slow for large responses
 3. **Index upsert**: Azure AI Search has throughput limits on free tier
+4. **Iterative filtering**: Recalculating weights each round is computationally intensive
 
 ## Error Handling
 
 ### PubMed API Errors
 
-- **429 Too Many Requests**: Exponential backoff, increase delays
+- **429 Too Many Requests**: 10s, 20s, 30s backoff with retry logic
 - **500 Internal Server Error**: Retry up to 3 times, reduce batch size
 - **JSON decode errors**: Strip invalid control characters and retry
 - **XML parse errors**: Log and skip malformed articles
+- **String responses**: Handle cases where PubMed returns strings instead of XML
 
 ### Azure AI Search Errors
 
@@ -429,11 +496,12 @@ az containerapp job start --name evidentfit-ingest-job --resource-group evidentf
 
 ### Post-Ingest Checks
 
-1. **Count verification**: Confirm ~8,000 papers in index
-2. **Supplement distribution**: Check representation across all supplements
+1. **Count verification**: Confirm ~12,000 papers in index
+2. **Supplement distribution**: Check representation across all 30 supplements
 3. **Study type distribution**: Verify meta-analyses and RCTs are well-represented
 4. **Recency**: Confirm recent papers (last 5 years) are included
 5. **Watermark**: Verify watermark document was updated
+6. **Quality threshold**: Verify 4.0 threshold filtered appropriately
 
 ### Monitoring Queries
 
@@ -483,7 +551,10 @@ POST /indexes/evidentfit-index/docs/search
 - **Solution**: Ensure `SEARCH_ADMIN_KEY` env var is set (not `SEARCH_QUERY_KEY`)
 
 **Problem**: Papers not diverse (all creatine)
-- **Solution**: Check `MAX_TEMP_LIMIT` is set high enough (≥12,000) to allow diversity analysis
+- **Solution**: Check `MAX_TEMP_LIMIT` is set high enough (≥20,000) to allow diversity analysis
+
+**Problem**: PubMed 429 rate limit errors
+- **Solution**: Increase delays in `pubmed_esearch()` and `pubmed_efetch_xml()` (currently 1.0s)
 
 **Problem**: PubMed 500 errors
 - **Solution**: Reduce batch size in `pubmed_efetch_xml()` (currently 50)

@@ -18,8 +18,74 @@ PM_SEARCH_QUERY = os.getenv("PM_SEARCH_QUERY") or \
 NCBI_EMAIL = os.getenv("NCBI_EMAIL","you@example.com")
 NCBI_API_KEY = os.getenv("NCBI_API_KEY")  # optional
 WATERMARK_KEY = os.getenv("WATERMARK_KEY","meta:last_ingest")
-INGEST_LIMIT = int(os.getenv("INGEST_LIMIT","15000"))  # Final target (~36MB, fits 50MB limit with buffer)
+INGEST_LIMIT = int(os.getenv("INGEST_LIMIT","12000"))  # Final target (~36MB, fits 50MB limit with buffer)
 MAX_TEMP_LIMIT = int(os.getenv("MAX_TEMP_LIMIT","20000"))  # Temporary limit during processing
+
+# --- Multi-Query Strategy ---
+# Supplement-specific PubMed queries for comprehensive coverage
+SUPPLEMENT_QUERIES = {
+    # Core performance supplements - simplified queries that actually work
+    "creatine": 'creatine AND (exercise OR training OR performance OR strength OR muscle) AND humans[MeSH]',
+    "caffeine": 'caffeine AND (exercise OR training OR performance OR endurance OR strength) AND humans[MeSH]',
+    "beta-alanine": '"beta-alanine" AND (exercise OR training OR performance OR muscle OR fatigue) AND humans[MeSH]',
+    "protein": '"protein supplementation" AND (exercise OR training OR muscle OR hypertrophy OR strength) AND humans[MeSH]',
+    
+    # Nitric oxide boosters
+    "citrulline": 'citrulline AND (exercise OR training OR performance) AND humans[MeSH]',
+    "nitrate": '(nitrate OR beetroot) AND (exercise OR training OR performance OR endurance) AND humans[MeSH] NOT pollution',
+    "arginine": 'arginine AND (exercise OR training OR performance) AND humans[MeSH]',
+    
+    # Amino acids and derivatives
+    "hmb": 'HMB AND (exercise OR training OR muscle OR strength OR recovery) AND humans[MeSH]',
+    "bcaa": 'BCAA AND (exercise OR training OR muscle OR recovery OR endurance) AND humans[MeSH]',
+    "leucine": 'leucine AND (exercise OR training OR muscle) AND humans[MeSH]',
+    "glutamine": 'glutamine AND (exercise OR training OR recovery OR muscle) AND humans[MeSH]',
+    
+    # Other performance compounds
+    "betaine": 'betaine AND (exercise OR training OR performance OR strength OR power) AND humans[MeSH]',
+    "taurine": 'taurine AND (exercise OR training OR performance OR endurance OR muscle) AND humans[MeSH]',
+    "carnitine": 'carnitine AND (exercise OR training OR performance) AND humans[MeSH]',
+    
+    # Hormonal/anabolic
+    "tribulus": 'tribulus AND (exercise OR training OR testosterone OR performance OR strength) AND humans[MeSH]',
+    "d-aspartic-acid": '"d-aspartic acid" AND (exercise OR training OR testosterone OR hormone OR strength) AND humans[MeSH]',
+    
+    # Essential nutrients
+    "omega-3": '"omega-3" AND (exercise OR training OR performance OR recovery OR inflammation) AND humans[MeSH]',
+    "vitamin-d": '"vitamin D" AND (exercise OR training OR performance OR muscle OR strength) AND humans[MeSH]',
+    "magnesium": 'magnesium AND (exercise OR training OR performance OR muscle OR recovery) AND humans[MeSH]',
+    "iron": 'iron AND (exercise OR training OR performance OR endurance OR fatigue) AND humans[MeSH]',
+    
+    # Specialized compounds
+    "sodium-bicarbonate": '"sodium bicarbonate" AND (exercise OR training OR performance) AND humans[MeSH]',
+    "glycerol": 'glycerol AND (exercise OR training OR performance OR hydration OR endurance) AND humans[MeSH]',
+    "curcumin": 'curcumin AND (exercise OR training OR performance OR inflammation OR recovery) AND humans[MeSH]',
+    "quercetin": 'quercetin AND (exercise OR training OR performance OR antioxidant OR endurance) AND humans[MeSH]',
+    
+    # Adaptogens and herbs
+    "ashwagandha": 'ashwagandha AND (exercise OR training OR performance OR stress OR strength) AND humans[MeSH]',
+    "rhodiola": 'rhodiola AND (exercise OR training OR performance OR fatigue OR endurance OR stress) AND humans[MeSH]',
+    "cordyceps": 'cordyceps AND (exercise OR training OR performance OR endurance) AND humans[MeSH]',
+    
+    # Other compounds
+    "tyrosine": 'tyrosine AND (exercise OR training OR performance OR stress OR cognitive OR focus) AND humans[MeSH]',
+    "cla": '"conjugated linoleic acid" AND (exercise OR training OR body composition) AND humans[MeSH]',
+    "zma": 'ZMA AND (exercise OR training OR recovery OR sleep OR testosterone) AND humans[MeSH]',
+}
+
+# NOTE: No per-supplement limits - we get ALL available papers for each supplement
+
+# Local staging configuration
+LOCAL_STAGING_DIR = os.getenv("LOCAL_STAGING_DIR", "./staging")
+LOCAL_PAPERS_DB = os.path.join(LOCAL_STAGING_DIR, "papers_staging.jsonl")
+LOCAL_METADATA_FILE = os.path.join(LOCAL_STAGING_DIR, "staging_metadata.json")
+
+# Conservative global safety limit (much higher than expected need)
+MAX_TOTAL_PAPERS = 200000   # Global safety net (2x our highest estimate)
+AZURE_FINAL_LIMIT = 15000   # Final upload to Azure (only real constraint)
+
+# Multi-query will get ALL available papers for each supplement (up to global limit)
+print(f"Multi-query: Comprehensive coverage for {len(SUPPLEMENT_QUERIES)} supplements (up to {MAX_TOTAL_PAPERS:,} global limit)")
 
 # --- Enhanced maps/heuristics ---
 # Enhanced supplement keywords with form-specific detection
@@ -406,11 +472,298 @@ def calculate_study_design_score(study_type: str, sample_size: int, duration: st
     
     return min(score, 10.0)  # Cap at 10
 
+# --- Local Staging Functions ---
+def ensure_staging_dir():
+    """Ensure local staging directory exists"""
+    os.makedirs(LOCAL_STAGING_DIR, exist_ok=True)
+    print(f"Staging directory: {LOCAL_STAGING_DIR}")
+
+def save_paper_to_staging(paper_data: dict):
+    """Save a paper to local staging file (JSONL format)"""
+    ensure_staging_dir()
+    with open(LOCAL_PAPERS_DB, 'a', encoding='utf-8') as f:
+        f.write(json.dumps(paper_data) + '\n')
+
+def load_papers_from_staging() -> list:
+    """Load all papers from local staging"""
+    if not os.path.exists(LOCAL_PAPERS_DB):
+        return []
+    
+    papers = []
+    with open(LOCAL_PAPERS_DB, 'r', encoding='utf-8') as f:
+        for line in f:
+            if line.strip():
+                papers.append(json.loads(line))
+    
+    return papers
+
+def save_staging_metadata(metadata: dict):
+    """Save staging metadata (counts, timestamps, etc.)"""
+    ensure_staging_dir()
+    with open(LOCAL_METADATA_FILE, 'w', encoding='utf-8') as f:
+        json.dump(metadata, f, indent=2)
+
+def load_staging_metadata() -> dict:
+    """Load staging metadata"""
+    if not os.path.exists(LOCAL_METADATA_FILE):
+        return {}
+    
+    with open(LOCAL_METADATA_FILE, 'r', encoding='utf-8') as f:
+        return json.load(f)
+
+def clear_staging():
+    """Clear local staging files"""
+    if os.path.exists(LOCAL_PAPERS_DB):
+        os.remove(LOCAL_PAPERS_DB)
+    if os.path.exists(LOCAL_METADATA_FILE):
+        os.remove(LOCAL_METADATA_FILE)
+    print("Staging files cleared")
+
+def get_staging_stats() -> dict:
+    """Get statistics about staged papers"""
+    papers = load_papers_from_staging()
+    
+    if not papers:
+        return {"total": 0, "supplements": {}, "quality_distribution": {}}
+    
+    supplement_counts = {}
+    quality_counts = {"4.0+": 0, "3.0-3.9": 0, "2.0-2.9": 0, "<2.0": 0}
+    
+    for paper in papers:
+        # Count supplements
+        supplements = paper.get('supplements', [])
+        if isinstance(supplements, str):
+            supplements = supplements.split(',')
+        
+        for supp in supplements:
+            supp = supp.strip()
+            supplement_counts[supp] = supplement_counts.get(supp, 0) + 1
+        
+        # Count quality distribution
+        quality = paper.get('reliability_score', 0)
+        if quality >= 4.0:
+            quality_counts["4.0+"] += 1
+        elif quality >= 3.0:
+            quality_counts["3.0-3.9"] += 1
+        elif quality >= 2.0:
+            quality_counts["2.0-2.9"] += 1
+        else:
+            quality_counts["<2.0"] += 1
+    
+    return {
+        "total": len(papers),
+        "supplements": supplement_counts,
+        "quality_distribution": quality_counts
+    }
+
 # --- PubMed E-utilities ---
-def pubmed_esearch(term: str, mindate: str|None=None, retmax: int=200, retstart:int=0) -> dict:
+def search_supplement_with_chunking(supplement: str, query: str, mindate: str|None=None) -> list:
+    """
+    Search for a supplement using date-based chunking to bypass PubMed's 10K limit.
+    
+    Args:
+        supplement: Supplement name for logging
+        query: PubMed search query
+        mindate: Minimum publication date (YYYY/MM/DD format)
+        
+    Returns:
+        List of PMIDs for this supplement
+    """
+    # First, get total count to see if we need chunking
+    try:
+        initial_batch = pubmed_esearch(query, mindate=mindate, retmax=1, retstart=0)
+        total_count = int(initial_batch.get("esearchresult", {}).get("count", "0"))
+        
+        if total_count <= 9999:
+            # Simple case - can get all results in one go
+            print(f"  {supplement}: {total_count:,} papers (single query)")
+            return search_supplement_simple(query, mindate)
+        else:
+            # Need chunking
+            print(f"  {supplement}: {total_count:,} papers (using date chunking)")
+            return search_supplement_chunked(query, mindate or "1990/01/01", total_count)
+            
+    except Exception as e:
+        print(f"  Error getting count for {supplement}: {e}")
+        return []
+
+def search_supplement_simple(query: str, mindate: str|None=None) -> list:
+    """Simple search for supplements with <10K results."""
+    pmids = []
+    retstart = 0
+    
+    while True:
+        try:
+            batch = pubmed_esearch(query, mindate=mindate, retmax=200, retstart=retstart)
+            idlist = batch.get("esearchresult", {}).get("idlist", [])
+            
+            if not idlist:
+                break
+                
+            pmids.extend(idlist)
+            retstart += len(idlist)
+            
+            # Check if we've reached the end
+            total_count = int(batch.get("esearchresult", {}).get("count", "0"))
+            if retstart >= total_count:
+                break
+                
+            time.sleep(1.0)  # Rate limiting - 1 second between requests
+            
+        except Exception as e:
+            print(f"    Error in simple search: {e}")
+            break
+    
+    return pmids
+
+def search_supplement_chunked(query: str, start_date: str, total_count: int) -> list:
+    """Search using date-based chunks to bypass 10K limit."""
+    from datetime import datetime, timedelta
+    
+    all_pmids = []
+    
+    # Create date ranges from start_date to present
+    start_dt = datetime.strptime(start_date, "%Y/%m/%d")
+    end_dt = datetime.now()
+    
+    # Calculate chunk size in years to aim for ~8K results per chunk
+    years_total = (end_dt - start_dt).days / 365.25
+    target_per_chunk = 8000  # Stay well under 10K limit
+    estimated_chunks = max(1, int(total_count / target_per_chunk))
+    years_per_chunk = max(1, years_total / estimated_chunks)
+    
+    print(f"    Chunking into ~{estimated_chunks} date ranges ({years_per_chunk:.1f} years each)")
+    
+    current_dt = start_dt
+    chunk_num = 1
+    
+    while current_dt < end_dt:
+        # Calculate end of this chunk
+        chunk_end_dt = min(current_dt + timedelta(days=years_per_chunk * 365.25), end_dt)
+        
+        # Format dates for PubMed
+        chunk_start = current_dt.strftime("%Y/%m/%d")
+        chunk_end = chunk_end_dt.strftime("%Y/%m/%d")
+        
+        print(f"    Chunk {chunk_num}: {chunk_start} to {chunk_end}")
+        
+        # Search this date range
+        chunk_pmids = []
+        retstart = 0
+        
+        while True:
+            try:
+                # Add date range to query
+                batch = pubmed_esearch(query, mindate=chunk_start, maxdate=chunk_end, retmax=200, retstart=retstart)
+                idlist = batch.get("esearchresult", {}).get("idlist", [])
+                
+                if not idlist:
+                    break
+                    
+                chunk_pmids.extend(idlist)
+                retstart += len(idlist)
+                
+                # Check if we've reached the end of this chunk
+                chunk_total = int(batch.get("esearchresult", {}).get("count", "0"))
+                if retstart >= chunk_total or retstart >= 9999:  # Safety limit
+                    break
+                    
+                time.sleep(1.0)  # Rate limiting - 1 second between requests
+                
+            except Exception as e:
+                print(f"      Error in chunk {chunk_num}: {e}")
+                break
+        
+        print(f"      Got {len(chunk_pmids):,} papers from this chunk")
+        all_pmids.extend(chunk_pmids)
+        
+        # Move to next chunk
+        current_dt = chunk_end_dt + timedelta(days=1)
+        chunk_num += 1
+        
+        # Safety limit
+        if chunk_num > 20:  # Don't create too many chunks
+            print(f"      Reached chunk limit, stopping")
+            break
+    
+    # Remove duplicates while preserving order
+    unique_pmids = []
+    seen = set()
+    for pmid in all_pmids:
+        if pmid not in seen:
+            unique_pmids.append(pmid)
+            seen.add(pmid)
+    
+    print(f"    Total unique PMIDs: {len(unique_pmids):,}")
+    return unique_pmids
+
+def multi_supplement_search(mindate: str|None=None) -> list:
+    """
+    Run multiple supplement-specific searches to get comprehensive coverage.
+    Uses date-based chunking to bypass PubMed's 10K limit.
+    
+    Args:
+        mindate: Minimum publication date (YYYY/MM/DD format)
+        
+    Returns:
+        List of unique PMIDs from all supplement searches
+    """
+    all_pmids = set()
+    search_results = {}
+    
+    print(f"Running comprehensive multi-supplement search for {len(SUPPLEMENT_QUERIES)} supplements...")
+    print(f"Using date-based chunking to bypass PubMed 10K limit")
+    print(f"Global limit: {MAX_TOTAL_PAPERS:,} papers")
+    
+    for supplement, query in SUPPLEMENT_QUERIES.items():
+        # Check global limit
+        if len(all_pmids) >= MAX_TOTAL_PAPERS:
+            print(f"⚠️  Reached global limit of {MAX_TOTAL_PAPERS:,} papers. Stopping search.")
+            break
+            
+        print(f"Searching {supplement}:")
+        
+        # Use chunking-aware search
+        pmids = search_supplement_with_chunking(supplement, query, mindate)
+        
+        # Add unique PMIDs (respecting global limit)
+        unique_pmids = []
+        for pmid in pmids:
+            if pmid not in all_pmids and len(all_pmids) < MAX_TOTAL_PAPERS:
+                unique_pmids.append(pmid)
+                all_pmids.add(pmid)
+            elif len(all_pmids) >= MAX_TOTAL_PAPERS:
+                break
+        
+        search_results[supplement] = len(unique_pmids)
+        print(f"  {supplement}: {len(unique_pmids)} unique papers (total: {len(all_pmids):,})")
+        
+        # Early termination if we hit global limit
+        if len(all_pmids) >= MAX_TOTAL_PAPERS:
+            print(f"⚠️  Reached global limit. Stopping at {len(all_pmids):,} papers.")
+            break
+    
+    print(f"Multi-supplement search complete:")
+    print(f"  Total unique PMIDs: {len(all_pmids):,}")
+    print(f"  Supplements searched: {len(search_results)}/{len(SUPPLEMENT_QUERIES)}")
+    print(f"  Top supplements by paper count:")
+    
+    for supplement, count in sorted(search_results.items(), key=lambda x: x[1], reverse=True)[:10]:
+        print(f"    {supplement}: {count} papers")
+    
+    return list(all_pmids)
+
+def pubmed_esearch(term: str, mindate: str|None=None, maxdate: str|None=None, retmax: int=200, retstart:int=0) -> dict:
     params = {"db":"pubmed","retmode":"json","term":term,"retmax":str(retmax),"retstart":str(retstart),"email":NCBI_EMAIL}
     if NCBI_API_KEY: params["api_key"]=NCBI_API_KEY
-    if mindate: params.update({"datetype":"pdat","mindate":mindate})  # YYYY/MM/DD
+    if mindate or maxdate: 
+        params["datetype"] = "pdat"
+        if mindate: params["mindate"] = mindate  # YYYY/MM/DD
+        if maxdate: params["maxdate"] = maxdate  # YYYY/MM/DD
+    
+    # Add rate limiting
+    time.sleep(1.0)  # 1 second between requests
+    
     with httpx.Client(timeout=60) as c:
         r = c.get("https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi", params=params)
         r.raise_for_status()
@@ -428,6 +781,9 @@ def pubmed_efetch_xml(pmids: list[str]) -> dict:
     params = {"db":"pubmed","retmode":"xml","id":",".join(pmids),"email":NCBI_EMAIL}
     if NCBI_API_KEY: params["api_key"]=NCBI_API_KEY
     
+    # Add rate limiting
+    time.sleep(1.0)  # 1 second between requests
+    
     # Retry logic for PubMed API
     max_retries = 3
     for attempt in range(max_retries):
@@ -438,49 +794,41 @@ def pubmed_efetch_xml(pmids: list[str]) -> dict:
                 return xmltodict.parse(r.text)
         except Exception as e:
             if attempt < max_retries - 1:
-                wait_time = (attempt + 1) * 5  # Exponential backoff
-                print(f"PubMed API error (attempt {attempt + 1}/{max_retries}): {e}")
-                print(f"Retrying in {wait_time} seconds...")
+                # Check if it's a 429 rate limit error
+                if "429" in str(e) or "Too Many Requests" in str(e):
+                    wait_time = (attempt + 1) * 10  # Longer wait for rate limits
+                    print(f"PubMed rate limit hit (attempt {attempt + 1}/{max_retries}): {e}")
+                    print(f"Waiting {wait_time} seconds before retry...")
+                else:
+                    wait_time = (attempt + 1) * 5  # Standard exponential backoff
+                    print(f"PubMed API error (attempt {attempt + 1}/{max_retries}): {e}")
+                    print(f"Retrying in {wait_time} seconds...")
                 time.sleep(wait_time)
             else:
                 print(f"PubMed API failed after {max_retries} attempts: {e}")
                 raise
 
 def is_relevant_human_study(title: str, content: str) -> bool:
-    """Check if study is relevant human research for supplement effectiveness"""
+    """
+    Minimal relevance filter - trust PubMed MeSH filtering for humans/exercise.
+    Only exclude obvious animal/in-vitro studies that slipped through.
+    """
     text = f"{title} {content}".lower()
     
-    # Must be human studies
-    human_indicators = [
-        r"\bhuman(s)?\b", r"\badult(s)?\b", r"\bmen\b", r"\bwomen\b", 
-        r"\bmale(s)?\b", r"\bfemale(s)?\b", r"\bparticipant(s)?\b",
-        r"\bsubject(s)?\b", r"\bvolunteer(s)?\b", r"\bathlete(s)?\b"
-    ]
-    
-    # Exclude animal/in-vitro studies
+    # Only exclude clear animal/in-vitro studies (PubMed MeSH should handle humans/exercise)
     exclusion_patterns = [
         r"\brat(s)?\b", r"\bmice\b", r"\bmouse\b", r"\bmurine\b",
         r"\bin vitro\b", r"\bcell culture\b", r"\bcellular\b",
         r"\bfish\b", r"\bzebrafish\b", r"\bporcine\b", r"\bbovine\b",
-        r"\bcanine\b", r"\bfeline\b", r"\bprimate(s)?\b"
+        r"\bcanine\b", r"\bfeline\b", r"\bprimate(s)?\b",
+        r"\bpetri dish\b", r"\btissue culture\b", r"\bmitochondrial\b"
     ]
     
-    # Must have human indicators
-    has_human = any(re.search(pattern, text, re.I) for pattern in human_indicators)
-    
-    # Must not have exclusion patterns
+    # Only reject if clear animal/in-vitro indicators are found
     has_exclusions = any(re.search(pattern, text, re.I) for pattern in exclusion_patterns)
     
-    # Must be about exercise/performance/supplementation
-    exercise_indicators = [
-        r"\bexercise\b", r"\btraining\b", r"\bworkout\b", r"\bresistance\b",
-        r"\bstrength\b", r"\bperformance\b", r"\bsupplement(ation)?\b",
-        r"\bmuscle\b", r"\bfitness\b", r"\bathletic\b", r"\bsport\b"
-    ]
-    
-    has_exercise = any(re.search(pattern, text, re.I) for pattern in exercise_indicators)
-    
-    return has_human and not has_exclusions and has_exercise
+    # Trust PubMed's humans[MeSH] and exercise filtering - only exclude obvious non-human studies
+    return not has_exclusions
 
 def parse_pubmed_article(rec: dict, dynamic_weights: dict = None) -> dict:
     art = rec.get("MedlineCitation", {}).get("Article", {})
@@ -755,6 +1103,79 @@ def calculate_combination_weights(combinations, total_docs):
     
     return weights
 
+def iterative_diversity_filtering(papers: list, target_count: int, elimination_per_round: int = 1000) -> list:
+    """
+    Iteratively eliminate papers while recalculating diversity weights each round.
+    
+    This provides better diversity outcomes than single-pass selection by:
+    1. Eliminating lowest-scoring papers in batches
+    2. Recalculating combination weights after each elimination
+    3. Re-scoring remaining papers with updated weights
+    4. Repeating until target count is reached
+    
+    Args:
+        papers: List of papers with reliability scores
+        target_count: Final number of papers to select
+        elimination_per_round: Number of papers to eliminate each round
+        
+    Returns:
+        List of selected papers with optimal diversity balance
+    """
+    current_papers = papers.copy()
+    round_num = 1
+    
+    print(f"Starting iterative diversity filtering:")
+    print(f"  Initial papers: {len(current_papers):,}")
+    print(f"  Target papers: {target_count:,}")
+    print(f"  Elimination per round: {elimination_per_round:,}")
+    print(f"  Estimated rounds: {(len(current_papers) - target_count) // elimination_per_round + 1}")
+    
+    while len(current_papers) > target_count:
+        papers_to_eliminate = min(elimination_per_round, len(current_papers) - target_count)
+        
+        print(f"\nRound {round_num}: {len(current_papers):,} papers -> eliminating {papers_to_eliminate:,}")
+        
+        # Recalculate combination weights based on current paper set
+        combinations = analyze_combination_distribution(current_papers)
+        combination_weights = calculate_combination_weights(combinations, len(current_papers))
+        
+        # Re-score all current papers with updated weights
+        for paper in current_papers:
+            combination_score = calculate_combination_score(paper, combination_weights)
+            paper["combination_score"] = combination_score
+            paper["enhanced_score"] = paper.get("reliability_score", 0) + combination_score
+        
+        # Sort by enhanced score and eliminate lowest-scoring papers
+        current_papers.sort(key=lambda x: x.get("enhanced_score", 0), reverse=True)
+        current_papers = current_papers[:-papers_to_eliminate]  # Remove bottom papers
+        
+        # Show progress
+        if round_num <= 3 or round_num % 5 == 0:
+            # Show top combination weights for first few rounds and every 5th round
+            # Flatten nested weights structure for display
+            flat_weights = []
+            for combo_type, combo_dict in combination_weights.items():
+                for combo, weight in combo_dict.items():
+                    flat_weights.append((f"{combo_type}:{combo}", weight))
+            top_weights = sorted(flat_weights, key=lambda x: abs(x[1]), reverse=True)[:5]
+            print(f"  Top combination weights: {dict(top_weights)}")
+        
+        round_num += 1
+        
+        # Safety check
+        if round_num > 50:  # Prevent infinite loops
+            print(f"⚠️  Safety limit reached at round {round_num}. Stopping.")
+            break
+    
+    print(f"\nIterative filtering complete:")
+    print(f"  Final papers: {len(current_papers):,}")
+    print(f"  Rounds completed: {round_num - 1}")
+    
+    # Final sort by enhanced score
+    current_papers.sort(key=lambda x: x.get("enhanced_score", 0), reverse=True)
+    
+    return current_papers[:target_count]
+
 def calculate_combination_score(paper, combination_weights):
     """Calculate score based on paper's factor combinations with quality safeguards"""
     score = 0.0
@@ -850,7 +1271,7 @@ def run_ingest(mode: str):
     mindate = None
     wm = get_doc(WATERMARK_KEY)
     if mode == "bootstrap":
-        mindate = "2000/01/01"
+        mindate = "1990/01/01"  # Comprehensive historical evaluation
     else:
         if wm and wm.get("summary"):
             try:
@@ -864,20 +1285,10 @@ def run_ingest(mode: str):
 
     # Dynamic rolling window system: Maintain 10,000, temporarily go to 15,000
     if mode == "bootstrap":
-        # Bootstrap: Get large batch, filter to best 10,000
-        ids, retstart = [], 0
-        search_limit = min(MAX_TEMP_LIMIT * 2, 9999)  # Get 2x more to filter down, but respect PubMed limit
-        while len(ids) < search_limit:
-            batch = pubmed_esearch(PM_SEARCH_QUERY, mindate=mindate, retmax=200, retstart=retstart)
-            idlist = batch.get("esearchresult", {}).get("idlist", [])
-            if not idlist: break
-            ids.extend(idlist)
-            retstart += len(idlist)
-            if retstart >= int(batch["esearchresult"].get("count","0")): break
-            if retstart >= 9999: break  # PubMed limit
-            time.sleep(0.34)
-        
-        print(f"Bootstrap: Found {len(ids)} PMIDs (will filter to best {INGEST_LIMIT})")
+        # Bootstrap: Use multi-supplement search for comprehensive coverage
+        print("Bootstrap mode: Using multi-supplement search for comprehensive coverage...")
+        ids = multi_supplement_search(mindate=mindate)
+        print(f"Bootstrap: Found {len(ids)} PMIDs from multi-supplement search (will filter to best {INGEST_LIMIT})")
     else:
         # Monthly: Get new papers since last run
         ids, retstart = [], 0
@@ -888,7 +1299,7 @@ def run_ingest(mode: str):
             ids.extend(idlist)
             retstart += len(idlist)
             if retstart >= int(batch["esearchresult"].get("count","0")): break
-            time.sleep(0.34)
+            time.sleep(1.0)  # Rate limiting - 1 second between requests
         
         print(f"Monthly: Found {len(ids)} new PMIDs since last run")
 
@@ -902,6 +1313,12 @@ def run_ingest(mode: str):
     for i in range(0, len(ids), 50):  # Smaller batches to avoid API limits
         pid_batch = ids[i:i+50]
         xml = pubmed_efetch_xml(pid_batch)
+        
+        # Handle case where PubMed API returns string instead of XML
+        if isinstance(xml, str):
+            print(f"PubMed API returned string instead of XML for batch {i//50 + 1}, skipping...")
+            continue
+            
         arts = xml.get("PubmedArticleSet", {}).get("PubmedArticle", [])
         if isinstance(arts, dict): arts = [arts]
 
@@ -931,8 +1348,8 @@ def run_ingest(mode: str):
         # Score all papers with combination-aware weighting
         all_docs.sort(key=lambda x: x.get("enhanced_score", 0), reverse=True)
         
-        # Enhanced quality threshold for 15K papers - be more selective
-        min_quality_threshold = 4.0  # Increased minimum reliability score for larger index
+        # Enhanced quality threshold for 15K papers - balanced selectivity
+        min_quality_threshold = 4.0  # Balanced: RCTs (10+), crossovers (7+), and cohorts (4+) pass, others (1) filtered
         quality_filtered_docs = [d for d in all_docs if d.get("reliability_score", 0) >= min_quality_threshold]
         print(f"Quality filter: {len(all_docs)} -> {len(quality_filtered_docs)} papers (removed {len(all_docs) - len(quality_filtered_docs)} low-quality)")
         
@@ -944,23 +1361,14 @@ def run_ingest(mode: str):
             doc["combination_score"] = combination_score
             doc["enhanced_score"] = doc.get("reliability_score", 0) + combination_score
         
-        # Phase 2: Dynamic selection using combination-aware scoring
-        print(f"Phase 2: Selecting best {INGEST_LIMIT} papers using dynamic combination scoring...")
+        # Phase 2: Iterative diversity filtering for optimal balance
+        print(f"Phase 2: Iterative diversity filtering to select best {INGEST_LIMIT} papers...")
         
-        # Calculate combination weights based on all processed papers
-        combinations = analyze_combination_distribution(quality_filtered_docs)
-        combination_weights = calculate_combination_weights(combinations, len(quality_filtered_docs))
-        print(f"Calculated combination weights based on {len(quality_filtered_docs)} papers")
-        
-        # Re-score all papers with combination weights
-        for doc in quality_filtered_docs:
-            combination_score = calculate_combination_score(doc, combination_weights)
-            doc["combination_score"] = combination_score
-            doc["enhanced_score"] = doc.get("reliability_score", 0) + combination_score
-        
-        # Sort by enhanced score and select top papers
-        quality_filtered_docs.sort(key=lambda x: x.get("enhanced_score", 0), reverse=True)
-        top_docs = quality_filtered_docs[:INGEST_LIMIT]
+        top_docs = iterative_diversity_filtering(
+            papers=quality_filtered_docs,
+            target_count=INGEST_LIMIT,
+            elimination_per_round=1000  # Fine-grained steps for optimal adaptation
+        )
         
     else:
         # Monthly: Dynamic rolling window - merge, temporarily go to 15,000, then trim to 10,000
@@ -1000,8 +1408,8 @@ def run_ingest(mode: str):
             # Sort by enhanced score (reliability + combination)
             unique_docs.sort(key=lambda x: x.get("enhanced_score", x.get("reliability_score", 0)), reverse=True)
             
-            # Enhanced quality threshold for 15K papers - be more selective  
-            min_quality_threshold = 4.0  # Increased minimum reliability score for larger index
+            # Enhanced quality threshold for 15K papers - balanced selectivity  
+            min_quality_threshold = 3.0  # Balanced minimum reliability score for comprehensive coverage
             quality_filtered_docs = [d for d in unique_docs if d.get("reliability_score", 0) >= min_quality_threshold]
             print(f"Quality filter: {len(unique_docs)} -> {len(quality_filtered_docs)} papers (removed {len(unique_docs) - len(quality_filtered_docs)} low-quality)")
             
