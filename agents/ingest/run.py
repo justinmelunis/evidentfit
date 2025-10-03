@@ -1,4 +1,4 @@
-import os, re, json, time, argparse, datetime
+import os, re, json, time, argparse, datetime, logging
 from dateutil import tz
 import httpx, xmltodict
 
@@ -12,6 +12,36 @@ except ImportError:
 # --- Env ---
 INDEX_VERSION = os.getenv("INDEX_VERSION", "v1")
 SEARCH_INDEX   = os.getenv("SEARCH_INDEX", "evidentfit-index")
+
+# --- Logging Setup ---
+def setup_logging():
+    """Setup comprehensive logging to both console and file"""
+    log_level = os.getenv("LOG_LEVEL", "info").upper()
+    log_level = getattr(logging, log_level, logging.INFO)
+    
+    # Create logs directory if it doesn't exist
+    os.makedirs("logs", exist_ok=True)
+    
+    # Create timestamped log file
+    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    log_file = f"logs/ingest_{timestamp}.log"
+    
+    # Configure logging
+    logging.basicConfig(
+        level=log_level,
+        format='%(asctime)s - %(levelname)s - %(message)s',
+        handlers=[
+            logging.FileHandler(log_file),
+            logging.StreamHandler()  # Also print to console
+        ]
+    )
+    
+    logger = logging.getLogger(__name__)
+    logger.info(f"Logging initialized - Level: {log_level}, File: {log_file}")
+    return logger
+
+# Initialize logging
+logger = setup_logging()
 PM_SEARCH_QUERY = os.getenv("PM_SEARCH_QUERY") or \
   '(creatine OR "beta-alanine" OR caffeine OR citrulline OR nitrate OR "nitric oxide" OR HMB OR "branched chain amino acids" OR BCAA OR tribulus OR "d-aspartic acid" OR betaine OR taurine OR carnitine OR ZMA OR glutamine OR CLA OR ecdysterone OR "deer antler" OR "whey protein" OR "protein supplementation") AND (resistance OR "strength training" OR "1RM" OR hypertrophy OR "lean mass" OR "muscle mass" OR "exercise" OR "athletic performance") AND (humans[MeSH] OR adult OR adults OR participants OR subjects OR volunteers OR athletes) NOT ("nitrogen dioxide" OR NO2 OR pollution OR "cardiac hypertrophy" OR "ventricular hypertrophy" OR "fish" OR "rat" OR "mice" OR "mouse" OR "in vitro" OR "cell culture" OR animals[MeSH])'
 
@@ -85,7 +115,7 @@ MAX_TOTAL_PAPERS = 200000   # Global safety net (2x our highest estimate)
 AZURE_FINAL_LIMIT = 15000   # Final upload to Azure (only real constraint)
 
 # Multi-query will get ALL available papers for each supplement (up to global limit)
-print(f"Multi-query: Comprehensive coverage for {len(SUPPLEMENT_QUERIES)} supplements (up to {MAX_TOTAL_PAPERS:,} global limit)")
+logger.info(f"Multi-query: Comprehensive coverage for {len(SUPPLEMENT_QUERIES)} supplements (up to {MAX_TOTAL_PAPERS:,} global limit)")
 
 # --- Enhanced maps/heuristics ---
 # Enhanced supplement keywords with form-specific detection
@@ -579,25 +609,25 @@ def search_supplement_with_chunking(supplement: str, query: str, mindate: str|No
         
         if total_count < 9999:
             # Simple case - can get all results in one go
-            print(f"  {supplement}: {total_count:,} papers (single query)")
+            logger.info(f"  {supplement}: {total_count:,} papers (single query)")
             pmids = search_supplement_simple(query, mindate)
             
             # Check if simple search hit the 9,999 limit and switched to chunking
             if len(pmids) == 9999:
-                print(f"  {supplement}: Simple search hit 9,999 limit, switching to chunking")
+                logger.warning(f"  {supplement}: Simple search hit 9,999 limit, switching to chunking")
                 return search_supplement_chunked(query, mindate or "1990/01/01", total_count)
             else:
                 return pmids
         else:
             # Need chunking (either exactly 9,999 or more)
             if total_count == 9999:
-                print(f"  {supplement}: {total_count:,} papers (hit 10K limit, using dynamic chunking)")
+                logger.warning(f"  {supplement}: {total_count:,} papers (hit 10K limit, using dynamic chunking)")
             else:
-                print(f"  {supplement}: {total_count:,} papers (using date chunking)")
+                logger.info(f"  {supplement}: {total_count:,} papers (using date chunking)")
             return search_supplement_chunked(query, mindate or "1990/01/01", total_count)
             
     except Exception as e:
-        print(f"  Error getting count for {supplement}: {e}")
+        logger.error(f"  Error getting count for {supplement}: {e}")
         return []
 
 def search_supplement_simple(query: str, mindate: str|None=None) -> list:
@@ -623,14 +653,14 @@ def search_supplement_simple(query: str, mindate: str|None=None) -> list:
             
             # Dynamic chunking: if we hit exactly 9,999 results, switch to chunking
             if total_count == 9999 and retstart >= 9999:
-                print(f"    Hit 9,999 paper limit, switching to chunking for complete coverage")
+                logger.warning(f"    Hit 9,999 paper limit, switching to chunking for complete coverage")
                 # Return what we have so far, chunking will be handled by caller
                 return pmids
                 
             time.sleep(1.0)  # Rate limiting - 1 second between requests
             
         except Exception as e:
-            print(f"    Error in simple search: {e}")
+            logger.error(f"    Error in simple search: {e}")
             break
     
     return pmids
@@ -651,7 +681,7 @@ def search_supplement_chunked(query: str, start_date: str, total_count: int) -> 
     estimated_chunks = max(1, int(total_count / target_per_chunk))
     years_per_chunk = max(1, years_total / estimated_chunks)
     
-    print(f"    Chunking into ~{estimated_chunks} date ranges ({years_per_chunk:.1f} years each)")
+    logger.info(f"    Chunking into ~{estimated_chunks} date ranges ({years_per_chunk:.1f} years each)")
     
     current_dt = start_dt
     chunk_num = 1
@@ -664,7 +694,7 @@ def search_supplement_chunked(query: str, start_date: str, total_count: int) -> 
         chunk_start = current_dt.strftime("%Y/%m/%d")
         chunk_end = chunk_end_dt.strftime("%Y/%m/%d")
         
-        print(f"    Chunk {chunk_num}: {chunk_start} to {chunk_end}")
+        logger.info(f"    Chunk {chunk_num}: {chunk_start} to {chunk_end}")
         
         # Search this date range
         chunk_pmids = []
@@ -690,10 +720,10 @@ def search_supplement_chunked(query: str, start_date: str, total_count: int) -> 
                 time.sleep(1.0)  # Rate limiting - 1 second between requests
                 
             except Exception as e:
-                print(f"      Error in chunk {chunk_num}: {e}")
+                logger.error(f"      Error in chunk {chunk_num}: {e}")
                 break
         
-        print(f"      Got {len(chunk_pmids):,} papers from this chunk")
+        logger.info(f"      Got {len(chunk_pmids):,} papers from this chunk")
         all_pmids.extend(chunk_pmids)
         
         # Move to next chunk
@@ -702,7 +732,7 @@ def search_supplement_chunked(query: str, start_date: str, total_count: int) -> 
         
         # Safety limit
         if chunk_num > 20:  # Don't create too many chunks
-            print(f"      Reached chunk limit, stopping")
+            logger.warning(f"      Reached chunk limit, stopping")
             break
     
     # Remove duplicates while preserving order
@@ -713,7 +743,7 @@ def search_supplement_chunked(query: str, start_date: str, total_count: int) -> 
             unique_pmids.append(pmid)
             seen.add(pmid)
     
-    print(f"    Total unique PMIDs: {len(unique_pmids):,}")
+    logger.info(f"    Total unique PMIDs: {len(unique_pmids):,}")
     return unique_pmids
 
 def multi_supplement_search(mindate: str|None=None) -> list:
@@ -730,17 +760,17 @@ def multi_supplement_search(mindate: str|None=None) -> list:
     all_pmids = set()
     search_results = {}
     
-    print(f"Running comprehensive multi-supplement search for {len(SUPPLEMENT_QUERIES)} supplements...")
-    print(f"Using date-based chunking to bypass PubMed 10K limit")
-    print(f"Global limit: {MAX_TOTAL_PAPERS:,} papers")
+    logger.info(f"Running comprehensive multi-supplement search for {len(SUPPLEMENT_QUERIES)} supplements...")
+    logger.info(f"Using date-based chunking to bypass PubMed 10K limit")
+    logger.info(f"Global limit: {MAX_TOTAL_PAPERS:,} papers")
     
     for supplement, query in SUPPLEMENT_QUERIES.items():
         # Check global limit
         if len(all_pmids) >= MAX_TOTAL_PAPERS:
-            print(f"⚠️  Reached global limit of {MAX_TOTAL_PAPERS:,} papers. Stopping search.")
+            logger.warning(f"⚠️  Reached global limit of {MAX_TOTAL_PAPERS:,} papers. Stopping search.")
             break
             
-        print(f"Searching {supplement}:")
+        logger.info(f"Searching {supplement}:")
         
         # Use chunking-aware search
         pmids = search_supplement_with_chunking(supplement, query, mindate)
@@ -755,20 +785,20 @@ def multi_supplement_search(mindate: str|None=None) -> list:
                 break
         
         search_results[supplement] = len(unique_pmids)
-        print(f"  {supplement}: {len(unique_pmids)} unique papers (total: {len(all_pmids):,})")
+        logger.info(f"  {supplement}: {len(unique_pmids)} unique papers (total: {len(all_pmids):,})")
         
         # Early termination if we hit global limit
         if len(all_pmids) >= MAX_TOTAL_PAPERS:
-            print(f"⚠️  Reached global limit. Stopping at {len(all_pmids):,} papers.")
+            logger.warning(f"⚠️  Reached global limit. Stopping at {len(all_pmids):,} papers.")
             break
     
-    print(f"Multi-supplement search complete:")
-    print(f"  Total unique PMIDs: {len(all_pmids):,}")
-    print(f"  Supplements searched: {len(search_results)}/{len(SUPPLEMENT_QUERIES)}")
-    print(f"  Top supplements by paper count:")
+    logger.info(f"Multi-supplement search complete:")
+    logger.info(f"  Total unique PMIDs: {len(all_pmids):,}")
+    logger.info(f"  Supplements searched: {len(search_results)}/{len(SUPPLEMENT_QUERIES)}")
+    logger.info(f"  Top supplements by paper count:")
     
     for supplement, count in sorted(search_results.items(), key=lambda x: x[1], reverse=True)[:10]:
-        print(f"    {supplement}: {count} papers")
+        logger.info(f"    {supplement}: {count} papers")
     
     return list(all_pmids)
 
@@ -1289,9 +1319,9 @@ def run_ingest(mode: str):
     # Dynamic rolling window system: Maintain 10,000, temporarily go to 15,000
     if mode == "bootstrap":
         # Bootstrap: Use multi-supplement search for comprehensive coverage
-        print("Bootstrap mode: Using multi-supplement search for comprehensive coverage...")
+        logger.info("Bootstrap mode: Using multi-supplement search for comprehensive coverage...")
         ids = multi_supplement_search(mindate=mindate)
-        print(f"Bootstrap: Found {len(ids)} PMIDs from multi-supplement search (will filter to best {INGEST_LIMIT})")
+        logger.info(f"Bootstrap: Found {len(ids)} PMIDs from multi-supplement search (will filter to best {INGEST_LIMIT})")
     else:
         # Monthly: Get new papers since last run
         ids, retstart = [], 0
@@ -1304,10 +1334,10 @@ def run_ingest(mode: str):
             if retstart >= int(batch["esearchresult"].get("count","0")): break
             time.sleep(1.0)  # Rate limiting - 1 second between requests
         
-        print(f"Monthly: Found {len(ids)} new PMIDs since last run")
+        logger.info(f"Monthly: Found {len(ids)} new PMIDs since last run")
 
     if not ids:
-        print("No new PubMed IDs."); return
+        logger.warning("No new PubMed IDs."); return
 
     # Fetch → parse → score → filter → upsert
     all_docs = []
@@ -1339,14 +1369,14 @@ def run_ingest(mode: str):
             total_processed += 1
             
             if total_processed % 100 == 0:
-                print(f"Processed {total_processed} papers...")
+                logger.info(f"Processed {total_processed} papers...")
 
     # Dynamic rolling window system: Maintain 10,000, temporarily go to 15,000
-    print(f"Processing {len(all_docs)} papers with dynamic rolling window system...")
+    logger.info(f"Processing {len(all_docs)} papers with dynamic rolling window system...")
     
     if mode == "bootstrap":
         # Bootstrap: Get best 10,000 from large batch
-        print("Bootstrap mode: Selecting best 10,000 papers from all available...")
+        logger.info("Bootstrap mode: Selecting best 10,000 papers from all available...")
         
         # Score all papers with combination-aware weighting
         all_docs.sort(key=lambda x: x.get("enhanced_score", 0), reverse=True)
@@ -1354,10 +1384,10 @@ def run_ingest(mode: str):
         # Enhanced quality threshold for 15K papers - balanced selectivity
         min_quality_threshold = 4.0  # Balanced: RCTs (10+), crossovers (7+), and cohorts (4+) pass, others (1) filtered
         quality_filtered_docs = [d for d in all_docs if d.get("reliability_score", 0) >= min_quality_threshold]
-        print(f"Quality filter: {len(all_docs)} -> {len(quality_filtered_docs)} papers (removed {len(all_docs) - len(quality_filtered_docs)} low-quality)")
+        logger.info(f"Quality filter: {len(all_docs)} -> {len(quality_filtered_docs)} papers (removed {len(all_docs) - len(quality_filtered_docs)} low-quality)")
         
         # Phase 1: Process all papers with reliability scores only
-        print(f"Phase 1: Processing {len(quality_filtered_docs)} papers with reliability scoring...")
+        logger.info(f"Phase 1: Processing {len(quality_filtered_docs)} papers with reliability scoring...")
         for doc in quality_filtered_docs:
             # Calculate combination score (will be 0.0 since no weights yet)
             combination_score = calculate_combination_score(doc, {})
@@ -1365,7 +1395,7 @@ def run_ingest(mode: str):
             doc["enhanced_score"] = doc.get("reliability_score", 0) + combination_score
         
         # Phase 2: Iterative diversity filtering for optimal balance
-        print(f"Phase 2: Iterative diversity filtering to select best {INGEST_LIMIT} papers...")
+        logger.info(f"Phase 2: Iterative diversity filtering to select best {INGEST_LIMIT} papers...")
         
         top_docs = iterative_diversity_filtering(
             papers=quality_filtered_docs,
@@ -1393,7 +1423,7 @@ def run_ingest(mode: str):
                 }
                 existing_docs.append(existing_doc)
             
-            print(f"Found {len(existing_docs)} existing papers in index")
+            logger.info(f"Found {len(existing_docs)} existing papers in index")
             
             # Combine existing and new papers
             combined_docs = existing_docs + all_docs
@@ -1462,8 +1492,8 @@ def run_ingest(mode: str):
             print(f"Trimmed from {len(temp_docs)} to {len(top_docs)} papers")
             
         except Exception as e:
-            print(f"Could not merge with existing index: {e}")
-            print("Falling back to bootstrap mode...")
+            logger.error(f"Could not merge with existing index: {e}")
+            logger.warning("Falling back to bootstrap mode...")
             # Fallback to bootstrap logic
             all_docs.sort(key=lambda x: x.get("reliability_score", 0), reverse=True)
             top_docs = all_docs[:INGEST_LIMIT]
@@ -1477,10 +1507,10 @@ def run_ingest(mode: str):
             if supp:
                 final_supplement_counts[supp] = final_supplement_counts.get(supp, 0) + 1
     
-    print(f"Final selection: {len(top_docs)} papers")
-    print(f"Final supplement distribution: {dict(sorted(final_supplement_counts.items(), key=lambda x: x[1], reverse=True)[:10])}")
-    print(f"Top enhanced scores: {[d.get('enhanced_score', 0) for d in top_docs[:5]]}")
-    print(f"Top combination scores: {[d.get('combination_score', 0) for d in top_docs[:5]]}")
+    logger.info(f"Final selection: {len(top_docs)} papers")
+    logger.info(f"Final supplement distribution: {dict(sorted(final_supplement_counts.items(), key=lambda x: x[1], reverse=True)[:10])}")
+    logger.info(f"Top enhanced scores: {[d.get('enhanced_score', 0) for d in top_docs[:5]]}")
+    logger.info(f"Top combination scores: {[d.get('combination_score', 0) for d in top_docs[:5]]}")
     
     # Show combination distribution in final selection
     combo_analysis = {"supplement_goal": {}, "goal_population": {}}
@@ -1510,13 +1540,13 @@ def run_ingest(mode: str):
         try:
             upsert_docs(batch_docs)
             total += len(batch_docs)
-            print(f"Upserted {len(batch_docs)} docs (total {total})")
+            logger.info(f"Upserted {len(batch_docs)} docs (total {total})")
             
             # Small delay between batches
             time.sleep(0.5)
             
         except Exception as e:
-            print(f"Error processing batch {i//batch_size + 1}: {e}")
+            logger.error(f"Error processing batch {i//batch_size + 1}: {e}")
             continue
 
     # Update watermark
@@ -1529,7 +1559,8 @@ def run_ingest(mode: str):
         "index_version": INDEX_VERSION
     }
     upsert_docs([wm_doc])
-    print(f"Watermark updated to {now_iso}")
+    logger.info(f"Watermark updated to {now_iso}")
+    logger.info("Ingest job completed successfully!")
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
