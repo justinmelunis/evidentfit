@@ -373,6 +373,7 @@ def search_supplement_chunked(query: str, start_date: str, total_count: int) -> 
 - **Chronological Coverage**: Maintains full time period coverage
 - **Efficient**: Only uses chunking when necessary
 - **Robust**: Handles edge cases and API limitations gracefully
+- **Recursive Chunking**: If a chunk itself hits 9,999 papers, it automatically sub-chunks
 
 **Why Deduplication is Included:**
 While date-based chunking with non-overlapping ranges shouldn't produce duplicates, we include deduplication as a defensive measure because:
@@ -386,6 +387,7 @@ While date-based chunking with non-overlapping ranges shouldn't produce duplicat
 - **Beta-alanine**: 8,500 papers → simple search (no chunking needed)
 - **Tyrosine**: 9,999 papers → automatically chunked (hit limit)
 - **Iron**: 12,000 papers → automatically chunked (over limit)
+- **High-volume supplement**: 25,000 papers → chunked, and if a chunk hits 9,999 → recursively sub-chunked
 
 ### Exclusions
 - **Pollution studies**: Excludes NO₂ (nitrogen dioxide) environmental research
@@ -596,6 +598,9 @@ POST /indexes/evidentfit-index/docs/search
 
 **Problem**: Some supplements missing papers (hit 9,999 limit)
 - **Solution**: Verify dynamic chunking is working - check logs for "hit 10K limit, using dynamic chunking" messages
+
+**Problem**: Chunks themselves hitting 9,999 limit (incomplete coverage)
+- **Solution**: Check logs for "CHUNK X HIT 9,999 LIMIT" messages - recursive chunking should automatically trigger
 
 **Problem**: PubMed 429 rate limit errors
 - **Solution**: Increase delays in `pubmed_esearch()` and `pubmed_efetch_xml()` (currently 1.0s)

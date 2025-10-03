@@ -609,21 +609,24 @@ def search_supplement_with_chunking(supplement: str, query: str, mindate: str|No
         
         if total_count < 9999:
             # Simple case - can get all results in one go
-            logger.info(f"  {supplement}: {total_count:,} papers (single query)")
+            logger.info(f"  {supplement}: {total_count:,} papers (single query - no chunking needed)")
             pmids = search_supplement_simple(query, mindate)
             
             # Check if simple search hit the 9,999 limit and switched to chunking
             if len(pmids) == 9999:
-                logger.warning(f"  {supplement}: Simple search hit 9,999 limit, switching to chunking")
+                logger.warning(f"  {supplement}: DYNAMIC CHUNKING TRIGGERED - Simple search hit 9,999 limit during execution")
+                logger.warning(f"  {supplement}: Switching to chunking to capture ALL papers beyond 10K limit")
                 return search_supplement_chunked(query, mindate or "1990/01/01", total_count)
             else:
+                logger.info(f"  {supplement}: Simple search completed successfully - {len(pmids):,} papers retrieved")
                 return pmids
         else:
             # Need chunking (either exactly 9,999 or more)
             if total_count == 9999:
-                logger.warning(f"  {supplement}: {total_count:,} papers (hit 10K limit, using dynamic chunking)")
+                logger.warning(f"  {supplement}: DYNAMIC CHUNKING TRIGGERED - {total_count:,} papers (exactly hit 10K limit)")
+                logger.warning(f"  {supplement}: Using chunking to ensure complete coverage beyond PubMed's 10K limit")
             else:
-                logger.info(f"  {supplement}: {total_count:,} papers (using date chunking)")
+                logger.info(f"  {supplement}: {total_count:,} papers (over 10K limit, using date chunking)")
             return search_supplement_chunked(query, mindate or "1990/01/01", total_count)
             
     except Exception as e:
@@ -653,7 +656,8 @@ def search_supplement_simple(query: str, mindate: str|None=None) -> list:
             
             # Dynamic chunking: if we hit exactly 9,999 results, switch to chunking
             if total_count == 9999 and retstart >= 9999:
-                logger.warning(f"    Hit 9,999 paper limit, switching to chunking for complete coverage")
+                logger.warning(f"    DYNAMIC CHUNKING DETECTED - Hit 9,999 paper limit during simple search")
+                logger.warning(f"    Returning {len(pmids):,} papers so far, caller will switch to chunking")
                 # Return what we have so far, chunking will be handled by caller
                 return pmids
                 
@@ -665,9 +669,14 @@ def search_supplement_simple(query: str, mindate: str|None=None) -> list:
     
     return pmids
 
-def search_supplement_chunked(query: str, start_date: str, total_count: int) -> list:
+def search_supplement_chunked(query: str, start_date: str, total_count: int, recursion_depth: int = 0) -> list:
     """Search using date-based chunks to bypass 10K limit."""
     from datetime import datetime, timedelta
+    
+    # Prevent infinite recursion
+    if recursion_depth >= 3:
+        logger.warning(f"    Maximum recursion depth reached ({recursion_depth}), stopping chunking")
+        return []
     
     all_pmids = []
     
@@ -681,7 +690,10 @@ def search_supplement_chunked(query: str, start_date: str, total_count: int) -> 
     estimated_chunks = max(1, int(total_count / target_per_chunk))
     years_per_chunk = max(1, years_total / estimated_chunks)
     
-    logger.info(f"    Chunking into ~{estimated_chunks} date ranges ({years_per_chunk:.1f} years each)")
+    logger.info(f"    DYNAMIC CHUNKING: Splitting into ~{estimated_chunks} date ranges ({years_per_chunk:.1f} years each)")
+    logger.info(f"    Target: {target_per_chunk:,} papers per chunk (staying under 10K limit)")
+    if recursion_depth > 0:
+        logger.info(f"    RECURSIVE CHUNKING: Depth {recursion_depth} (max 3)")
     
     current_dt = start_dt
     chunk_num = 1
@@ -694,7 +706,7 @@ def search_supplement_chunked(query: str, start_date: str, total_count: int) -> 
         chunk_start = current_dt.strftime("%Y/%m/%d")
         chunk_end = chunk_end_dt.strftime("%Y/%m/%d")
         
-        logger.info(f"    Chunk {chunk_num}: {chunk_start} to {chunk_end}")
+        logger.info(f"    CHUNK {chunk_num}: {chunk_start} to {chunk_end}")
         
         # Search this date range
         chunk_pmids = []
@@ -714,7 +726,23 @@ def search_supplement_chunked(query: str, start_date: str, total_count: int) -> 
                 
                 # Check if we've reached the end of this chunk
                 chunk_total = int(batch.get("esearchresult", {}).get("count", "0"))
-                if retstart >= chunk_total or retstart >= 9999:  # Safety limit
+                if retstart >= chunk_total:
+                    break
+                
+                # Check if this chunk hit the 9,999 limit (needs recursive chunking)
+                if retstart >= 9999 and chunk_total > 9999:
+                    logger.warning(f"      CHUNK {chunk_num} HIT 9,999 LIMIT: {chunk_total:,} total papers in this date range")
+                    logger.warning(f"      Recursively chunking this date range: {chunk_start} to {chunk_end}")
+                    
+                    # Recursively chunk this date range
+                    recursive_pmids = search_supplement_chunked(
+                        query, 
+                        chunk_start, 
+                        chunk_total,
+                        recursion_depth + 1
+                    )
+                    chunk_pmids.extend(recursive_pmids)
+                    logger.info(f"      Recursive chunking complete: {len(recursive_pmids):,} additional papers")
                     break
                     
                 time.sleep(1.0)  # Rate limiting - 1 second between requests
@@ -723,7 +751,7 @@ def search_supplement_chunked(query: str, start_date: str, total_count: int) -> 
                 logger.error(f"      Error in chunk {chunk_num}: {e}")
                 break
         
-        logger.info(f"      Got {len(chunk_pmids):,} papers from this chunk")
+        logger.info(f"      CHUNK {chunk_num} COMPLETE: {len(chunk_pmids):,} papers retrieved")
         all_pmids.extend(chunk_pmids)
         
         # Move to next chunk
@@ -743,7 +771,7 @@ def search_supplement_chunked(query: str, start_date: str, total_count: int) -> 
             unique_pmids.append(pmid)
             seen.add(pmid)
     
-    logger.info(f"    Total unique PMIDs: {len(unique_pmids):,}")
+    logger.info(f"    DYNAMIC CHUNKING COMPLETE: {len(unique_pmids):,} unique PMIDs (deduplicated across chunks)")
     return unique_pmids
 
 def multi_supplement_search(mindate: str|None=None) -> list:
