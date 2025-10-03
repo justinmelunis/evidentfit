@@ -36,19 +36,18 @@ The U.S. National Library of Medicine's database of 35+ million peer-reviewed bi
 - ❌ Studies with severe methodological flaws
 - ❌ Non-human populations or irrelevant contexts
 
-**Current Database**: ~15,000 carefully curated research papers, selected from 50,000+ available studies, updated monthly.
+**Current Database**: ~12,000 carefully curated research papers, selected from 200,000+ available studies via comprehensive multi-query search, local staging, and iterative diversity filtering, updated monthly.
 
 ### How We Evaluate Quality
 
 Not all studies are created equal. We assess research using multiple objective criteria:
 
-#### 1. Enhanced Study Design Quality Scoring
-Research designs are ranked by strength of evidence with enhanced weighting for 15,000+ paper selection:
-- **Meta-analyses & systematic reviews** (12.0 points): Highest priority for evidence synthesis
-- **Randomized controlled trials (RCTs)** (10.0 points): Gold standard for testing interventions  
-- **Crossover studies** (7.0 points): Strong within-subject designs
-- **Cohort studies** (4.0 points): Longitudinal observational data
-- **Other study designs** (1.0 points): Lower priority but may provide context
+#### 1. Study Design Quality
+We prioritize the strongest types of research:
+- **Meta-analyses & systematic reviews**: The gold standard—studies that analyze multiple other studies
+- **Randomized controlled trials (RCTs)**: Participants randomly assigned to supplement or placebo groups
+- **Crossover studies**: Each participant tries both supplement and placebo
+- **Observational studies**: Useful for context but carry less weight
 
 #### 2. Sample Size & Statistical Power
 - Larger, well-powered studies carry more weight
@@ -60,94 +59,100 @@ Research designs are ranked by strength of evidence with enhanced weighting for 
 - Author credentials and potential conflicts of interest
 - Replication by independent research groups
 
-#### 4. Recency vs. Foundational Work
-- Recent studies reflect current methodologies
-- Seminal older papers that established the evidence base remain valuable
-- We balance both to give you the full picture
+#### 4. Historical Depth vs. Current Methods
+- We evaluate all relevant research from 1990+ to present
+- Seminal foundational papers that established evidence bases
+- Current studies with refined methodologies
+- Comprehensive historical perspective ensures no key findings are missed
 
-### Enhanced Relevance Filtering
+### We Only Include Relevant Human Research
 
-To ensure we capture only the most relevant human exercise research, we use multi-layer filtering:
+We're very selective about what studies make it into our database:
 
-#### **PubMed Query Optimization**
-Our search specifically targets human exercise studies using MeSH terms and keywords:
-- **Required**: Supplement names + exercise terms + human indicators
-- **Enhanced inclusion**: `humans[MeSH]`, `participants`, `athletes`, `adults`
-- **Strong exclusions**: `animals[MeSH]`, `in vitro`, `cardiac hypertrophy`, `pollution`
+**✅ What We Include:**
+- Human studies on exercise and athletic performance
+- Research on people who actually train (not just sedentary individuals)
+- Studies measuring outcomes that matter: strength, muscle growth, endurance, recovery
 
-#### **Content-Based Relevance Screening**
-Every paper undergoes automated relevance checking:
+**❌ What We Exclude:**
+- Animal studies (rats, mice, etc.)
+- Test tube research that doesn't translate to real people
+- Medical studies unrelated to exercise
+- Research on supplements for diseases rather than performance
 
-**✅ Must Include (Human Indicators):**
-- Participants, subjects, volunteers, athletes
-- Adults, men, women, males, females
-- Human studies terminology
+**The Goal**: Every study in our database is directly relevant to people who exercise and want to improve their performance or physique.
 
-**❌ Must Exclude (Non-Relevant):**
-- Animal subjects: rats, mice, fish, primates
-- Laboratory studies: in vitro, cell culture, cellular
-- Medical conditions: cardiac hypertrophy, disease models
+### Complete Supplement Coverage
 
-**✅ Must Include (Exercise Context):**
-- Exercise, training, workout, resistance
-- Strength, performance, supplementation
-- Muscle, fitness, athletic, sport
+We track research on 27+ different supplement categories, including:
+- **Popular supplements**: Creatine, protein powder, caffeine, beta-alanine
+- **Specialized compounds**: HMB, citrulline, betaine, taurine
+- **Essential nutrients**: Vitamin D, magnesium, omega-3, iron
+- **Emerging supplements**: Ashwagandha, rhodiola, cordyceps
 
-**Result**: Only studies directly relevant to human exercise supplementation make it into our database.
+We use both common names and scientific terminology to make sure we don't miss relevant research.
 
-#### **Enhanced Supplement Identification**
-Our system identifies supplements using comprehensive pattern matching:
+### How We Build Our Research Database
 
-**Protein Supplements:**
-- Whey protein, casein protein, milk protein, soy protein, pea protein
-- Protein supplementation, protein intake, protein powder
-
-**Creatine Forms:**
-- Creatine monohydrate, creatine supplementation
-- Alternative forms with conversion to monohydrate equivalents
-
-**Specific Compounds:**
-- L-carnitine, L-glutamine, β-alanine (beta-alanine)
-- D-aspartic acid (DAA), trimethylglycine (betaine)
-- Scientific names and common abbreviations
-
-**Coverage**: 27+ supplement categories with multiple identification patterns per supplement.
-
-### Balanced Coverage Strategy
-
-To prevent our database from being dominated by a few over-studied supplements, we use dynamic scoring:
+We don't just grab random studies—we systematically search and evaluate research to build the most comprehensive supplement database possible:
 
 ```
 ┌────────────────────────────────────────────────────────────┐
-│         RESEARCH CURATION PROCESS                          │
+│              HOW WE FIND THE BEST RESEARCH                 │
 └────────────────────────────────────────────────────────────┘
 
-  PubMed Query
+  PubMed Database (35+ million studies)
        ↓
-  50,000+ Candidate Papers Evaluated
-  (Iterative processing over multiple cycles)
-       ↓
-┌─────────────────────┐
-│ Quality Scoring     │ → Enhanced study design scoring (12.0-1.0 points)
-│ (Phase 1)           │ → Sample size and duration
-│                     │ → Journal quality and impact
-│                     │ → Recency and relevance
-│                     │ → Minimum threshold: 4.0 points
-└─────────────────────┘
+  We search for 200,000+ supplement studies
+  (Separate searches for each supplement, going back to 1990)
        ↓
 ┌─────────────────────┐
-│ Diversity Scoring   │ → Prevent over-representation
-│ (Phase 2)           │ → Ensure coverage of:
-│                     │   • Multiple supplements
-│                     │   • Different populations
-│                     │   • Various goals
+│ Step 1: Collect     │ → Search each supplement individually
+│ Everything Relevant │ → Get ALL available human exercise studies
+│                     │ → Filter out animal studies and irrelevant research
+│                     │ → Cast the widest possible net
 └─────────────────────┘
        ↓
-  Final Selection: ~15,000 Papers
-  Highest quality by combined scoring
+  ~100,000+ Studies Found
+       ↓
+┌─────────────────────┐
+│ Step 2: Rate        │ → Score every study for quality
+│ Quality             │ → Meta-analyses and RCTs get highest scores
+│                     │ → Consider sample size, journal reputation
+│                     │ → Only keep studies that meet our standards
+└─────────────────────┘
+       ↓
+  ~60,000+ Quality Studies
+       ↓
+┌─────────────────────┐
+│ Step 3: Balance     │ → Make sure we cover all supplements fairly
+│ Coverage            │ → Don't let popular supplements dominate
+│                     │ → Ensure rare but important research is included
+│                     │ → Progressive refinement for optimal balance
+└─────────────────────┘
+       ↓
+  Final Database: ~12,000 Best Studies
+  (The research that powers your recommendations)
 ```
 
-**Result**: We evaluate 50,000+ supplement studies and select only the top 15,000 papers. Our recommendations reflect comprehensive evidence across the supplement landscape, not just the most-studied topics.
+**The Result**: We evaluate over 200,000 supplement studies and select only the best 12,000 for our database. This ensures you get recommendations based on the highest quality research while covering the full spectrum of supplements—not just the most popular ones.
+
+### Why Our Approach Is Different
+
+Most supplement sites cherry-pick studies that support what they want to sell. We do the opposite:
+
+**🎯 We Start With ALL The Research**
+Instead of searching for "studies that show X works," we search for "all studies about X" and let the evidence speak for itself.
+
+**⚖️ We Balance Quality With Coverage**
+Popular supplements like creatine have thousands of studies. Newer supplements might have dozens. A simple "take the best studies" approach would give you a database that's 90% creatine research. 
+
+Our system ensures every supplement gets fair representation while still prioritizing the highest quality research.
+
+**🔄 We Continuously Refine**
+Rather than making all decisions at once, we progressively refine our selection. This means high-quality research on lesser-known supplements doesn't get buried by the sheer volume of creatine studies.
+
+**The Bottom Line**: You get recommendations based on the best available research for each supplement, not just the supplements with the most research.
 
 ---
 
@@ -167,7 +172,7 @@ When you ask a question about supplements, here's what happens:
   "What does research say about creatine for strength?"
        ↓
 ┌─────────────────────┐
-│  STEP 1: Search     │  → Semantic search across 15,000+ papers
+│  STEP 1: Search     │  → Semantic search across 12,000+ papers
 │  Retrieve Papers    │  → Returns top 10-15 most relevant studies
 └─────────────────────┘
        ↓
@@ -191,7 +196,7 @@ When you ask a question about supplements, here's what happens:
 #### What Happens at Each Step
 
 **Step 1: Semantic Search**
-Your question is converted into a mathematical representation (embedding) and matched against our 15,000+ paper database. We retrieve the 10-15 most relevant studies for your specific question.
+Your question is converted into a mathematical representation (embedding) and matched against our 12,000+ paper database. We retrieve the 10-15 most relevant studies for your specific question.
 
 **Step 2: Evidence Synthesis**
 An AI model (GPT-4o-mini via Azure AI Foundry) reads the retrieved papers and synthesizes findings into a clear, accurate answer. The AI is strictly limited to citing papers it actually retrieved—it cannot invent citations.
@@ -488,7 +493,7 @@ Our platform operates through four specialized AI agents that work in concert to
 │                                                       ▼                        │
 │                                 Azure AI Search Index                          │
 │                                 ┌─────────────────┐                            │
-│                                 │ ~15,000 Papers  │                            │
+│                                 │ ~12,000 Papers  │                            │
 │                                 │ • Embeddings    │                            │
 │                                 │ • Metadata      │                            │
 │                                 │ • Citations     │                            │
@@ -502,7 +507,7 @@ Our platform operates through four specialized AI agents that work in concert to
 │  Research Analysis              Summary Generation                              │
 │  ┌─────────────────┐            ┌─────────────────┐                            │
 │  │ Read Papers     │ ──────────→│ • Overview      │                            │
-│  │ by Supplement   │  LLM       │ • Recent Trends │                            │
+│  │ by Supplement   │  LLM       │ • Historical Trends │                            │
 │  │ • Rank Quality  │  Analysis  │ • Key Studies   │                            │
 │  │ • Extract Key   │            │ • Evidence      │                            │
 │  │   Findings      │            │   Grade         │                            │
@@ -578,7 +583,7 @@ Our platform operates through four specialized AI agents that work in concert to
 - **Purpose**: Keep our research database current and comprehensive
 - **Frequency**: Monthly automated runs
 - **Process**: Search PubMed → Filter relevance → Score quality → Index papers
-- **Output**: 15,000+ high-quality research papers in searchable index
+- **Output**: 12,000+ high-quality research papers in searchable index
 
 **📊 Agent C (Evidence Summarization)**  
 - **Purpose**: Create public-facing supplement summaries
