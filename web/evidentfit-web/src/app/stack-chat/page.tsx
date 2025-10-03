@@ -35,6 +35,7 @@ type StackItem = {
   why: string
   doses: Dose[]
   citations?: Citation[]
+  profile_publications?: Citation[]
   tier: string
   // Form selection fields
   selected_form?: string
@@ -618,27 +619,51 @@ export default function StackChatPage() {
                                 </div>
                               )}
                               
+                              {/* Base Evidence Publications */}
                               {item.citations && item.citations.length > 0 && (
-                                <div className="bg-blue-50 p-2 rounded border border-blue-200">
-                                  <p className="text-sm font-semibold text-blue-900 mb-1">
-                                    📚 Supporting Research ({item.citations.length} {item.citations.length === 1 ? 'study' : 'studies'}):
-                                  </p>
-                                  <div className="space-y-1">
-                                    {item.citations.map((citation, j) => (
-                                      <a
-                                        key={j}
-                                        href={citation.url}
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                        className="block text-xs text-blue-700 hover:text-blue-900 hover:underline"
-                                      >
-                                        {j + 1}. {citation.title}
-                                        {citation.study_type && <span className="text-blue-600"> ({citation.study_type})</span>}
-                                      </a>
-                                    ))}
+                                  <div className="bg-blue-50 p-2 rounded border border-blue-200">
+                                    <p className="text-sm font-semibold text-blue-900 mb-1">
+                                      📚 Base Evidence ({item.citations.length} {item.citations.length === 1 ? 'study' : 'studies'}):
+                                    </p>
+                                    <div className="space-y-1">
+                                      {item.citations.map((citation, j) => (
+                                        <a
+                                          key={j}
+                                          href={citation.url}
+                                          target="_blank"
+                                          rel="noopener noreferrer"
+                                          className="block text-xs text-blue-700 hover:text-blue-900 hover:underline"
+                                        >
+                                          {j + 1}. {citation.title}
+                                          {citation.study_type && <span className="text-blue-600"> ({citation.study_type})</span>}
+                                        </a>
+                                      ))}
+                                    </div>
                                   </div>
-                                </div>
-                              )}
+                                )}
+                                
+                                {/* Profile-Specific Publications */}
+                                {item.profile_publications && item.profile_publications.length > 0 && (
+                                  <div className="bg-green-50 p-2 rounded border border-green-200">
+                                    <p className="text-sm font-semibold text-green-900 mb-1">
+                                      🎯 Profile-Specific Research ({item.profile_publications.length} {item.profile_publications.length === 1 ? 'study' : 'studies'}):
+                                    </p>
+                                    <div className="space-y-1">
+                                      {item.profile_publications.map((citation, j) => (
+                                        <a
+                                          key={j}
+                                          href={citation.url}
+                                          target="_blank"
+                                          rel="noopener noreferrer"
+                                          className="block text-xs text-green-700 hover:text-green-900 hover:underline"
+                                        >
+                                          {j + 1}. {citation.title}
+                                          {citation.study_type && <span className="text-green-600"> ({citation.study_type})</span>}
+                                        </a>
+                                      ))}
+                                    </div>
+                                  </div>
+                                )}
                             </div>
                           ))}
                         </div>
@@ -694,27 +719,51 @@ export default function StackChatPage() {
                                 </div>
                               )}
                               
+                              {/* Base Evidence Publications */}
                               {item.citations && item.citations.length > 0 && (
-                                <div className="bg-blue-50 p-2 rounded border border-blue-200">
-                                  <p className="text-sm font-semibold text-blue-900 mb-1">
-                                    📚 Supporting Research ({item.citations.length} {item.citations.length === 1 ? 'study' : 'studies'}):
-                                  </p>
-                                  <div className="space-y-1">
-                                    {item.citations.map((citation, j) => (
-                                      <a
-                                        key={j}
-                                        href={citation.url}
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                        className="block text-xs text-blue-700 hover:text-blue-900 hover:underline"
-                                      >
-                                        {j + 1}. {citation.title}
-                                        {citation.study_type && <span className="text-blue-600"> ({citation.study_type})</span>}
-                                      </a>
-                                    ))}
+                                  <div className="bg-blue-50 p-2 rounded border border-blue-200">
+                                    <p className="text-sm font-semibold text-blue-900 mb-1">
+                                      📚 Base Evidence ({item.citations.length} {item.citations.length === 1 ? 'study' : 'studies'}):
+                                    </p>
+                                    <div className="space-y-1">
+                                      {item.citations.map((citation, j) => (
+                                        <a
+                                          key={j}
+                                          href={citation.url}
+                                          target="_blank"
+                                          rel="noopener noreferrer"
+                                          className="block text-xs text-blue-700 hover:text-blue-900 hover:underline"
+                                        >
+                                          {j + 1}. {citation.title}
+                                          {citation.study_type && <span className="text-blue-600"> ({citation.study_type})</span>}
+                                        </a>
+                                      ))}
+                                    </div>
                                   </div>
-                                </div>
-                              )}
+                                )}
+                                
+                                {/* Profile-Specific Publications */}
+                                {item.profile_publications && item.profile_publications.length > 0 && (
+                                  <div className="bg-green-50 p-2 rounded border border-green-200">
+                                    <p className="text-sm font-semibold text-green-900 mb-1">
+                                      🎯 Profile-Specific Research ({item.profile_publications.length} {item.profile_publications.length === 1 ? 'study' : 'studies'}):
+                                    </p>
+                                    <div className="space-y-1">
+                                      {item.profile_publications.map((citation, j) => (
+                                        <a
+                                          key={j}
+                                          href={citation.url}
+                                          target="_blank"
+                                          rel="noopener noreferrer"
+                                          className="block text-xs text-green-700 hover:text-green-900 hover:underline"
+                                        >
+                                          {j + 1}. {citation.title}
+                                          {citation.study_type && <span className="text-green-600"> ({citation.study_type})</span>}
+                                        </a>
+                                      ))}
+                                    </div>
+                                  </div>
+                                )}
                             </div>
                           ))}
                         </div>

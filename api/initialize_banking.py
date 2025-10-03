@@ -76,12 +76,28 @@ class BankingInitializer:
                 # Compute evidence grade for this goal × supplement
                 evidence_grade = get_goal_evidence_grade(supplement, goal, goal_papers)
                 
+                # Get supporting publications for this evidence grade
+                supporting_papers = [p for p in goal_papers if supplement.lower() in (p.get("supplements") or "").lower()]
+                publications = []
+                for paper in supporting_papers[:3]:  # Top 3 papers
+                    if paper.get('title') and (paper.get('doi') or paper.get('pmid')):
+                        publications.append({
+                            "title": paper.get('title', ''),
+                            "doi": paper.get('doi', ''),
+                            "pmid": paper.get('pmid', ''),
+                            "journal": paper.get('journal', ''),
+                            "year": paper.get('year', ''),
+                            "url_pub": paper.get('url_pub', ''),
+                            "study_type": paper.get('study_type', '')
+                        })
+                
                 bank_key = f"{goal}:{supplement}"
                 self.level1_bank[bank_key] = {
                     "grade": evidence_grade,
                     "goal": goal,
                     "supplement": supplement,
-                    "paper_count": len([p for p in goal_papers if supplement.lower() in (p.get("supplements") or "").lower()]),
+                    "paper_count": len(supporting_papers),
+                    "publications": publications,
                     "last_updated": datetime.now().isoformat(),
                     "index_version": os.getenv("INDEX_VERSION", "v1")
                 }
@@ -117,11 +133,12 @@ class BankingInitializer:
                 
                 # Generate profile-specific reasoning
                 try:
-                    reasoning = generate_profile_specific_reasoning(
+                    reasoning_result = generate_profile_specific_reasoning(
                         supplement, profile, evidence_grade, goal_papers, bank_key
                     )
                     profile_reasoning[supplement] = {
-                        "reasoning": reasoning,
+                        "reasoning": reasoning_result.get("reasoning", f"May provide benefits for {profile.goal} goals (Grade {evidence_grade})"),
+                        "publications": reasoning_result.get("publications", []),
                         "evidence_grade": evidence_grade,
                         "last_updated": datetime.now().isoformat()
                     }
@@ -129,6 +146,7 @@ class BankingInitializer:
                     print(f"   Warning: Failed to generate reasoning for {supplement}: {e}")
                     profile_reasoning[supplement] = {
                         "reasoning": f"May provide benefits for {profile.goal} goals (Grade {evidence_grade})",
+                        "publications": [],
                         "evidence_grade": evidence_grade,
                         "last_updated": datetime.now().isoformat()
                     }

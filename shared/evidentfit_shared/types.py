@@ -131,7 +131,8 @@ class StackItem(BaseModel):
     reason: Optional[str] = Field(default=None, description="Reason for exclusion if not included")
     why: str = Field(description="Brief explanation of why this supplement is recommended")
     doses: List[Dose] = Field(description="Dosing recommendations")
-    citations: List[Citation] = Field(default_factory=list, description="Supporting research papers (max 3)")
+    citations: List[Citation] = Field(default_factory=list, description="Base evidence research papers (max 3)")
+    profile_publications: List[Citation] = Field(default_factory=list, description="Profile-specific research papers (max 3)")
     tier: Literal["core", "optional", "conditional", "experimental"] = Field(
         default="core",
         description="Tier: core=essential, optional=beneficial, conditional=specific cases, experimental=emerging evidence"

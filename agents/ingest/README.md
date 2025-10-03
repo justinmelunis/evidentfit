@@ -2,7 +2,7 @@
 
 ## Overview
 
-The EvidentFit Ingest Agent is responsible for discovering, scoring, selecting, and indexing high-quality research papers from PubMed into Azure AI Search. It implements a sophisticated **multi-query strategy** with **iterative diversity filtering** to maintain a diverse, high-quality dataset of approximately 12,000 papers optimized for supplement research.
+The EvidentFit Ingest Agent is responsible for discovering, scoring, selecting, and indexing high-quality research papers from PubMed into Azure AI Search. It implements a sophisticated **multi-query strategy** with **iterative diversity filtering** to maintain a diverse, high-quality dataset of approximately 10,000 papers optimized for supplement research.
 
 ## Core Objectives
 
@@ -24,7 +24,7 @@ XML Parsing & Metadata Extraction
 Phase 1: Reliability Scoring (4.0 threshold)
     ↓ [Quality Filter - ~60,000 papers]
 Phase 2: Iterative Diversity Filtering
-    ↓ [Dynamic Selection - 12,000 papers]
+    ↓ [Dynamic Selection - 10,000 papers]
 Azure AI Search Index
     ↓ [Upsert Documents]
 Watermark Update
@@ -36,14 +36,14 @@ Watermark Update
 - Initial population of the index
 - Multi-query search across 30 supplements from 1990-01-01 to present
 - Collects ~124,000 PMIDs, processes ~95,000 papers
-- Applies 4.0 quality threshold, selects best 12,000 papers
+- Applies 4.0 quality threshold, selects best 10,000 papers
 - Uses iterative diversity filtering for optimal balance
 
 #### **Monthly Mode**
 - Incremental updates based on watermark
 - Fetches only papers published since last run
 - Integrates new papers with existing dataset
-- Re-applies iterative diversity filtering to maintain diversity
+- Re-applies iterative diversity filtering to maintain 10,000 paper limit
 
 ## Scoring Methodology
 
@@ -194,24 +194,24 @@ Enhanced Score = Reliability Score + Combination Score
 ### Bootstrap Mode Workflow
 
 1. **Multi-Query Search**: Search 30 supplements individually, collect ~124,000 PMIDs
-2. **Date Chunking**: Use date-based chunking to bypass PubMed 10K limit
+2. **Dynamic Chunking**: Automatically detect and use date-based chunking for supplements hitting 9,999+ paper limit
 3. **Parse & Extract**: Extract metadata, abstract, authors, journal, etc.
 4. **Reliability Scoring**: Calculate objective quality scores for all papers
 5. **Quality Filter**: Remove papers with reliability score <4.0 (~60,000 papers remain)
 6. **Iterative Diversity Filtering**: Eliminate papers in 1,000-paper rounds
 7. **Weight Recalculation**: Recalculate combination weights each round
-8. **Final Selection**: Select best 12,000 papers with optimal diversity
+8. **Final Selection**: Select best 10,000 papers with optimal diversity
 9. **Upsert to Index**: Store selected papers in Azure AI Search
 10. **Watermark Update**: Record latest publication date for monthly runs
 
 ### Monthly Mode Workflow
 
 1. **Watermark Check**: Read last ingestion date from index
-2. **PubMed Search**: Fetch new papers since watermark
+2. **PubMed Search**: Fetch new papers since watermark (with dynamic chunking if needed)
 3. **Parse & Score**: Apply full two-phase scoring to new papers
 4. **Merge with Existing**: Combine new papers with existing index
 5. **Re-score & Select**: Re-apply iterative diversity filtering to full dataset
-6. **Maintain Limit**: Keep best 12,000 papers, remove lowest-scoring
+6. **Maintain Limit**: Keep best 10,000 papers, remove lowest-scoring
 7. **Upsert Changes**: Update index with new selection
 8. **Update Watermark**: Record new last ingestion date
 
@@ -337,17 +337,55 @@ SUPPLEMENT_QUERIES = {
 }
 ```
 
-### Date-Based Chunking
+### Dynamic Chunking
 
-For supplements with >10,000 results, the system uses **date-based chunking** to bypass PubMed's 10K limit:
+The system uses **dynamic chunking** to bypass PubMed's 10K limit and ensure complete coverage of all available papers:
 
+**Problem**: PubMed's ESearch API returns a maximum of 10,000 results per query. When a supplement has exactly 9,999 or more papers, the simple search approach misses papers beyond the 10K limit.
+
+**Solution**: Automatic detection and switching to date-based chunking when limits are hit.
+
+**Trigger Conditions:**
+1. **Initial Count Check**: If PubMed reports exactly 9,999 papers (hit the 10K limit)
+2. **Initial Count Check**: If PubMed reports >9,999 papers (definitely over limit)
+3. **Runtime Detection**: If simple search hits 9,999 papers during execution
+
+**Chunking Strategy:**
 ```python
-def search_supplement_chunked(supplement: str, query: str, mindate: str) -> list:
-    # Split search into date ranges
+def search_supplement_chunked(query: str, start_date: str, total_count: int) -> list:
+    # Calculate optimal chunk size (target ~8,000 papers per chunk)
+    # Split time period into date ranges
     # Chunk 1: 1990/01/01 to 2007/11/17
     # Chunk 2: 2007/11/18 to 2025/10/03
-    # Each chunk gets up to 10,000 results
+    # Each chunk searches independently, bypassing 10K limit
 ```
+
+**Implementation Flow:**
+1. **Count Check**: Query PubMed for total count
+2. **Decision**: If count < 9,999 → use simple search
+3. **Decision**: If count ≥ 9,999 → use chunked search
+4. **Fallback**: If simple search hits 9,999 during execution → switch to chunking
+5. **Deduplication**: Remove duplicate PMIDs (defensive measure for edge cases)
+
+**Benefits:**
+- **Complete Coverage**: Captures ALL available papers, not just the first 9,999
+- **Automatic Detection**: No manual intervention required
+- **Chronological Coverage**: Maintains full time period coverage
+- **Efficient**: Only uses chunking when necessary
+- **Robust**: Handles edge cases and API limitations gracefully
+
+**Why Deduplication is Included:**
+While date-based chunking with non-overlapping ranges shouldn't produce duplicates, we include deduplication as a defensive measure because:
+- **PubMed Date Precision**: Some papers may have imprecise publication dates
+- **Index vs Publication Date**: Papers may appear in multiple date ranges due to indexing delays
+- **Multi-Supplement Overlap**: Same paper may be relevant to multiple supplements in our multi-query approach
+- **API Edge Cases**: Rare cases where PubMed's date filtering isn't perfectly precise
+
+**Example Scenarios:**
+- **Creatine**: 15,000+ papers → automatically chunked into 2-3 date ranges
+- **Beta-alanine**: 8,500 papers → simple search (no chunking needed)
+- **Tyrosine**: 9,999 papers → automatically chunked (hit limit)
+- **Iron**: 12,000 papers → automatically chunked (over limit)
 
 ### Exclusions
 - **Pollution studies**: Excludes NO₂ (nitrogen dioxide) environmental research
@@ -372,11 +410,11 @@ To fit within Azure AI Search free tier (50 MB), we store:
 
 ### Storage Calculations
 
-- **Target**: 12,000 papers
+- **Target**: 10,000 papers
 - **Average abstract**: 2,000 characters (2 KB)
 - **Metadata**: ~1 KB per paper
 - **Total per paper**: ~3 KB
-- **Total dataset**: 12,000 × 3 KB = 36 MB (fits in 50 MB limit with buffer)
+- **Total dataset**: 10,000 × 3 KB = 30 MB (fits in 50 MB limit with buffer)
 
 ### Future Scaling
 
@@ -452,20 +490,22 @@ az containerapp job start --name evidentfit-ingest-job --resource-group evidentf
 
 ### Expected Runtimes
 
-- **Bootstrap mode**: 25-40 minutes
-  - Multi-query search: 10-15 minutes (~124,000 PMIDs)
-  - Parsing & scoring: 10-15 minutes (~95,000 papers)
-  - Iterative diversity filtering: 5-10 minutes
-  - Index upsert: 5-10 minutes
+- **Bootstrap mode**: 8-12 hours
+  - Multi-query search: 4-6 hours (~124,000 PMIDs with 1s delays + dynamic chunking)
+  - Parsing & scoring: 2-3 hours (~95,000 papers)
+  - Iterative diversity filtering: 1-2 hours
+  - Index upsert: 1-2 hours
 
-- **Monthly mode**: 5-15 minutes
+- **Monthly mode**: 1-3 hours
   - New papers: typically 100-500/month
-  - Merge & re-score: 5-10 minutes
-  - Index update: 1-3 minutes
+  - Merge & re-score: 30-60 minutes
+  - Index update: 10-30 minutes
 
 ### Bottlenecks
 
-1. **PubMed API**: Rate limited; 1-second delays between requests to avoid 429 errors
+1. **PubMed API**: Primary bottleneck - 1-second delays between requests to avoid 429 errors
+   - ~124,000 PMIDs × 1s = 34+ hours of API time alone
+   - Rate limiting is necessary to prevent API blocking
 2. **Parsing XML**: xmltodict can be slow for large responses
 3. **Index upsert**: Azure AI Search has throughput limits on free tier
 4. **Iterative filtering**: Recalculating weights each round is computationally intensive
@@ -496,12 +536,13 @@ az containerapp job start --name evidentfit-ingest-job --resource-group evidentf
 
 ### Post-Ingest Checks
 
-1. **Count verification**: Confirm ~12,000 papers in index
+1. **Count verification**: Confirm ~10,000 papers in index
 2. **Supplement distribution**: Check representation across all 30 supplements
 3. **Study type distribution**: Verify meta-analyses and RCTs are well-represented
 4. **Recency**: Confirm recent papers (last 5 years) are included
 5. **Watermark**: Verify watermark document was updated
 6. **Quality threshold**: Verify 4.0 threshold filtered appropriately
+7. **Chunking verification**: Confirm supplements with 9,999+ papers were properly chunked
 
 ### Monitoring Queries
 
@@ -553,8 +594,12 @@ POST /indexes/evidentfit-index/docs/search
 **Problem**: Papers not diverse (all creatine)
 - **Solution**: Check `MAX_TEMP_LIMIT` is set high enough (≥20,000) to allow diversity analysis
 
+**Problem**: Some supplements missing papers (hit 9,999 limit)
+- **Solution**: Verify dynamic chunking is working - check logs for "hit 10K limit, using dynamic chunking" messages
+
 **Problem**: PubMed 429 rate limit errors
 - **Solution**: Increase delays in `pubmed_esearch()` and `pubmed_efetch_xml()` (currently 1.0s)
+- **Note**: Current 1.0s delays result in 8-12 hour bootstrap runs but prevent API blocking
 
 **Problem**: PubMed 500 errors
 - **Solution**: Reduce batch size in `pubmed_efetch_xml()` (currently 50)

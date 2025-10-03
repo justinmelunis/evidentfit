@@ -9,7 +9,7 @@ Builds on existing stack_rules.py helpers with:
 """
 
 import os
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Tuple
 from datetime import datetime
 
 # Import shared types and guardrails
@@ -311,19 +311,23 @@ def generate_profile_specific_reasoning(
     evidence_grade: str,
     docs: List[dict],
     bank_key: str
-) -> str:
+) -> dict:
     """
     Generate personalized reasoning using Level 2 banking cache or LLM from research papers.
     
     Args:
         supplement: Supplement name
         profile: User profile with demographics and goals
-        evidence_grade: Evidence grade (A/B/C/D)
+        evidence_grade: Evidence grade (A/B/C/D) from Level 1 banking
         docs: Retrieved research papers
         bank_key: Banking key for caching
         
     Returns:
-        Personalized explanation string based on research
+        Dictionary with reasoning and supporting publications:
+        {
+            "reasoning": "Personalized explanation...",
+            "publications": [{"title": "...", "doi": "...", "pmid": "..."}]
+        }
     """
     
     # Try to get from Level 2 bank first
@@ -341,7 +345,10 @@ def generate_profile_specific_reasoning(
         from clients.foundry_chat import chat as foundry_chat
     except ImportError:
         # Fallback to simple reasoning if LLM not available
-        return f"May provide benefits for {profile.goal} goals based on research evidence (Grade {evidence_grade})"
+        return {
+            "reasoning": f"May provide benefits for {profile.goal} goals based on research evidence (Grade {evidence_grade})",
+            "publications": []
+        }
     
     # Filter papers relevant to this supplement
     relevant_papers = []
@@ -351,7 +358,10 @@ def generate_profile_specific_reasoning(
             relevant_papers.append(doc)
     
     if not relevant_papers:
-        return f"May provide benefits for {profile.goal} goals, though specific research for your profile is limited (Grade {evidence_grade})"
+        return {
+            "reasoning": f"May provide benefits for {profile.goal} goals, though specific research for your profile is limited (Grade {evidence_grade})",
+            "publications": []
+        }
     
     # Build profile context
     profile_context = []
@@ -374,8 +384,9 @@ def generate_profile_specific_reasoning(
     
     profile_desc = ", ".join(profile_context) if profile_context else "general population"
     
-    # Build research context
+    # Build research context with publication details
     paper_summaries = []
+    publications = []
     for paper in relevant_papers[:3]:  # Top 3 most relevant
         title = paper.get("title", "")
         study_type = paper.get("study_type", "")
@@ -384,6 +395,18 @@ def generate_profile_specific_reasoning(
         if population:
             summary += f" - studied in {population}"
         paper_summaries.append(summary)
+        
+        # Collect publication details
+        if title and (paper.get('doi') or paper.get('pmid')):
+            publications.append({
+                "title": title,
+                "doi": paper.get('doi', ''),
+                "pmid": paper.get('pmid', ''),
+                "journal": paper.get('journal', ''),
+                "year": paper.get('year', ''),
+                "url_pub": paper.get('url_pub', ''),
+                "study_type": study_type
+            })
     
     research_context = "\n".join(paper_summaries)
     
@@ -415,12 +438,18 @@ Response format: "For your profile ({profile_desc}), {supplement} [benefits/conc
             reasoning += '.'
         reasoning += f" (Grade {evidence_grade} evidence)"
         
-        return reasoning
+        return {
+            "reasoning": reasoning,
+            "publications": publications
+        }
         
     except Exception as e:
         print(f"LLM reasoning failed for {supplement}: {e}")
         # Fallback reasoning
-        return f"Research suggests {supplement} may benefit {profile.goal} goals for your demographic (Grade {evidence_grade})"
+        return {
+            "reasoning": f"Research suggests {supplement} may benefit {profile.goal} goals for your demographic (Grade {evidence_grade})",
+            "publications": publications
+        }
 
 
 def apply_text_based_adjustments(items: List[StackItem], context: str, profile: UserProfile) -> List[StackItem]:
@@ -1017,7 +1046,22 @@ def build_creatine_item(
     
     # Generate profile-specific reasoning for creatine from research papers
     bank_key = generate_bank_key(profile)
-    profile_why = generate_profile_specific_reasoning("creatine", profile, "A", docs, bank_key)
+    profile_result = generate_profile_specific_reasoning("creatine", profile, "A", docs, bank_key)
+    profile_why = profile_result.get("reasoning", "Creatine may benefit strength goals based on research.")
+    profile_publications = profile_result.get("publications", [])
+    
+    # Convert profile publications to Citation objects
+    profile_citations = []
+    for pub in profile_publications:
+        if pub.get('title'):
+            profile_citations.append(Citation(
+                title=pub.get('title', ''),
+                doi=pub.get('doi', ''),
+                pmid=pub.get('pmid', ''),
+                journal=pub.get('journal', ''),
+                year=pub.get('year', ''),
+                url_pub=pub.get('url_pub', '')
+            ))
     
     return StackItem(
         supplement="creatine",
@@ -1026,6 +1070,7 @@ def build_creatine_item(
         why=profile_why,
         doses=doses,
         citations=citations,
+        profile_publications=profile_citations,
         tier="core"
     )
 
@@ -1496,13 +1541,9 @@ def generate_base_stack_items(profile: UserProfile, docs: List[dict]) -> List[St
                 item.tier = "recommended"
                 item.included = True
             elif base_grade == "B":
-                # B-grade can be recommended or optional based on goal relevance
-                if supplement in base_grades:
-                    item.tier = "recommended"
-                    item.included = True
-                else:
-                    item.tier = "optional"
-                    item.included = True
+                # B-grade supplements are typically optional
+                item.tier = "optional"
+                item.included = True
             elif base_grade == "C":
                 item.tier = "optional"
                 item.included = True
@@ -1553,7 +1594,22 @@ def build_generic_supplement_item(
     
     # Generate profile-specific reasoning from research papers
     bank_key = generate_bank_key(profile)
-    why = generate_profile_specific_reasoning(supplement, profile, base_grade, docs, bank_key)
+    profile_result = generate_profile_specific_reasoning(supplement, profile, base_grade, docs, bank_key)
+    why = profile_result.get("reasoning", f"{supplement} may benefit {profile.goal} goals based on research.")
+    profile_publications = profile_result.get("publications", [])
+    
+    # Convert profile publications to Citation objects
+    profile_citations = []
+    for pub in profile_publications:
+        if pub.get('title'):
+            profile_citations.append(Citation(
+                title=pub.get('title', ''),
+                doi=pub.get('doi', ''),
+                pmid=pub.get('pmid', ''),
+                journal=pub.get('journal', ''),
+                year=pub.get('year', ''),
+                url_pub=pub.get('url_pub', '')
+            ))
     
     return StackItem(
         supplement=supplement,
@@ -1562,6 +1618,7 @@ def build_generic_supplement_item(
         why=why,
         doses=[dose],
         citations=citations,
+        profile_publications=profile_citations,
         tier="optional"
     )
 

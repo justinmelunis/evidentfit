@@ -45,23 +45,11 @@ def ensure_index(vector_dim: int = 1536):
             
             # === GOAL-SPECIFIC OUTCOMES ===
             {"name":"primary_goal","type":"Edm.String"},
-            {"name":"hypertrophy_outcomes","type":"Edm.String"},
-            {"name":"weight_loss_outcomes","type":"Edm.String"},
-            {"name":"strength_outcomes","type":"Edm.String"},
-            {"name":"performance_outcomes","type":"Edm.String"},
             
             # === STUDY METADATA ===
             {"name":"population","type":"Edm.String"},
             {"name":"sample_size","type":"Edm.Int32"},
             {"name":"study_duration","type":"Edm.String"},
-            {"name":"sample_size_category","type":"Edm.String"},
-            {"name":"duration_category","type":"Edm.String"},
-            {"name":"population_category","type":"Edm.String"},
-            
-            # === AUTHOR & CREDIBILITY ===
-            {"name":"first_author","type":"Edm.String"},
-            {"name":"author_count","type":"Edm.Int32"},
-            {"name":"funding_sources","type":"Edm.String"},
             
             # === SAFETY & DOSAGE ===
             {"name":"safety_indicators","type":"Edm.String"},
@@ -71,10 +59,6 @@ def ensure_index(vector_dim: int = 1536):
             {"name":"has_side_effects","type":"Edm.Boolean"},
             {"name":"has_contraindications","type":"Edm.Boolean"},
             
-            # === CATEGORIZATION ===
-            {"name":"mesh_terms","type":"Edm.String"},
-            {"name":"keywords","type":"Edm.String"},
-            
             # === QUALITY & SCORING ===
             {"name":"reliability_score","type":"Edm.Double"},
             {"name":"study_design_score","type":"Edm.Double"},
@@ -82,7 +66,6 @@ def ensure_index(vector_dim: int = 1536):
             {"name":"enhanced_score","type":"Edm.Double"},
             
             # === SYSTEM FIELDS ===
-            {"name":"content_vector","type":"Edm.String"},
             {"name":"index_version","type":"Edm.String"}
           ]
         }
@@ -117,12 +100,49 @@ def delete_docs(doc_ids: list[str]):
             print(f"Error response: {r.text}")
         r.raise_for_status()
 
-def search_docs(query: str, top: int = 50) -> dict:
+def search_docs(query: str, top: int = 50, skip: int = 0, select: list = None) -> dict:
     """Search documents in the index"""
     headers = {"api-key": ADMIN_KEY, "Content-Type": "application/json"}
     url = f"{SEARCH_ENDPOINT}/indexes/{SEARCH_INDEX}/docs/search?api-version={API_VERSION}"
-    payload = {"search": query, "top": top}
+    payload = {"search": query, "top": top, "skip": skip}
+    if select:
+        payload["select"] = ",".join(select)
     with _client(headers) as c:
         r = c.post(url, json=payload)
         r.raise_for_status()
         return r.json()
+
+def clear_index():
+    """Clear all documents from the index"""
+    headers = {"api-key": ADMIN_KEY, "Content-Type": "application/json"}
+    url = f"{SEARCH_ENDPOINT}/indexes/{SEARCH_INDEX}/docs/index?api-version={API_VERSION}"
+    
+    # Get all document IDs first
+    all_ids = []
+    skip = 0
+    batch_size = 1000
+    
+    while True:
+        results = search_docs("*", top=batch_size, skip=skip, select=["id"])
+        docs = results.get('value', [])
+        if not docs:
+            break
+        all_ids.extend([doc['id'] for doc in docs])
+        skip += batch_size
+        if len(all_ids) > 50000:  # Safety limit
+            break
+    
+    if not all_ids:
+        print("No documents to clear")
+        return
+    
+    # Delete in batches
+    batch_size = 50
+    for i in range(0, len(all_ids), batch_size):
+        batch_ids = all_ids[i:i+batch_size]
+        payload = {"value": [{"@search.action": "delete", "id": doc_id} for doc_id in batch_ids]}
+        with _client(headers) as c:
+            r = c.post(url, json=payload)
+            r.raise_for_status()
+    
+    print(f"Cleared {len(all_ids)} documents from index")

@@ -50,8 +50,8 @@ class BankingLoader:
         entry = self.level1_bank.get(bank_key)
         return entry.get("grade") if entry else None
     
-    def get_profile_reasoning(self, supplement: str, profile_bank_key: str) -> Optional[str]:
-        """Get cached reasoning for supplement × profile"""
+    def get_profile_reasoning(self, supplement: str, profile_bank_key: str) -> Optional[dict]:
+        """Get cached reasoning for supplement × profile with publications"""
         if not self.loaded:
             return None
             
@@ -60,7 +60,14 @@ class BankingLoader:
             return None
             
         supplement_data = profile_entry.get("supplements", {}).get(supplement)
-        return supplement_data.get("reasoning") if supplement_data else None
+        if not supplement_data:
+            return None
+            
+        # Return both reasoning and publications
+        return {
+            "reasoning": supplement_data.get("reasoning", ""),
+            "publications": supplement_data.get("publications", [])
+        }
     
     def get_banking_stats(self) -> Dict:
         """Get statistics about loaded banking data"""
@@ -86,8 +93,8 @@ def get_cached_evidence_grade(supplement: str, goal: str) -> Optional[str]:
     return banking_loader.get_evidence_grade(supplement, goal)
 
 
-def get_cached_reasoning(supplement: str, profile_bank_key: str) -> Optional[str]:
-    """Get cached profile reasoning (Level 2)"""
+def get_cached_reasoning(supplement: str, profile_bank_key: str) -> Optional[dict]:
+    """Get cached profile reasoning (Level 2) with publications"""
     return banking_loader.get_profile_reasoning(supplement, profile_bank_key)
 
 

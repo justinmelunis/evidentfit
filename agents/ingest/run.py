@@ -18,7 +18,7 @@ PM_SEARCH_QUERY = os.getenv("PM_SEARCH_QUERY") or \
 NCBI_EMAIL = os.getenv("NCBI_EMAIL","you@example.com")
 NCBI_API_KEY = os.getenv("NCBI_API_KEY")  # optional
 WATERMARK_KEY = os.getenv("WATERMARK_KEY","meta:last_ingest")
-INGEST_LIMIT = int(os.getenv("INGEST_LIMIT","12000"))  # Final target (~36MB, fits 50MB limit with buffer)
+INGEST_LIMIT = int(os.getenv("INGEST_LIMIT","10000"))  # Final target (~47MB, fits 50MB limit with buffer)
 MAX_TEMP_LIMIT = int(os.getenv("MAX_TEMP_LIMIT","20000"))  # Temporary limit during processing
 
 # --- Multi-Query Strategy ---
@@ -559,7 +559,10 @@ def get_staging_stats() -> dict:
 # --- PubMed E-utilities ---
 def search_supplement_with_chunking(supplement: str, query: str, mindate: str|None=None) -> list:
     """
-    Search for a supplement using date-based chunking to bypass PubMed's 10K limit.
+    Search for a supplement using dynamic chunking to bypass PubMed's 10K limit.
+    
+    If we hit exactly 9,999 papers (the 10K limit), we automatically switch to chunking
+    to ensure we capture all available papers.
     
     Args:
         supplement: Supplement name for logging
@@ -574,13 +577,23 @@ def search_supplement_with_chunking(supplement: str, query: str, mindate: str|No
         initial_batch = pubmed_esearch(query, mindate=mindate, retmax=1, retstart=0)
         total_count = int(initial_batch.get("esearchresult", {}).get("count", "0"))
         
-        if total_count <= 9999:
+        if total_count < 9999:
             # Simple case - can get all results in one go
             print(f"  {supplement}: {total_count:,} papers (single query)")
-            return search_supplement_simple(query, mindate)
+            pmids = search_supplement_simple(query, mindate)
+            
+            # Check if simple search hit the 9,999 limit and switched to chunking
+            if len(pmids) == 9999:
+                print(f"  {supplement}: Simple search hit 9,999 limit, switching to chunking")
+                return search_supplement_chunked(query, mindate or "1990/01/01", total_count)
+            else:
+                return pmids
         else:
-            # Need chunking
-            print(f"  {supplement}: {total_count:,} papers (using date chunking)")
+            # Need chunking (either exactly 9,999 or more)
+            if total_count == 9999:
+                print(f"  {supplement}: {total_count:,} papers (hit 10K limit, using dynamic chunking)")
+            else:
+                print(f"  {supplement}: {total_count:,} papers (using date chunking)")
             return search_supplement_chunked(query, mindate or "1990/01/01", total_count)
             
     except Exception as e:
@@ -607,6 +620,12 @@ def search_supplement_simple(query: str, mindate: str|None=None) -> list:
             total_count = int(batch.get("esearchresult", {}).get("count", "0"))
             if retstart >= total_count:
                 break
+            
+            # Dynamic chunking: if we hit exactly 9,999 results, switch to chunking
+            if total_count == 9999 and retstart >= 9999:
+                print(f"    Hit 9,999 paper limit, switching to chunking for complete coverage")
+                # Return what we have so far, chunking will be handled by caller
+                return pmids
                 
             time.sleep(1.0)  # Rate limiting - 1 second between requests
             
@@ -980,18 +999,11 @@ def parse_pubmed_article(rec: dict, dynamic_weights: dict = None) -> dict:
         
         # Enhanced goal-specific outcomes
         "primary_goal": goal_data["primary_goal"],
-        "hypertrophy_outcomes": goal_data["hypertrophy_outcomes"],
-        "weight_loss_outcomes": goal_data["weight_loss_outcomes"],
-        "strength_outcomes": goal_data["strength_outcomes"],
-        "performance_outcomes": goal_data["performance_outcomes"],
         
         # Study metadata
         "population": population,
         "sample_size": sample_size,
         "study_duration": study_duration,
-        "sample_size_category": sample_size_category,
-        "duration_category": duration_category,
-        "population_category": population_category,
         
         # Safety and dosage
         "safety_indicators": safety_data["safety_indicators"],
@@ -1001,14 +1013,6 @@ def parse_pubmed_article(rec: dict, dynamic_weights: dict = None) -> dict:
         "has_side_effects": safety_data["has_side_effects"],
         "has_contraindications": safety_data["has_contraindications"],
         
-        # Author and credibility
-        "first_author": first_author,
-        "author_count": author_count,
-        "funding_sources": "",  # TODO: Extract from funding info
-        
-        # Categorization
-        "mesh_terms": ",".join(mesh_terms),
-        "keywords": ",".join(keyword_list),
         
         # Quality and scoring
         "reliability_score": reliability_score,
@@ -1017,7 +1021,6 @@ def parse_pubmed_article(rec: dict, dynamic_weights: dict = None) -> dict:
         # System fields
         "summary": None,
         "content": content.strip(),  # Only store abstract, not full text
-        "content_vector": "",  # Will be filled during processing
         "index_version": INDEX_VERSION
     }
 
@@ -1035,7 +1038,7 @@ def analyze_combination_distribution(existing_docs):
         # Extract factors
         supplements = (doc.get("supplements") or "").split(",")
         primary_goal = doc.get("primary_goal") or ""
-        population = doc.get("population_category") or ""
+        population = doc.get("population") or ""
         study_type = doc.get("study_type") or ""
         journal = (doc.get("journal") or "").lower()
         
@@ -1183,7 +1186,7 @@ def calculate_combination_score(paper, combination_weights):
     # Extract paper factors
     supplements = (paper.get("supplements") or "").split(",")
     primary_goal = paper.get("primary_goal") or ""
-    population = paper.get("population_category") or ""
+    population = paper.get("population") or ""
     study_type = paper.get("study_type") or ""
     journal = (paper.get("journal") or "").lower()
     
@@ -1484,7 +1487,7 @@ def run_ingest(mode: str):
     for doc in top_docs[:100]:  # Analyze top 100 papers
         supplements = doc.get("supplements", "").split(",")
         primary_goal = doc.get("primary_goal", "")
-        population = doc.get("population_category", "")
+        population = doc.get("population", "")
         
         for supp in supplements:
             if supp.strip() and primary_goal:
