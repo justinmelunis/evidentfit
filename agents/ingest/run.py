@@ -1,4 +1,4 @@
-import os, re, json, time, argparse, datetime, logging
+import os, re, json, time, argparse, datetime, logging, math
 from dateutil import tz
 import httpx, xmltodict
 
@@ -687,7 +687,7 @@ def search_supplement_chunked(query: str, start_date: str, total_count: int, rec
     # Calculate chunk size in years to aim for ~8K results per chunk
     years_total = (end_dt - start_dt).days / 365.25
     target_per_chunk = 8000  # Stay well under 10K limit
-    estimated_chunks = max(1, int(total_count / target_per_chunk))
+    estimated_chunks = max(1, math.ceil(total_count / target_per_chunk))
     years_per_chunk = max(1, years_total / estimated_chunks)
     
     logger.info(f"    DYNAMIC CHUNKING: Splitting into ~{estimated_chunks} date ranges ({years_per_chunk:.1f} years each)")
@@ -1349,7 +1349,7 @@ def run_ingest(mode: str):
         # Bootstrap: Use multi-supplement search for comprehensive coverage
         logger.info("Bootstrap mode: Using multi-supplement search for comprehensive coverage...")
         ids = multi_supplement_search(mindate=mindate)
-        logger.info(f"Bootstrap: Found {len(ids)} PMIDs from multi-supplement search (will filter to best {INGEST_LIMIT})")
+        logger.info(f"Bootstrap: Found {len(ids)} PMIDs from multi-supplement search (will filter to best {INGEST_LIMIT} papers)")
     else:
         # Monthly: Get new papers since last run
         ids, retstart = [], 0
@@ -1423,11 +1423,11 @@ def run_ingest(mode: str):
             doc["enhanced_score"] = doc.get("reliability_score", 0) + combination_score
         
         # Phase 2: Iterative diversity filtering for optimal balance
-        logger.info(f"Phase 2: Iterative diversity filtering to select best {INGEST_LIMIT} papers...")
-        
+        target_papers = INGEST_LIMIT  # Target full 10,000 papers
+        logger.info(f"Phase 2: Iterative diversity filtering to select best {target_papers} papers...")
         top_docs = iterative_diversity_filtering(
             papers=quality_filtered_docs,
-            target_count=INGEST_LIMIT,
+            target_count=target_papers,
             elimination_per_round=1000  # Fine-grained steps for optimal adaptation
         )
         
@@ -1490,7 +1490,8 @@ def run_ingest(mode: str):
                 doc["enhanced_score"] = doc.get("reliability_score", 0) + combination_score
             
             # Phase 2: Dynamic selection using combination-aware scoring
-            print(f"Phase 2: Selecting best {INGEST_LIMIT} papers using dynamic combination scoring...")
+            target_papers = INGEST_LIMIT  # Target full 10,000 papers
+            print(f"Phase 2: Selecting best {target_papers} papers using dynamic combination scoring...")
             
             # Calculate combination weights based on all processed papers
             combinations = analyze_combination_distribution(temp_docs)
@@ -1505,10 +1506,10 @@ def run_ingest(mode: str):
             
             # Sort by enhanced score and select top papers
             temp_docs.sort(key=lambda x: x.get("enhanced_score", 0), reverse=True)
-            selected_docs = temp_docs[:INGEST_LIMIT]
+            selected_docs = temp_docs[:target_papers]
             
             # Fill remaining slots with highest scoring papers
-            remaining_slots = INGEST_LIMIT - len(selected_docs)
+            remaining_slots = target_papers - len(selected_docs)
             if remaining_slots > 0:
                 used_ids = {doc["id"] for doc in selected_docs}
                 for doc in temp_docs:
@@ -1523,8 +1524,9 @@ def run_ingest(mode: str):
             logger.error(f"Could not merge with existing index: {e}")
             logger.warning("Falling back to bootstrap mode...")
             # Fallback to bootstrap logic
+            target_papers = INGEST_LIMIT  # Target full 10,000 papers
             all_docs.sort(key=lambda x: x.get("reliability_score", 0), reverse=True)
-            top_docs = all_docs[:INGEST_LIMIT]
+            top_docs = all_docs[:target_papers]
     
     # Final analysis
     final_supplement_counts = {}
