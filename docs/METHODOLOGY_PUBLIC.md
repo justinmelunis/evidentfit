@@ -103,7 +103,7 @@ We don't just grab random studies—we systematically search and evaluate resear
 
   PubMed Database (35+ million studies)
        ↓
-  We search for 200,000+ supplement studies
+  We search for all relevant supplement studies for 30 different supplements
   (Separate searches for each supplement, going back to 1990)
        ↓
 ┌─────────────────────┐
@@ -113,7 +113,7 @@ We don't just grab random studies—we systematically search and evaluate resear
 │                     │ → Cast the widest possible net
 └─────────────────────┘
        ↓
-  ~100,000+ Studies Found
+  ~150,000+ Studies Found
        ↓
 ┌─────────────────────┐
 │ Step 2: Rate        │ → Score every study for quality
@@ -530,7 +530,7 @@ Our platform operates through four specialized AI agents that work in concert to
                                          │
                                          ▼
 ┌─────────────────────────────────────────────────────────────────────────────────┐
-│  AGENT D: Banking Initialization (As Needed)                                   │
+│  AGENT E: Banking Initialization (As Needed)                                   │
 │                                                                                 │
 │  Level 1 Banking                Level 2 Banking                               │
 │  ┌─────────────────┐            ┌─────────────────┐                            │
@@ -576,7 +576,7 @@ Our platform operates through four specialized AI agents that work in concert to
 │  DATA FLOW SUMMARY                                                             │
 │                                                                                 │
 │  Monthly: Agent A → New Papers → Agent C → Updated Summaries                   │
-│  As Needed: Agent D → Banking Cache Updates                                    │
+│  As Needed: Agent E → Banking Cache Updates                                    │
 │  Real-Time: User → Agent B → Cached Banking + Live Search → Response          │
 │                                                                                 │
 │  🎯 Result: Fast, personalized, evidence-based supplement recommendations      │
@@ -597,7 +597,7 @@ Our platform operates through four specialized AI agents that work in concert to
 - **Process**: Analyze papers by supplement → Rank by quality → Generate summaries
 - **Output**: 27 supplement summaries with evidence grades and key studies
 
-**🏦 Agent D (Banking Initialization)**
+**🏦 Agent E (Banking Initialization)**
 - **Purpose**: Pre-compute evidence grades and personalized reasoning
 - **Frequency**: When evidence base changes or new profiles needed
 - **Process**: LLM reads papers → Assigns grades → Generates profile-specific explanations

@@ -11,12 +11,14 @@ import sys
 from dotenv import load_dotenv
 
 # Load environment variables
-load_dotenv('azure-openai.env')
+load_dotenv('banking_init.env')
 load_dotenv()
 
 def setup_environment_from_keyvault():
     """Set up environment variables from Azure Key Vault"""
     try:
+        # Add API directory to path for keyvault_client
+        sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..', 'api'))
         from keyvault_client import KeyVaultClient
         
         print("Retrieving secrets from Azure Key Vault...")
@@ -71,7 +73,7 @@ print("SUCCESS: All environment variables configured from Key Vault")
 
 # Import and run banking initialization
 try:
-    from initialize_banking import main
+    from run import main
     main()
 except Exception as e:
     print(f"ERROR: Banking initialization failed: {e}")

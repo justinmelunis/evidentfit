@@ -1,0 +1,5 @@
+httpx>=0.25.0
+azure-identity>=1.15.0
+azure-keyvault-secrets>=4.7.0
+pydantic>=2.0.0
+python-dotenv>=1.0.0

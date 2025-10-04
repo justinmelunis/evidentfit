@@ -113,6 +113,9 @@ def get_goal_evidence_grade(supplement: str, goal: str, docs: List[dict]) -> str
     
     # Try to get from Level 1 bank first
     try:
+        # Import banking loader from agents/banking
+        import sys
+        sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'agents', 'banking'))
         from banking_loader import get_cached_evidence_grade
         cached_grade = get_cached_evidence_grade(supplement, goal)
         if cached_grade:
@@ -332,6 +335,9 @@ def generate_profile_specific_reasoning(
     
     # Try to get from Level 2 bank first
     try:
+        # Import banking loader from agents/banking
+        import sys
+        sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'agents', 'banking'))
         from banking_loader import get_cached_reasoning
         cached_reasoning = get_cached_reasoning(supplement, bank_key)
         if cached_reasoning:

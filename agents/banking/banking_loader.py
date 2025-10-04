@@ -22,15 +22,34 @@ class BankingLoader:
     def load_banks(self) -> bool:
         """Load banking data from files"""
         try:
+            # Determine banking directory - try agents/banking first, then current directory
+            banking_dir = None
+            possible_paths = [
+                os.path.join(os.path.dirname(__file__), '..', '..', 'agents', 'banking'),
+                os.path.dirname(__file__),
+                os.getcwd()
+            ]
+            
+            for path in possible_paths:
+                if os.path.exists(os.path.join(path, "level1_evidence_bank.json")):
+                    banking_dir = path
+                    break
+            
+            if not banking_dir:
+                print("WARNING: Banking files not found in any expected location")
+                return False
+            
             # Load Level 1 bank
-            if os.path.exists("level1_evidence_bank.json"):
-                with open("level1_evidence_bank.json", "r") as f:
+            level1_path = os.path.join(banking_dir, "level1_evidence_bank.json")
+            if os.path.exists(level1_path):
+                with open(level1_path, "r") as f:
                     self.level1_bank = json.load(f)
                 print(f"SUCCESS: Level 1 bank loaded: {len(self.level1_bank)} evidence grades")
             
             # Load Level 2 bank
-            if os.path.exists("level2_reasoning_bank.json"):
-                with open("level2_reasoning_bank.json", "r") as f:
+            level2_path = os.path.join(banking_dir, "level2_reasoning_bank.json")
+            if os.path.exists(level2_path):
+                with open(level2_path, "r") as f:
                     self.level2_bank = json.load(f)
                 print(f"SUCCESS: Level 2 bank loaded: {len(self.level2_bank)} profile reasoning sets")
             

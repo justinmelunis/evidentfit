@@ -30,6 +30,9 @@ load_dotenv()
 
 # Initialize banking system on startup
 try:
+    # Import banking loader from agents/banking
+    import sys
+    sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'agents', 'banking'))
     from banking_loader import initialize_banking_loader
     banking_available = initialize_banking_loader()
     if banking_available:
@@ -588,6 +591,9 @@ def update_stack_form(request: dict):
 def get_supplement_evidence():
     """Get Level 1 banking evidence data for all supplements and goals"""
     try:
+        # Import banking loader from agents/banking
+        import sys
+        sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'agents', 'banking'))
         from banking_loader import get_banking_status
         from stack_builder import COMMON_SUPPLEMENTS, BANKING_BUCKETS
         
@@ -610,6 +616,9 @@ def get_supplement_evidence():
             evidence_data[supplement] = {}
             for goal in goals:
                 try:
+                    # Import banking loader from agents/banking
+                    import sys
+                    sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'agents', 'banking'))
                     from banking_loader import get_cached_evidence_grade
                     grade = get_cached_evidence_grade(supplement, goal)
                     evidence_data[supplement][goal] = {

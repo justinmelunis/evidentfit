@@ -13,11 +13,13 @@ Run this after major research updates to refresh all cached evidence.
 import os
 import sys
 import json
+import logging
 from typing import Dict, List, Any
 from datetime import datetime
 
 # Add shared directory to path
-sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'shared'))
+sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..', 'shared'))
+sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..', 'api'))
 
 from stack_builder import (
     COMMON_SUPPLEMENTS, 
@@ -40,12 +42,27 @@ class BankingInitializer:
         self.level2_bank = {}  # Profile-specific reasoning
         self.papers_cache = {}  # Cache retrieved papers to avoid repeated searches
         
+        # Setup logging
+        log_dir = os.path.join(os.path.dirname(__file__), 'logs')
+        os.makedirs(log_dir, exist_ok=True)
+        log_file = os.path.join(log_dir, f'banking_init_{datetime.now().strftime("%Y%m%d_%H%M%S")}.log')
+        
+        logging.basicConfig(
+            level=logging.INFO,
+            format='%(asctime)s - %(levelname)s - %(message)s',
+            handlers=[
+                logging.FileHandler(log_file),
+                logging.StreamHandler()
+            ]
+        )
+        self.logger = logging.getLogger(__name__)
+        
     def initialize_all_banks(self):
         """Initialize both Level 1 and Level 2 banking"""
-        print("Starting Banking Initialization...")
-        print(f"Will process:")
-        print(f"   - Level 1: {len(BANKING_BUCKETS['goal'])} goals × {len(COMMON_SUPPLEMENTS)} supplements = {len(BANKING_BUCKETS['goal']) * len(COMMON_SUPPLEMENTS)} evidence grades")
-        print(f"   - Level 2: {6 * 5 * 3 * 4} profile combinations × {len(COMMON_SUPPLEMENTS)} supplements = {6 * 5 * 3 * 4 * len(COMMON_SUPPLEMENTS)} reasoning entries")
+        self.logger.info("Starting Banking Initialization...")
+        self.logger.info(f"Will process:")
+        self.logger.info(f"   - Level 1: {len(BANKING_BUCKETS['goal'])} goals × {len(COMMON_SUPPLEMENTS)} supplements = {len(BANKING_BUCKETS['goal']) * len(COMMON_SUPPLEMENTS)} evidence grades")
+        self.logger.info(f"   - Level 2: {6 * 5 * 3 * 4} profile combinations × {len(COMMON_SUPPLEMENTS)} supplements = {6 * 5 * 3 * 4 * len(COMMON_SUPPLEMENTS)} reasoning entries")
         
         # Step 1: Initialize Level 1 (Goal × Supplement Evidence)
         self.initialize_level1_banking()
@@ -56,21 +73,22 @@ class BankingInitializer:
         # Step 3: Save banks to storage
         self.save_banks()
         
-        print("SUCCESS: Banking initialization complete!")
+        self.logger.info("SUCCESS: Banking initialization complete!")
         
     def initialize_level1_banking(self):
         """Pre-compute evidence grades for all goal × supplement combinations"""
-        print("\n=== Level 1: Computing Goal × Supplement Evidence Grades ===")
+        self.logger.info("=== Level 1: Computing Goal × Supplement Evidence Grades ===")
         
         goals = BANKING_BUCKETS['goal']
         total_combinations = len(goals) * len(COMMON_SUPPLEMENTS)
         processed = 0
         
         for goal in goals:
-            print(f"   Processing {goal} goal...")
+            self.logger.info(f"Processing {goal} goal...")
             
             # Get papers relevant to this goal
             goal_papers = self.get_papers_for_goal(goal)
+            self.logger.info(f"  Found {len(goal_papers)} papers for {goal} goal")
             
             for supplement in COMMON_SUPPLEMENTS:
                 # Compute evidence grade for this goal × supplement
@@ -103,14 +121,16 @@ class BankingInitializer:
                 }
                 
                 processed += 1
+                self.logger.info(f"  {supplement} + {goal}: Grade {evidence_grade} ({len(supporting_papers)} papers)")
+                
                 if processed % 20 == 0:
-                    print(f"   Progress: {processed}/{total_combinations} ({processed/total_combinations*100:.1f}%)")
+                    self.logger.info(f"Progress: {processed}/{total_combinations} ({processed/total_combinations*100:.1f}%)")
         
-        print(f"SUCCESS: Level 1 complete: {len(self.level1_bank)} evidence grades computed")
+        self.logger.info(f"SUCCESS: Level 1 complete: {len(self.level1_bank)} evidence grades computed")
     
     def initialize_level2_banking(self):
         """Pre-compute profile-specific reasoning for all profile combinations"""
-        print("\n=== Level 2: Computing Profile-Specific Reasoning ===")
+        self.logger.info("=== Level 2: Computing Profile-Specific Reasoning ===")
         
         # Generate all profile combinations
         profiles = self.generate_all_profiles()
@@ -119,7 +139,7 @@ class BankingInitializer:
         
         for profile in profiles:
             bank_key = generate_bank_key(profile)
-            print(f"   Processing profile: {bank_key}")
+            self.logger.info(f"Processing profile: {bank_key}")
             
             # Get papers for this profile's goal
             goal_papers = self.get_papers_for_goal(profile.goal)
@@ -143,7 +163,7 @@ class BankingInitializer:
                         "last_updated": datetime.now().isoformat()
                     }
                 except Exception as e:
-                    print(f"   Warning: Failed to generate reasoning for {supplement}: {e}")
+                    self.logger.warning(f"Failed to generate reasoning for {supplement}: {e}")
                     profile_reasoning[supplement] = {
                         "reasoning": f"May provide benefits for {profile.goal} goals (Grade {evidence_grade})",
                         "publications": [],
@@ -152,8 +172,10 @@ class BankingInitializer:
                     }
                 
                 processed += 1
+                self.logger.info(f"  {supplement} for {bank_key}: Grade {evidence_grade}")
+                
                 if processed % 50 == 0:
-                    print(f"   Progress: {processed}/{total_combinations} ({processed/total_combinations*100:.1f}%)")
+                    self.logger.info(f"Progress: {processed}/{total_combinations} ({processed/total_combinations*100:.1f}%)")
             
             # Store profile reasoning
             self.level2_bank[bank_key] = {
@@ -167,7 +189,7 @@ class BankingInitializer:
                 "index_version": os.getenv("INDEX_VERSION", "v1")
             }
         
-        print(f"SUCCESS: Level 2 complete: {len(self.level2_bank)} profile reasoning sets computed")
+        self.logger.info(f"SUCCESS: Level 2 complete: {len(self.level2_bank)} profile reasoning sets computed")
     
     def generate_all_profiles(self) -> List[UserProfile]:
         """Generate all possible profile combinations for banking"""
@@ -237,28 +259,28 @@ class BankingInitializer:
             
             # Cache the results
             self.papers_cache[goal] = papers
-            print(f"   Retrieved {len(papers)} papers for {goal} goal")
+            self.logger.info(f"Retrieved {len(papers)} papers for {goal} goal")
             
             return papers
             
         except Exception as e:
-            print(f"   Warning: Failed to retrieve papers for {goal}: {e}")
+            self.logger.warning(f"Failed to retrieve papers for {goal}: {e}")
             self.papers_cache[goal] = []
             return []
     
     def save_banks(self):
         """Save banking data to files"""
-        print("\nSaving banking data...")
+        self.logger.info("Saving banking data...")
         
         # Save Level 1 bank
         with open("level1_evidence_bank.json", "w") as f:
             json.dump(self.level1_bank, f, indent=2)
-        print(f"   Level 1 bank saved: {len(self.level1_bank)} entries")
+        self.logger.info(f"Level 1 bank saved: {len(self.level1_bank)} entries")
         
         # Save Level 2 bank  
         with open("level2_reasoning_bank.json", "w") as f:
             json.dump(self.level2_bank, f, indent=2)
-        print(f"   Level 2 bank saved: {len(self.level2_bank)} entries")
+        self.logger.info(f"Level 2 bank saved: {len(self.level2_bank)} entries")
         
         # Save summary
         summary = {
@@ -274,7 +296,7 @@ class BankingInitializer:
         with open("banking_summary.json", "w") as f:
             json.dump(summary, f, indent=2)
         
-        print("SUCCESS: All banking data saved successfully!")
+        self.logger.info("SUCCESS: All banking data saved successfully!")
 
 
 def main():
