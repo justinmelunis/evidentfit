@@ -1,49 +1,130 @@
-# EvidentFit Ingest Agent (Agent A)
+# EvidentFit Ingest Agents
 
 ## Overview
 
-The EvidentFit Ingest Agent is responsible for discovering, scoring, selecting, and indexing high-quality research papers from PubMed into Azure AI Search. It implements a sophisticated **multi-query strategy** with **iterative diversity filtering** to maintain a diverse, high-quality dataset of approximately 10,000 papers optimized for supplement research.
+The EvidentFit Ingest system has been split into two specialized agents for optimal performance and maintainability:
+
+1. **get_papers** - LLM-free paper fetching and selection (fast, high-recall)
+2. **paper_processor** - Heavy LLM processing and indexing (existing agent)
+
+This separation allows for fast, high-recall paper discovery without LLM costs, followed by targeted processing of selected papers.
 
 ## Core Objectives
 
 1. **Quality First**: Prioritize meta-analyses, RCTs, and well-designed studies over lower-quality research
 2. **Diversity**: Ensure balanced representation across supplements, training goals, populations, study types, and journals
-3. **Storage Optimization**: Maintain a curated dataset that fits within Azure AI Search free tier constraints (50 MB)
+3. **Storage Optimization**: Maintain a curated dataset that fits within Azure AI Search constraints
 4. **Continuous Improvement**: Support both bootstrap (initial) and monthly (incremental) update modes
 5. **Rate Limit Compliance**: Respect PubMed API limits with intelligent retry logic and delays
 
 ## Architecture
 
-### Data Flow
+### Two-Agent Data Flow
 
 ```
+get_papers Agent (LLM-free):
 Multi-Query PubMed Search (30 supplements)
     ↓ [Date-based chunking to bypass 10K limit]
 XML Parsing & Metadata Extraction
     ↓ [Parse Articles]
-Phase 1: Reliability Scoring (4.0 threshold)
-    ↓ [Quality Filter - ~60,000 papers]
-Phase 2: Iterative Diversity Filtering
-    ↓ [Dynamic Selection - 10,000 papers]
+Phase 1: Reliability Scoring (3.0-3.5 threshold)
+    ↓ [Quality Filter - maximize recall]
+Phase 2: Iterative Diversity Filtering (if >50K papers)
+    ↓ [Dynamic Selection - 50,000 papers]
+Local JSONL Storage
+    ↓ [data/ingest/raw/pm_papers.jsonl]
+
+paper_processor Agent (LLM-heavy):
+Read JSONL from get_papers
+    ↓ [Load selected papers]
+LLM Processing & Embeddings
+    ↓ [Heavy processing]
 Azure AI Search Index
     ↓ [Upsert Documents]
 Watermark Update
 ```
 
-### Two Operating Modes
+### Agent Responsibilities
+
+#### **get_papers Agent**
+- **Purpose**: Fast, LLM-free paper discovery and selection
+- **Input**: PubMed queries, quality thresholds, diversity parameters
+- **Processing**: Rule-based parsing, scoring, diversity filtering
+- **Output**: Selected papers in JSONL format + metadata
+- **No LLM calls**: Pure rule-based processing for speed and cost efficiency
+
+#### **paper_processor Agent** 
+- **Purpose**: Heavy LLM processing and indexing
+- **Input**: JSONL from get_papers agent
+- **Processing**: LLM-based content analysis, embeddings, indexing
+- **Output**: Indexed papers in Azure AI Search
+- **LLM-heavy**: Uses embeddings and AI for content processing
+
+### Operating Modes
 
 #### **Bootstrap Mode**
 - Initial population of the index
 - Multi-query search across 30 supplements from 1990-01-01 to present
-- Collects ~124,000 PMIDs, processes ~95,000 papers
-- Applies 4.0 quality threshold, selects best 10,000 papers
-- Uses iterative diversity filtering for optimal balance
+- Lower quality threshold (3.0) to maximize recall
+- Iterative diversity filtering if >50K papers
+- Outputs 50,000 selected papers to JSONL
 
 #### **Monthly Mode**
 - Incremental updates based on watermark
 - Fetches only papers published since last run
-- Integrates new papers with existing dataset
-- Re-applies iterative diversity filtering to maintain 10,000 paper limit
+- Lower quality threshold (2.5) for monthly updates
+- Simple top-K selection if ≤50K papers
+- Outputs selected papers to JSONL
+
+## Usage
+
+### Command Line Interface
+
+The ingest system supports three task modes:
+
+```bash
+# Run only get_papers agent (LLM-free fetching)
+python agents/ingest/run.py --task get_papers --mode bootstrap
+
+# Run only paper_processor agent (LLM processing)
+python agents/ingest/run.py --task paper_processor
+
+# Run both agents sequentially
+python agents/ingest/run.py --task both --mode monthly
+
+# Direct get_papers pipeline
+python -m agents.ingest.get_papers.pipeline --mode bootstrap --limit 6000
+```
+
+### Configuration
+
+Environment variables for get_papers agent:
+
+```bash
+# Quality thresholds (lowered for better recall)
+QUALITY_FLOOR_BOOTSTRAP=3.0    # Bootstrap mode threshold
+QUALITY_FLOOR_MONTHLY=2.5      # Monthly mode threshold
+
+# Diversity filtering
+DIVERSITY_ROUNDS_THRESHOLD=50000  # Run iterative filtering if >50K papers
+
+# Limits
+INGEST_LIMIT=50000              # Target number of papers
+MAX_TOTAL_PAPERS=200000         # Global safety limit
+MAX_TEMP_LIMIT=100000           # Temporary limit during processing
+
+# PubMed API
+NCBI_EMAIL=your@email.com       # Required for PubMed API
+NCBI_API_KEY=optional_key       # Optional API key
+```
+
+### Output Files
+
+The get_papers agent creates:
+
+- `data/ingest/raw/pm_papers.jsonl` - Selected papers in JSONL format
+- `data/ingest/raw/metadata.json` - Run metadata and statistics
+- `data/ingest/raw/watermark.json` - Watermark for incremental updates
 
 ## Scoring Methodology
 

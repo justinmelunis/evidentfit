@@ -1,4 +1,6 @@
 import os, re, json, time, argparse, datetime, logging, math
+from pathlib import Path
+from typing import Optional
 from dateutil import tz
 import httpx, xmltodict
 
@@ -48,8 +50,8 @@ PM_SEARCH_QUERY = os.getenv("PM_SEARCH_QUERY") or \
 NCBI_EMAIL = os.getenv("NCBI_EMAIL","you@example.com")
 NCBI_API_KEY = os.getenv("NCBI_API_KEY")  # optional
 WATERMARK_KEY = os.getenv("WATERMARK_KEY","meta:last_ingest")
-INGEST_LIMIT = int(os.getenv("INGEST_LIMIT","10000"))  # Final target (~47MB, fits 50MB limit with buffer)
-MAX_TEMP_LIMIT = int(os.getenv("MAX_TEMP_LIMIT","20000"))  # Temporary limit during processing
+INGEST_LIMIT = int(os.getenv("INGEST_LIMIT","50000"))  # Final target (~235MB, larger dataset)
+MAX_TEMP_LIMIT = int(os.getenv("MAX_TEMP_LIMIT","100000"))  # Temporary limit during processing
 
 # --- Multi-Query Strategy ---
 # Supplement-specific PubMed queries for comprehensive coverage
@@ -112,7 +114,7 @@ LOCAL_METADATA_FILE = os.path.join(LOCAL_STAGING_DIR, "staging_metadata.json")
 
 # Conservative global safety limit (much higher than expected need)
 MAX_TOTAL_PAPERS = 200000   # Global safety net (2x our highest estimate)
-AZURE_FINAL_LIMIT = 15000   # Final upload to Azure (only real constraint)
+AZURE_FINAL_LIMIT = 50000   # Final upload to Azure (only real constraint)
 
 # Multi-query will get ALL available papers for each supplement (up to global limit)
 logger.info(f"Multi-query: Comprehensive coverage for {len(SUPPLEMENT_QUERIES)} supplements (up to {MAX_TOTAL_PAPERS:,} global limit)")
@@ -1592,8 +1594,58 @@ def run_ingest(mode: str):
     logger.info(f"Watermark updated to {now_iso}")
     logger.info("Ingest job completed successfully!")
 
+def run_get_papers(mode: str, limit: Optional[int] = None):
+    """Run the get_papers agent"""
+    import subprocess
+    import sys
+    
+    cmd = [sys.executable, "-m", "agents.ingest.get_papers.pipeline", "--mode", mode]
+    if limit:
+        cmd.extend(["--limit", str(limit)])
+    
+    logger.info(f"Running get_papers agent: {' '.join(cmd)}")
+    result = subprocess.run(cmd, cwd=os.getcwd())
+    if result.returncode != 0:
+        raise RuntimeError(f"get_papers agent failed with return code {result.returncode}")
+    logger.info("get_papers agent completed successfully")
+
+
+def run_paper_processor():
+    """Run the paper_processor agent"""
+    import subprocess
+    import sys
+    
+    # Check if paper_processor exists
+    processor_path = Path(__file__).parent.parent / "paper_processor" / "run_optimized_pipeline.py"
+    if not processor_path.exists():
+        logger.error(f"Paper processor not found at {processor_path}")
+        raise FileNotFoundError(f"Paper processor not found at {processor_path}")
+    
+    cmd = [sys.executable, str(processor_path)]
+    
+    logger.info(f"Running paper_processor agent: {' '.join(cmd)}")
+    result = subprocess.run(cmd, cwd=os.getcwd())
+    if result.returncode != 0:
+        raise RuntimeError(f"paper_processor agent failed with return code {result.returncode}")
+    logger.info("paper_processor agent completed successfully")
+
+
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("--mode", choices=["bootstrap","monthly"], default="monthly")
+    ap.add_argument("--task", choices=["get_papers", "paper_processor", "both"], default="get_papers",
+                   help="Task to run: get_papers (LLM-free fetching), paper_processor (LLM processing), or both")
+    ap.add_argument("--limit", type=int, help="Limit number of PMIDs for get_papers task")
     args = ap.parse_args()
-    run_ingest(args.mode)
+    
+    if args.task == "get_papers":
+        run_get_papers(args.mode, args.limit)
+    elif args.task == "paper_processor":
+        run_paper_processor()
+    elif args.task == "both":
+        logger.info("Running both agents sequentially...")
+        run_get_papers(args.mode, args.limit)
+        run_paper_processor()
+    else:
+        # Fallback to original behavior for backward compatibility
+        run_ingest(args.mode)
