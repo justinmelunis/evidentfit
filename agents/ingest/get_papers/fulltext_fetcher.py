@@ -74,6 +74,9 @@ RETRY_BACKOFF = [1, 5, 15]  # Exponential backoff for 429 errors
 UNPAYWALL_EMAIL = os.getenv("UNPAYWALL_EMAIL", "research@evidentfit.com")  # Required
 ENABLE_UNPAYWALL = os.getenv("ENABLE_UNPAYWALL", "true").lower() == "true"
 
+# Availability pre-checking (for selection phase, not fetching)
+ENABLE_AVAILABILITY_CHECKING = os.getenv("ENABLE_AVAILABILITY_CHECKING", "true").lower() == "true"
+
 def _read_jsonl(path: Path) -> Iterable[Dict[str, Any]]:
     with open(path, "r", encoding="utf-8") as f:
         for line in f:
@@ -392,6 +395,84 @@ async def _fetch_text(client: httpx.AsyncClient, url: str) -> Optional[str]:
         return None
     except Exception:
         return None
+
+# ============================================================================
+# Availability Pre-Checking (for selection phase, lightweight)
+# ============================================================================
+
+async def check_pmc_available(client: httpx.AsyncClient, pmid: str, rate_limiter: asyncio.Semaphore) -> bool:
+    """Lightweight check if paper is available in PMC. Just checks ELink, doesn't fetch content."""
+    if not pmid:
+        return False
+    try:
+        pmcid = await _elink_pubmed_to_pmc(client, pmid, rate_limiter)
+        return pmcid is not None
+    except Exception:
+        return False
+
+async def check_unpaywall_available(client: httpx.AsyncClient, doi: str) -> bool:
+    """Lightweight check if paper is available via Unpaywall. Just checks API, doesn't fetch content."""
+    if not doi or not ENABLE_UNPAYWALL:
+        return False
+    try:
+        api_url = f"{UNPAYWALL_API_BASE}/{doi}"
+        params = {"email": UNPAYWALL_EMAIL}
+        r = await client.get(api_url, params=params, timeout=5.0)
+        if r.status_code != 200:
+            return False
+        data = r.json()
+        best_oa = data.get("best_oa_location")
+        # Available if has PDF or HTML URL
+        return best_oa and (best_oa.get("url_for_pdf") or best_oa.get("url"))
+    except Exception:
+        return False
+
+async def check_fulltext_available(
+    client: httpx.AsyncClient,
+    pmid: Optional[str],
+    doi: Optional[str],
+    rate_limiter: asyncio.Semaphore
+) -> bool:
+    """Check if full-text is available from either PMC or Unpaywall."""
+    if pmid:
+        if await check_pmc_available(client, pmid, rate_limiter):
+            return True
+    if doi:
+        if await check_unpaywall_available(client, doi):
+            return True
+    return False
+
+async def batch_check_availability(
+    papers: List[Dict[str, Any]],
+    max_concurrency: int = 10
+) -> Dict[str, bool]:
+    """
+    Batch check availability for a list of papers.
+    Returns dict mapping paper ID -> has_fulltext bool.
+    """
+    if not ENABLE_AVAILABILITY_CHECKING:
+        return {}
+    
+    rate_limiter = asyncio.Semaphore(max_concurrency)
+    results = {}
+    
+    async with httpx.AsyncClient(timeout=DEFAULT_TIMEOUT, headers=HEADERS) as client:
+        tasks = []
+        for p in papers:
+            paper_id = p.get("id", "")
+            pmid = str(p.get("pmid") or "").strip()
+            doi = (p.get("doi") or "").strip()
+            task = check_fulltext_available(client, pmid, doi, rate_limiter)
+            tasks.append((paper_id, task))
+        
+        for paper_id, task in tasks:
+            try:
+                available = await task
+                results[paper_id] = available
+            except Exception:
+                results[paper_id] = False
+    
+    return results
 
 # ============================================================================
 # Unpaywall Integration
