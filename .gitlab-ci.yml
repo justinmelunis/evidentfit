@@ -15,18 +15,25 @@ build_api:
     DOCKER_TLS_CERTDIR: ""
   script: "echo \"Docker login with user: $DOCKER_USER\" && echo \"$DOCKER_PASS\" | docker login -u \"$DOCKER_USER\" --password-stdin && docker build -t justinmelunis/evidentfit-api:$CI_COMMIT_SHORT_SHA -f api/Dockerfile . && docker push justinmelunis/evidentfit-api:$CI_COMMIT_SHORT_SHA"
   only:
-    - main
+    refs:
+      - main
+    changes:
+      - api/**/*
+      - shared/**/*
+      - .gitlab-ci.yml
 
-build_ingest:
-  stage: build
-  image: docker:26
-  services:
-    - docker:26-dind
-  variables:
-    DOCKER_TLS_CERTDIR: ""
-  script: "echo \"Docker login with user: $DOCKER_USER\" && echo \"$DOCKER_PASS\" | docker login -u \"$DOCKER_USER\" --password-stdin && docker build -t justinmelunis/evidentfit-ingest:$CI_COMMIT_SHORT_SHA -f agents/ingest/Dockerfile . && docker push justinmelunis/evidentfit-ingest:$CI_COMMIT_SHORT_SHA"
-  only:
-    - main
+# Ingest agent is now run locally, not deployed to Docker
+# Kept as comment for reference if needed in future
+# build_ingest:
+#   stage: build
+#   image: docker:26
+#   services:
+#     - docker:26-dind
+#   variables:
+#     DOCKER_TLS_CERTDIR: ""
+#   script: "echo \"Docker login with user: $DOCKER_USER\" && echo \"$DOCKER_PASS\" | docker login -u \"$DOCKER_USER\" --password-stdin && docker build -t justinmelunis/evidentfit-ingest:$CI_COMMIT_SHORT_SHA -f agents/ingest/Dockerfile . && docker push justinmelunis/evidentfit-ingest:$CI_COMMIT_SHORT_SHA"
+#   only:
+#     - main
 
 build_web:
   stage: build
@@ -46,8 +53,12 @@ build_web:
       - web/evidentfit-web/out
     expire_in: 1 week
   only:
-    - main
-    - tags
+    refs:
+      - main
+      - tags
+    changes:
+      - web/**/*
+      - .gitlab-ci.yml
 
 deploy_web:
   stage: deploy
@@ -61,5 +72,9 @@ deploy_web:
   script:
     - swa deploy ./web/evidentfit-web/out --deployment-token "$SWA_DEPLOYMENT_TOKEN"
   only:
-    - main
-    - tags
+    refs:
+      - main
+      - tags
+    changes:
+      - web/**/*
+      - .gitlab-ci.yml
