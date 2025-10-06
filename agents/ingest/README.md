@@ -449,7 +449,15 @@ python scripts/analyze_corpus_quality.py data/ingest/runs/latest/pm_papers.jsonl
 - ✅ Local GPU (zero ongoing cost)
 - ✅ High-quality structured output
 
-**Total cost**: GPU electricity (~$20) vs Cloud LLM (~$22,500)
+**💸 Cost Savings: Local Model vs. Cloud API**
+
+Processing ~30,000 research papers (≈300 million tokens):
+
+| Approach | Est. Cost per Run | Ongoing Monthly |
+|----------|-------------------|-----------------|
+| **Local GPU (Mistral-7B)** | $0 (hardware only) | $0 |
+| **Azure GPT-4o-mini API** | ~$900 – $1,800 | ~$30 – $70 |
+| **Azure GPT-4o API (premium)** | ~$22,500+ | ~$700+ |
 
 ### Why Monthly Updates?
 

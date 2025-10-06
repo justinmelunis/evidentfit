@@ -233,11 +233,15 @@ Each summary includes:
 
 ### Cost Comparison
 
-| Method | 30K Papers | Notes |
-|--------|-----------|-------|
-| **Local GPU (this)** | $0 | RTX 3080, ~5 days |
-| **GPT-4o Cloud** | $22,500 | Azure OpenAI API |
-| **GPT-4o-mini Cloud** | $2,250 | Cheaper but less capable |
+**💸 Local Model vs. Cloud API**
+
+Processing ~30,000 research papers (≈300 million tokens):
+
+| Approach | Est. Cost per Run | Ongoing Monthly | Notes |
+|----------|-------------------|-----------------|-------|
+| **Local GPU (Mistral-7B)** | $0 (hardware only) | $0 | RTX 3080, ~5 days |
+| **Azure GPT-4o-mini API** | ~$900 – $1,800 | ~$30 – $70 | Cheaper but less capable |
+| **Azure GPT-4o API (premium)** | ~$22,500+ | ~$700+ | Premium quality |
 
 ## Storage
 
