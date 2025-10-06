@@ -256,6 +256,71 @@ def _build_supp_index(docs: List[Dict[str, Any]]) -> Dict[str, List[Dict[str, An
         lst.sort(key=lambda x: (x.get("reliability_score", 0.0), x.get("year", 0) or 0), reverse=True)
     return by_supp
 
+def compute_enhanced_quota_ids(
+    all_docs: List[Dict[str, Any]],
+    min_overall: int = 10,
+    min_per_goal: int = 2,
+    prefer_fulltext: bool = True,
+    quality_floor: float = 0.0,
+) -> Set[str]:
+    """
+    Enhanced quota system:
+    - Protects top N overall papers per supplement
+    - PLUS top M papers per supplement×goal combination
+    - Allows overlaps (typically results in 10-14 protected per supplement)
+    - Prefers full-text when quality scores are equal
+    
+    Returns set of protected doc IDs.
+    """
+    protected: Set[str] = set()
+    if min_overall <= 0 and min_per_goal <= 0:
+        return protected
+    
+    by_supp = _build_supp_index(all_docs)
+    
+    for supp, supp_docs in by_supp.items():
+        # Apply quality floor
+        quality_docs = [d for d in supp_docs if d.get("reliability_score", 0.0) >= quality_floor]
+        if not quality_docs:
+            continue
+        
+        # Sort by: reliability DESC, then fulltext availability DESC (if prefer_fulltext)
+        def sort_key(doc):
+            score = doc.get("reliability_score", 0.0)
+            # Tiebreaker: full-text availability (from sources metadata or flag)
+            has_fulltext = False
+            if prefer_fulltext:
+                sources = doc.get("sources", {})
+                pmc = sources.get("pmc", {}) if isinstance(sources, dict) else {}
+                unpaywall = sources.get("unpaywall", {}) if isinstance(sources, dict) else {}
+                has_fulltext = (
+                    pmc.get("has_body_sections", False) or
+                    unpaywall.get("has_body_sections", False) or
+                    doc.get("has_fulltext", False)  # Fallback flag
+                )
+            return (-score, not has_fulltext)  # Negative for DESC, not for tiebreak
+        
+        sorted_docs = sorted(quality_docs, key=sort_key)
+        
+        # Protect top N overall
+        for d in sorted_docs[:min_overall]:
+            if d.get("id"):
+                protected.add(d["id"])
+        
+        # Protect top M per goal
+        by_goal: Dict[str, List[Dict[str, Any]]] = {}
+        for d in quality_docs:
+            goal = d.get("primary_goal", "").strip() or "general"
+            by_goal.setdefault(goal, []).append(d)
+        
+        for goal, goal_docs in by_goal.items():
+            sorted_goal = sorted(goal_docs, key=sort_key)
+            for d in sorted_goal[:min_per_goal]:
+                if d.get("id"):
+                    protected.add(d["id"])  # Set union handles overlaps
+    
+    return protected
+
 def compute_minimum_quota_ids(
     all_docs: List[Dict[str, Any]],
     min_per_supp: Optional[int] = None,

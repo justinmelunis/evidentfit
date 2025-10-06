@@ -26,6 +26,7 @@ from get_papers.diversity import (
     iterative_diversity_filtering,  # kept for existing callers
     iterative_diversity_filtering_with_protection,
     compute_minimum_quota_ids,
+    compute_enhanced_quota_ids,
     should_run_iterative_diversity
 )
 from get_papers.storage import (
@@ -52,11 +53,21 @@ DIVERSITY_ROUNDS_THRESHOLD = int(os.getenv("DIVERSITY_ROUNDS_THRESHOLD", "30000"
 QUALITY_FLOOR_BOOTSTRAP = float(os.getenv("QUALITY_FLOOR_BOOTSTRAP", "2.0"))
 QUALITY_FLOOR_MONTHLY = float(os.getenv("QUALITY_FLOOR_MONTHLY", "2.0"))
 WATERMARK_KEY = os.getenv("WATERMARK_KEY", "meta:last_ingest")
-MIN_PER_SUPPLEMENT = int(os.getenv("MIN_PER_SUPPLEMENT", "3"))  # 0 disables
+MIN_PER_SUPPLEMENT = int(os.getenv("MIN_PER_SUPPLEMENT", "3"))  # Legacy: simple quota (kept for compatibility)
 INCLUDE_LOW_QUALITY_IN_MIN = os.getenv("INCLUDE_LOW_QUALITY_IN_MIN", "true").lower() == "true"
 MIN_QUOTA_RARE_ONLY = os.getenv("MIN_QUOTA_RARE_ONLY", "false").lower() == "true"
 RARE_THRESHOLD = int(os.getenv("RARE_THRESHOLD", "5"))
 EXCLUDED_SUPPS_FOR_MIN = {s.strip() for s in os.getenv("EXCLUDED_SUPPS_FOR_MIN", "nitric-oxide").split(",") if s.strip()}
+
+# Enhanced quota system (preferred)
+USE_ENHANCED_QUOTAS = os.getenv("USE_ENHANCED_QUOTAS", "true").lower() == "true"
+MIN_OVERALL_PER_SUPPLEMENT = int(os.getenv("MIN_OVERALL_PER_SUPPLEMENT", "10"))
+MIN_PER_SUPPLEMENT_GOAL = int(os.getenv("MIN_PER_SUPPLEMENT_GOAL", "2"))
+PREFER_FULLTEXT_IN_QUOTAS = os.getenv("PREFER_FULLTEXT_IN_QUOTAS", "true").lower() == "true"
+
+# Diversity tiebreaking
+DIVERSITY_TIEBREAK_THRESHOLD = float(os.getenv("DIVERSITY_TIEBREAK_THRESHOLD", "0.8"))
+PREFER_FULLTEXT_IN_DIVERSITY = os.getenv("PREFER_FULLTEXT_IN_DIVERSITY", "true").lower() == "true"
 
 
 def setup_logging() -> logging.Logger:
@@ -468,15 +479,26 @@ def main():
         quality_filtered_docs = apply_quality_filter(all_docs, args.mode)
 
         # Build protected (minimum quota) set from ALL docs (pre-quality filter)
-        protected_ids = compute_minimum_quota_ids(
-            all_docs=all_docs,
-            min_per_supp=MIN_PER_SUPPLEMENT,
-            include_low_quality=INCLUDE_LOW_QUALITY_IN_MIN,
-            rare_only=MIN_QUOTA_RARE_ONLY,
-            rare_threshold=RARE_THRESHOLD,
-            exclude_supps=EXCLUDED_SUPPS_FOR_MIN,
-            quality_floor=QUALITY_FLOOR_BOOTSTRAP if args.mode == "bootstrap" else QUALITY_FLOOR_MONTHLY,
-        )
+        if USE_ENHANCED_QUOTAS:
+            logger.info(f"Using enhanced quota system: {MIN_OVERALL_PER_SUPPLEMENT} overall + {MIN_PER_SUPPLEMENT_GOAL} per goal")
+            protected_ids = compute_enhanced_quota_ids(
+                all_docs=all_docs,
+                min_overall=MIN_OVERALL_PER_SUPPLEMENT,
+                min_per_goal=MIN_PER_SUPPLEMENT_GOAL,
+                prefer_fulltext=PREFER_FULLTEXT_IN_QUOTAS,
+                quality_floor=QUALITY_FLOOR_BOOTSTRAP if args.mode == "bootstrap" else QUALITY_FLOOR_MONTHLY,
+            )
+        else:
+            logger.info(f"Using legacy quota system: {MIN_PER_SUPPLEMENT} per supplement")
+            protected_ids = compute_minimum_quota_ids(
+                all_docs=all_docs,
+                min_per_supp=MIN_PER_SUPPLEMENT,
+                include_low_quality=INCLUDE_LOW_QUALITY_IN_MIN,
+                rare_only=MIN_QUOTA_RARE_ONLY,
+                rare_threshold=RARE_THRESHOLD,
+                exclude_supps=EXCLUDED_SUPPS_FOR_MIN,
+                quality_floor=QUALITY_FLOOR_BOOTSTRAP if args.mode == "bootstrap" else QUALITY_FLOOR_MONTHLY,
+            )
         if protected_ids:
             # ensure protected docs survive the quality filter (union them back in)
             keep_ids = {d.get("id") for d in quality_filtered_docs}
