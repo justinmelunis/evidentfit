@@ -23,9 +23,18 @@ from datetime import datetime
 # Add shared directory to path
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..', 'shared'))
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..', 'api'))
+sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'paper_processor'))
 
 from evidentfit_shared.search_client import search_docs
 from clients.foundry_chat import chat as foundry_chat
+
+# Import custom search API for enhanced paper analysis
+try:
+    from search_api import SearchAPI
+    CUSTOM_SEARCH_AVAILABLE = True
+except ImportError:
+    CUSTOM_SEARCH_AVAILABLE = False
+    print("WARNING: Custom search API not available, using fallback search")
 
 # Load environment variables
 from dotenv import load_dotenv
@@ -68,6 +77,17 @@ class Level1BankingInitializer:
     def __init__(self):
         self.evidence_bank = {}
         self.papers_cache = {}
+        
+        # Initialize custom search API if available
+        self.custom_search_api = None
+        if CUSTOM_SEARCH_AVAILABLE:
+            try:
+                # Use the test data directory for now
+                self.custom_search_api = SearchAPI("test_optimized_data")
+                self.logger.info("SUCCESS: Custom search API initialized with enhanced structured summaries")
+            except Exception as e:
+                self.logger.warning(f"Failed to initialize custom search API: {e}")
+                self.custom_search_api = None
         
         # Setup logging
         log_dir = os.path.join(os.path.dirname(__file__), 'logs')
@@ -170,7 +190,23 @@ class Level1BankingInitializer:
     
     def get_relevant_papers(self, supplement: str, goal: str) -> List[Dict]:
         """Get all relevant papers for supplement and goal from the index"""
-        # Search for papers containing this supplement (use general search since supplements field is a string)
+        
+        # Try custom search API first (enhanced with structured summaries)
+        if self.custom_search_api:
+            try:
+                self.logger.info(f"    Using custom search API for {supplement} and {goal}")
+                papers = self.custom_search_api.get_supplement_evidence_by_goal(supplement, goal, limit=100)
+                
+                if papers:
+                    self.logger.info(f"    Found {len(papers)} papers via custom search with enhanced structured summaries")
+                    return papers
+                else:
+                    self.logger.info(f"    No papers found via custom search, falling back to standard search")
+            except Exception as e:
+                self.logger.warning(f"    Custom search failed: {e}, falling back to standard search")
+        
+        # Fallback to standard search
+        self.logger.info(f"    Using standard search for {supplement} and {goal}")
         query = supplement
         search_results = search_docs(query, top=100)  # Get more papers for comprehensive analysis
         papers = search_results.get('value', [])  # Extract documents from search results
@@ -263,7 +299,14 @@ class Level1BankingInitializer:
         }
     
     def get_paper_quality_score(self, paper: Dict) -> float:
-        """Get quality score from existing ingest scoring system"""
+        """Get quality score from enhanced structured summaries or existing ingest scoring system"""
+        # First try to get quality score from enhanced structured summaries
+        quality_scores = paper.get("quality_scores", {})
+        if isinstance(quality_scores, dict):
+            overall_score = quality_scores.get("overall", 0)
+            if overall_score > 0:
+                return overall_score
+        
         # Use the enhanced_score from ingest, which combines reliability_score + combination_score
         enhanced_score = paper.get("enhanced_score", 0)
         if enhanced_score > 0:
@@ -315,15 +358,34 @@ class Level1BankingInitializer:
         }
     
     def extract_effect_sizes(self, papers: List[Dict]) -> List[Dict]:
-        """Extract effect sizes from papers"""
+        """Extract effect sizes from enhanced structured summaries or paper content"""
         effect_sizes = []
         
         for paper in papers:
+            # First try to extract from enhanced structured summaries
+            outcome_measures = paper.get("outcome_measures", {})
+            if isinstance(outcome_measures, dict):
+                for goal_category, measures in outcome_measures.items():
+                    if isinstance(measures, dict):
+                        for measure_key, measure_data in measures.items():
+                            if isinstance(measure_data, dict) and "effect_size" in measure_data:
+                                effect_sizes.append({
+                                    "type": "structured_effect_size",
+                                    "value": measure_data["effect_size"],
+                                    "unit": "cohen_d",
+                                    "measure": measure_data.get("measure", "Unknown"),
+                                    "paper_title": paper.get("title", ""),
+                                    "paper_id": paper.get("id", ""),
+                                    "goal_category": goal_category
+                                })
+            
+            # Fallback to text-based extraction
             content = paper.get("content", "")
             outcomes = paper.get("outcomes", "")
+            summary = paper.get("summary", "")
             
             # Look for effect size indicators
-            text_to_analyze = f"{content} {outcomes}"
+            text_to_analyze = f"{content} {outcomes} {summary}"
             
             # Simple effect size extraction (can be enhanced)
             if "%" in text_to_analyze:

@@ -12,7 +12,7 @@ import gzip
 import datetime
 import logging
 from pathlib import Path
-from typing import Dict, List, Any, Tuple
+from typing import Dict, List, Any, Tuple, Optional
 
 from evidentfit_shared.utils import PROJECT_ROOT
 
@@ -80,7 +80,15 @@ def save_protected_quota_report(report: Dict[str, Any], run_dir: Path) -> Path:
     _atomic_write_text(out, json.dumps(report, indent=2, ensure_ascii=False))
     return out
 
-def update_latest_pointer(run_id: str, run_dir: Path, papers_path: Path, metadata_path: Path) -> Path:
+def update_latest_pointer(
+    run_id: str,
+    run_dir: Path,
+    papers_path: Path,
+    metadata_path: Path,
+    fulltext_dir: Optional[Path] = None,
+    fulltext_store_dir: Optional[Path] = None,
+    fulltext_manifest: Optional[Path] = None,
+) -> Path:
     """Write a small pointer file with paths to latest artifacts."""
     pointer = {
         "run_id": run_id,
@@ -89,6 +97,12 @@ def update_latest_pointer(run_id: str, run_dir: Path, papers_path: Path, metadat
         "metadata_path": str(metadata_path.as_posix()),
         "created_at": datetime.datetime.utcnow().isoformat() + "Z"
     }
+    if fulltext_dir and fulltext_dir.exists():
+        pointer["fulltext_dir"] = str(fulltext_dir.as_posix())  # kept for backward compat if ever used
+    if fulltext_store_dir:
+        pointer["fulltext_store_dir"] = str(Path(fulltext_store_dir).as_posix())
+    if fulltext_manifest and Path(fulltext_manifest).exists():
+        pointer["fulltext_manifest"] = str(Path(fulltext_manifest).as_posix())
     latest = RUNS_BASE_DIR / "latest.json"
     _atomic_write_text(latest, json.dumps(pointer, indent=2))
     return latest

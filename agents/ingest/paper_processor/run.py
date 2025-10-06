@@ -1,330 +1,187 @@
 #!/usr/bin/env python3
 """
-Optimized pipeline for processing papers with Q&A-focused schema.
+Paper processing pipeline.
+
+- Loads selected papers (default: get_papers latest pointer → pm_papers.jsonl)
+- Feeds paper content (from get_papers) into Mistral pipeline
+- Saves structured summaries + search index + stats via StorageManager
+
+Note: Full-text fetching is now handled by get_papers pipeline (default enabled).
 """
 
+import argparse
 import json
 import time
-from pathlib import Path
-from typing import List, Dict, Any
 import logging
+from pathlib import Path
+from typing import List, Dict, Any, Optional
 
 from evidentfit_shared.utils import PROJECT_ROOT
-
-from mistral_client import MistralClient, ProcessingConfig
-from storage_manager import StorageManager
 from logging_config import setup_logging
+from storage_manager import StorageManager
+from mistral_client import MistralClient, ProcessingConfig
 from schema import (
-    create_optimized_prompt, validate_optimized_schema, create_search_index,
-    normalize_data, create_dedupe_key, OptimizedPaper, OutcomeItem
+    create_search_index,
+    normalize_data,
+    create_dedupe_key,
+    validate_optimized_schema,
 )
+
 import torch
 
-def load_paper_from_file(file_path: Path) -> Dict[str, Any]:
-    """Load a single paper from a JSON file."""
-    with open(file_path, 'r', encoding='utf-8') as f:
-        return json.load(f)
+LOG = logging.getLogger(__name__)
 
-def load_papers_from_directory(directory: Path, limit: int = None) -> List[Dict[str, Any]]:
-    """Load papers from a directory of JSON files."""
-    papers = []
-    json_files = list(directory.glob('*.json'))
-    
-    # Skip summary files
-    json_files = [f for f in json_files if f.name not in ['fetch_summary.json']]
-    
-    if limit:
-        json_files = json_files[:limit]
-    
-    for file_path in json_files:
+# -------------------------
+# Helpers
+# -------------------------
+
+def load_jsonl(path: Path, limit: Optional[int] = None) -> List[Dict[str, Any]]:
+  items: List[Dict[str, Any]] = []
+  with open(path, "r", encoding="utf-8") as f:
+    for i, line in enumerate(f):
+      if line.strip():
         try:
-            paper = load_paper_from_file(file_path)
-            papers.append(paper)
-        except Exception as e:
-            print(f"Error loading {file_path}: {e}")
-            continue
-    
-    return papers
+          items.append(json.loads(line))
+        except Exception:
+          continue
+      if limit and len(items) >= limit:
+        break
+  return items
 
-def parse_optimized_summary(response: str, paper_data: Dict[str, Any], model_name: str) -> Dict[str, Any]:
-    """Parse response into optimized schema."""
-    try:
-        # Clean and extract JSON
-        response = response.strip()
-        if "### END_JSON" in response:
-            response = response.split("### END_JSON", 1)[0].rstrip()
-        
-        # Find JSON object
-        start = response.find('{')
-        if start == -1:
-            raise ValueError("No JSON object found")
-        
-        # Find matching closing brace
-        depth = 0
-        end = -1
-        for i, ch in enumerate(response[start:], start):
-            if ch == '{':
-                depth += 1
-            elif ch == '}':
-                depth -= 1
-                if depth == 0:
-                    end = i + 1
-                    break
-        
-        if end == -1:
-            raise ValueError("Unclosed JSON object")
-        
-        json_str = response[start:end]
-        
-        # Fix common JSON issues
-        json_str = json_str.replace(',}', '}').replace(',]', ']')
-        
-        # Parse JSON
-        structured_data = json.loads(json_str)
-        
-        # Normalize data
-        structured_data = normalize_data(structured_data)
-        
-        # Add dedupe key
-        structured_data['dedupe_key'] = create_dedupe_key(structured_data)
-        
-        # Validate schema
-        if not validate_optimized_schema(structured_data):
-            print(f"  Schema validation failed, attempting to fix...")
-            # Try to fix common issues
-            structured_data = fill_required_defaults(structured_data)
-            if not validate_optimized_schema(structured_data):
-                raise ValueError("Schema validation failed after fixes")
-        
-        # Add metadata
-        structured_data['processing_timestamp'] = time.time()
-        structured_data['llm_model'] = model_name
-        structured_data['schema_version'] = 'v1.2'
-        
-        return structured_data
-        
-    except Exception as e:
-        print(f"Error parsing optimized summary: {e}")
-        # Return fallback summary
-        return create_fallback_optimized_summary(paper_data, model_name)
+def resolve_selected_papers(input_jsonl: Optional[str]) -> Path:
+  """
+  If user passes --papers-jsonl, use that; else read latest pointer from get_papers.
+  """
+  if input_jsonl:
+    p = Path(input_jsonl).resolve()
+    if not p.exists():
+      raise FileNotFoundError(f"--papers-jsonl not found: {p}")
+    return p
 
-def create_fallback_optimized_summary(paper_data: Dict[str, Any], model_name: str) -> Dict[str, Any]:
-    """Create fallback summary with optimized schema."""
-    return {
-        "id": paper_data.get('id', 'unknown'),
-        "title": paper_data.get('title', 'Unknown Title'),
-        "journal": paper_data.get('journal', 'Unknown Journal'),
-        "year": paper_data.get('year', 'Unknown Year'),
-        "doi": paper_data.get('doi'),
-        "pmid": paper_data.get('pmid'),
-        "study_type": paper_data.get('study_type', 'unknown'),
-        "study_design": "Not specified",
-        "population": {
-            "age_range": "Not specified",
-            "sex": "Not specified",
-            "training_status": "not_reported",
-            "sample_size": "Not specified"
-        },
-        "summary": "Paper analysis failed - fallback summary",
-        "key_findings": ["Analysis incomplete"],
-        "supplements": ["Not specified"],
-        "supplement_primary": "Not specified",
-        "dosage": {
-            "loading": "Not specified",
-            "maintenance": "Not specified",
-            "timing": "Not specified",
-            "form": "Not specified"
-        },
-        "primary_outcome": "Not specified",
-        "outcome_measures": {
-            "strength": [],
-            "endurance": [],
-            "power": []
-        },
-        "safety_issues": [],
-        "adverse_events": "Not specified",
-        "evidence_grade": "D",
-        "quality_score": 1.0,
-        "limitations": ["Analysis failed"],
-        "clinical_relevance": "Not specified",
-        "keywords": [],
-        "relevance_tags": [],
-        "processing_timestamp": time.time(),
-        "llm_model": model_name,
-        "schema_version": "v1.2"
-    }
+  latest = PROJECT_ROOT / "data" / "ingest" / "runs" / "latest.json"
+  if not latest.exists():
+    raise FileNotFoundError(f"Latest pointer not found: {latest}")
+  with open(latest, "r", encoding="utf-8") as f:
+    meta = json.load(f)
+  papers_path = meta.get("papers_path")
+  if not papers_path:
+    raise RuntimeError("latest.json missing 'papers_path'")
+  p = Path(papers_path)
+  if not p.is_absolute():
+    p = (PROJECT_ROOT / p).resolve()
+  if not p.exists():
+    raise FileNotFoundError(f"Papers JSONL not found: {p}")
+  return p
 
-def fill_required_defaults(data: Dict[str, Any]) -> Dict[str, Any]:
-    """Fill in required fields with defaults if missing."""
-    # Required fields with defaults
-    defaults = {
-        'id': data.get('id', 'unknown'),
-        'title': data.get('title', 'Unknown Title'),
-        'journal': data.get('journal', 'Unknown Journal'),
-        'year': data.get('year', 2023),
-        'study_type': data.get('study_type', 'unknown'),
-        'population': data.get('population', {}),
-        'summary': data.get('summary', 'No summary available'),
-        'key_findings': data.get('key_findings', []),
-        'supplements': data.get('supplements', []),
-        'outcome_measures': data.get('outcome_measures', {
-            "strength": [], "endurance": [], "power": []
-        }),
-        'evidence_grade': data.get('evidence_grade', 'D'),
-        'quality_score': data.get('quality_score', 1.0)
-    }
-    
-    # Fill missing required fields
-    for key, default_value in defaults.items():
-        if key not in data or data[key] is None:
-            data[key] = default_value
-    
-    # Ensure population is a dict
-    if not isinstance(data.get('population'), dict):
-        data['population'] = {}
-    
-    # Ensure key_findings is a list
-    if not isinstance(data.get('key_findings'), list):
-        data['key_findings'] = []
-    
-    # Ensure supplements is a list
-    if not isinstance(data.get('supplements'), list):
-        data['supplements'] = []
-    
-    # Ensure outcome_measures is a dict
-    if not isinstance(data.get('outcome_measures'), dict):
-        data['outcome_measures'] = {
-            "strength": [], "endurance": [], "power": []
-        }
-    
-    return data
+
+# -------------------------
+# Main
+# -------------------------
 
 def main():
-    """Main function to process papers with optimized schema."""
-    # Setup logging
-    run_id = f"optimized_processing_{int(time.time())}"
-    setup_logging(run_id)
-    logger = logging.getLogger(__name__)
-    
-    logger.info("=" * 80)
-    logger.info("OPTIMIZED PAPER PROCESSING PIPELINE STARTED")
-    logger.info("=" * 80)
-    logger.info(f"Run ID: {run_id}")
-    logger.info(f"Start Time: {time.strftime('%Y-%m-%d %H:%M:%S')}")
-    
-    # Load papers from directory
-    papers_dir = PROJECT_ROOT / 'data' / 'full_text_papers'
-    if not papers_dir.exists():
-        print(f"Papers directory not found: {papers_dir}")
-        return
-    
-    # Load 2 papers for testing
-    papers = load_papers_from_directory(papers_dir, limit=2)
-    
-    if not papers:
-        print("No papers found in directory")
-        return
-    
-    print(f"Loaded {len(papers)} full-text paper(s)")
-    
-    # Initialize optimized Mistral client with reduced memory usage
-    config = ProcessingConfig(
-        model_name="mistralai/Mistral-7B-Instruct-v0.3",
-        ctx_tokens=16384,  # Full context window as agreed
-        max_new_tokens=640,  # Full output tokens as agreed
-        temperature=0.2,
-        batch_size=2,  # Process two papers at a time
-        microbatch_size=1,  # Single paper per microbatch
-        use_4bit=True,
-        device_map="auto",
-        enable_schema_validation=True,
-        enable_model_repair=False,
-        schema_version="v1.2"
-    )
-    
-    print("Initializing optimized Mistral client...")
-    client = OptimizedMistralClient(config)
-    
-    # Initialize storage manager
-    storage_manager = StorageManager("data/paper_processor")
-    
-    print("Processing papers with optimized schema...")
-    start_time = time.time()
-    
-    # Process papers in batches of 2 to avoid memory issues
-    try:
-        batch_size = 2
-        total_papers = len(papers)
-        all_summaries = []
-        
-        for i in range(0, total_papers, batch_size):
-            batch = papers[i:i + batch_size]
-            batch_num = (i // batch_size) + 1
-            total_batches = (total_papers + batch_size - 1) // batch_size
-            
-            print(f"Processing batch {batch_num}/{total_batches} ({len(batch)} papers)")
-            for j, paper in enumerate(batch):
-                print(f"  Paper {i+j+1}: {paper.get('title', 'Unknown')[:60]}...")
-            
-            # Process batch
-            summaries = client.generate_optimized_summaries(batch)
-            if summaries:
-                all_summaries.extend(summaries)
-                print(f"  + Processed {len(summaries)} papers successfully")
-            else:
-                print(f"  X Failed to process batch")
-            
-            # Clear GPU cache after each batch
-            if torch.cuda.is_available():
-                torch.cuda.empty_cache()
-        
-        if all_summaries:
-            # Create optimized search index
-            print("Creating optimized search index...")
-            search_index = create_search_index(all_summaries)
-            
-            # Save results
-            with open(storage_dir / 'optimized_papers.json', 'w', encoding='utf-8') as f:
-                json.dump(all_summaries, f, indent=2, ensure_ascii=False)
-            
-            with open(storage_dir / 'search_index.json', 'w', encoding='utf-8') as f:
-                json.dump(search_index, f, indent=2, ensure_ascii=False)
-            
-            # Print results
-            print(f"\nProcessing completed successfully!")
-            print(f"Total papers processed: {len(all_summaries)}")
-            
-            # Show sample results
-            if all_summaries:
-                sample = all_summaries[0]
-                print(f"\nSample optimized paper:")
-                print(f"  ID: {sample.get('id', 'Unknown')}")
-                print(f"  Title: {sample.get('title', 'Unknown')}")
-                print(f"  Summary: {sample.get('summary', 'Unknown')}")
-                print(f"  Key Findings: {len(sample.get('key_findings', []))} findings")
-                print(f"  Evidence Grade: {sample.get('evidence_grade', 'Unknown')}")
-                print(f"  Quality Score: {sample.get('quality_score', 'Unknown')}")
-            
-            # Show index statistics
-            stats = search_index['statistics']
-            print(f"\nIndex Statistics:")
-            print(f"  Total Papers: {stats['total_papers']}")
-            print(f"  Study Types: {stats['study_types']}")
-            print(f"  Evidence Grades: {stats['evidence_grades']}")
-            print(f"  Year Range: {stats['year_range']['min']}-{stats['year_range']['max']}")
-            print(f"  Supplements: {stats['supplements']}")
-            
-        else:
-            print("No summaries generated")
-            
-    except Exception as e:
-        print(f"Error processing papers: {e}")
-    
-    end_time = time.time()
-    processing_time = end_time - start_time
-    
-    print(f"\nProcessing completed in {processing_time:.2f} seconds")
-    print(f"Processing rate: {len(papers)/processing_time:.3f} papers/sec")
+  ap = argparse.ArgumentParser(description="EvidentFit paper processor")
+  ap.add_argument("--papers-jsonl", type=str, help="Path to pm_papers.jsonl (optional; defaults to runs/latest.json pointer)")
+  ap.add_argument("--max-papers", type=int, default=200, help="Max papers to process")
+  ap.add_argument("--batch-size", type=int, default=2)
+  ap.add_argument("--microbatch-size", type=int, default=1)
+  ap.add_argument("--ctx-tokens", type=int, default=16384)
+  ap.add_argument("--max-new-tokens", type=int, default=640)
+  ap.add_argument("--model", type=str, default="mistralai/Mistral-7B-Instruct-v0.3")
+
+  args = ap.parse_args()
+
+  run_id = f"paper_processor_{int(time.time())}"
+  setup_logging()
+  LOG.info("=" * 80)
+  LOG.info("PAPER PROCESSOR START")
+  LOG.info("=" * 80)
+  LOG.info(f"Run: {run_id}")
+
+  # Resolve input list
+  papers_jsonl = resolve_selected_papers(args.papers_jsonl)
+  LOG.info(f"Selected papers: {papers_jsonl}")
+
+  # Load selected papers (content already populated by get_papers)
+  papers = load_jsonl(papers_jsonl, limit=args.max_papers)
+  LOG.info(f"Loaded {len(papers)} papers to process")
+
+  # Configure Mistral
+  cfg = ProcessingConfig(
+    model_name=args.model,
+    ctx_tokens=args.ctx_tokens,
+    max_new_tokens=args.max_new_tokens,
+    temperature=0.2,
+    batch_size=args.batch_size,
+    microbatch_size=args.microbatch_size,
+    use_4bit=True,
+    device_map="auto",
+    enable_schema_validation=True,
+    enable_model_repair=False,
+    schema_version="v1.2",
+  )
+  client = MistralClient(cfg)
+
+  storage = StorageManager()
+  storage.initialize()
+  all_summaries: List[Dict[str, Any]] = []
+  start = time.time()
+
+  try:
+    # Process in batches
+    bs = max(1, args.batch_size)
+    total = len(papers)
+    for i in range(0, total, bs):
+      batch = papers[i:i+bs]
+      LOG.info(f"Batch {i//bs + 1}/{(total + bs - 1)//bs}: {len(batch)} papers")
+      # The client builds prompts internally from each paper's content/title/etc.
+      summaries = client.generate_batch_summaries(batch)
+      if not summaries:
+        LOG.warning("Empty summaries for batch")
+        continue
+      # Normalize / dedupe key / (client may already validate)
+      for s in summaries:
+        try:
+          s = normalize_data(s)
+          s["dedupe_key"] = create_dedupe_key(s)
+          if not validate_optimized_schema(s):
+            LOG.debug("Schema validation failed (will still store for later repair)")
+          all_summaries.append(s)
+        except Exception:
+          continue
+      # Release GPU cache each step
+      if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+
+    # Build index + save artifacts
+    if all_summaries:
+      LOG.info("Creating search index…")
+      search_index = create_search_index(all_summaries)
+      LOG.info("Saving structured summaries…")
+      storage.save_structured_summaries(all_summaries)
+      LOG.info("Saving processing stats…")
+      elapsed = time.time() - start
+      stats = {
+        "run_id": run_id,
+        "papers_in": total,
+        "papers_out": len(all_summaries),
+        "elapsed_sec": elapsed,
+        "rate_papers_per_sec": (len(all_summaries) / elapsed) if elapsed > 0 else None,
+        "model": args.model,
+        "ctx_tokens": args.ctx_tokens,
+        "max_new_tokens": args.max_new_tokens,
+        "index_stats": search_index.get("statistics", {})
+      }
+      storage.save_processing_stats(stats)
+      LOG.info("Done.")
+      print(f"\nProcessed {len(all_summaries)} papers in {elapsed:.2f}s")
+      if all_summaries:
+        s = all_summaries[0]
+        print(f"Sample → {s.get('title','')[:80]}… | grade={s.get('evidence_grade')} | q={s.get('quality_score')}")
+    else:
+      LOG.warning("No summaries generated")
+
+  except Exception as e:
+    LOG.exception(f"Processor error: {e}")
 
 if __name__ == "__main__":
-    main()
+  main()

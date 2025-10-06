@@ -38,13 +38,16 @@ from get_papers.storage import (
     create_metadata_summary,
     RUNS_BASE_DIR,
 )
+from get_papers.fulltext_fetcher import fetch_fulltexts_for_jsonl
 
 logger = logging.getLogger(__name__)
 
 # Environment variables with defaults
 INDEX_VERSION = os.getenv("INDEX_VERSION", "v1")
+# Default target lowered to 30k per our new baseline
 INGEST_LIMIT = int(os.getenv("INGEST_LIMIT", "30000"))
 MAX_TOTAL_PAPERS = int(os.getenv("MAX_TOTAL_PAPERS", "500000"))
+# Not strictly used for control flow, but keep consistent with 30k
 DIVERSITY_ROUNDS_THRESHOLD = int(os.getenv("DIVERSITY_ROUNDS_THRESHOLD", "30000"))
 QUALITY_FLOOR_BOOTSTRAP = float(os.getenv("QUALITY_FLOOR_BOOTSTRAP", "2.0"))
 QUALITY_FLOOR_MONTHLY = float(os.getenv("QUALITY_FLOOR_MONTHLY", "2.0"))
@@ -411,6 +414,14 @@ def main():
     parser.add_argument("--target", type=int, default=INGEST_LIMIT,
                        help=f"Target number of papers to select (default: {INGEST_LIMIT})")
     parser.add_argument("--dry_report", type=int, help="Print dry-run report with N papers (no processing)")
+    # Fulltext fetching is now default ON (PMC only)
+    parser.add_argument("--fetch-fulltext", dest="fetch_fulltext", action="store_true", help="Fetch PMC full texts for selected papers (default)")
+    parser.add_argument("--no-fetch-fulltext", dest="fetch_fulltext", action="store_false", help="Skip full text fetching")
+    parser.set_defaults(fetch_fulltext=True)
+    parser.add_argument("--fulltext-limit", type=int, default=None, help="Optional cap when fetching full texts")
+    parser.add_argument("--fulltext-concurrency", type=int, default=8, help="Max concurrent PMC requests")
+    parser.add_argument("--fulltext-store", type=str, default=str((PROJECT_ROOT / "data" / "fulltext_store").as_posix()),
+                       help="Centralized full-text store directory")
     
     args = parser.parse_args()
     
@@ -424,6 +435,7 @@ def main():
     logger.info(f"Target papers: {args.target}")
     logger.info(f"Quality floor - Bootstrap: {QUALITY_FLOOR_BOOTSTRAP}, Monthly: {QUALITY_FLOOR_MONTHLY}")
     logger.info(f"Diversity threshold: {DIVERSITY_ROUNDS_THRESHOLD}")
+    logger.info(f"Fulltext fetch enabled: {args.fetch_fulltext} (PMC only)")
     
     start_time = time.time()
     
@@ -576,13 +588,46 @@ def main():
         metadata = create_metadata_summary(selected_docs, run_info)
         metadata_file = save_run_metadata(metadata, run_dir)
 
-        # Update latest pointer + prune old runs
-        latest_file = update_latest_pointer(run_id, run_dir, papers_file, metadata_file)
-        prune_old_runs()
         
         # Update watermark (for both bootstrap and monthly)
         # Bootstrap creates initial watermark; monthly updates it for next run
         update_watermark()
+        
+        # Step 6: Fetch PMC full texts — default ON
+        fulltext_store_dir = Path(args.fulltext_store)
+        fulltext_manifest_path = None
+        if args.fetch_fulltext:
+            logger.info("\n" + "=" * 40)
+            logger.info("STEP 6: FETCHING FULL TEXTS (PMC when available)")
+            logger.info("=" * 40)
+            run_manifest_dir = run_dir  # write manifest into the run dir
+            try:
+                ft_manifest = fetch_fulltexts_for_jsonl(
+                    papers_file,
+                    fulltext_store_dir,
+                    run_manifest_dir,
+                    max_concurrency=args.fulltext_concurrency,
+                    limit=args.fulltext_limit,
+                    overwrite=False
+                )
+                fulltext_manifest_path = run_manifest_dir / "fulltext_manifest.json"
+                logger.info(f"Full-text manifest: {ft_manifest}")
+            except Exception as e:
+                logger.error(f"Full-text fetch step failed: {e}")
+        else:
+            logger.info("Skipping full-text fetching (--no-fetch-fulltext)")
+        
+        # Update latest pointer + prune old runs
+        latest_file = update_latest_pointer(
+            run_id,
+            run_dir,
+            papers_file,
+            metadata_file,
+            fulltext_dir=None,  # we don't store fulltexts inside the run anymore
+            fulltext_store_dir=fulltext_store_dir,
+            fulltext_manifest=fulltext_manifest_path
+        )
+        prune_old_runs()
         
         # Final summary
         end_time = time.time()
@@ -598,6 +643,8 @@ def main():
         logger.info(f"Final papers selected: {len(selected_docs)}")
         logger.info(f"Papers file: {papers_file}")
         logger.info(f"Metadata file: {metadata_file}")
+        if 'fulltext_manifest_path' in locals() and fulltext_manifest_path and fulltext_manifest_path.exists():
+            logger.info(f"Fulltext manifest: {fulltext_manifest_path}")
         logger.info(f"Latest pointer: {RUNS_BASE_DIR / 'latest.json'}")
         
         # Show final distribution

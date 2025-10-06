@@ -10,6 +10,10 @@ This module provides GPU-accelerated local processing of scientific papers using
 - **Custom Search**: Fast, local search without external dependencies
 - **Banking Integration**: Seamless integration with Level 1 banking system
 
+## Pipeline Integration
+
+The paper processor works with papers from the `get_papers` pipeline. Full-text fetching is now handled upstream by `get_papers` (default enabled), so papers already have the best available content (full text or abstract) when they reach this stage.
+
 ## Requirements
 
 - NVIDIA GPU with CUDA support (RTX 3080 recommended)
@@ -31,24 +35,39 @@ pip install torch torchvision torchaudio --index-url https://download.pytorch.or
 
 ## Usage
 
-### Usage
+### Running
 
-Process papers from get_papers output:
+By default, the processor reads the latest selection produced by `get_papers`
+via the pointer at `data/ingest/runs/latest.json`.
+
 ```bash
-python agents/ingest/paper_processor/run.py
+# Process latest papers from get_papers
+python -m agents.ingest.paper_processor.run \
+  --max-papers 200 \
+  --batch-size 2 \
+  --microbatch-size 1
 ```
 
-The pipeline will:
-1. Load papers from `data/ingest/runs/latest.json` (get_papers output)
-2. Process with GPU-accelerated Mistral 7B
-3. Generate structured summaries
-4. Save to `data/paper_processor/`
+Or, process an explicit JSONL:
 
-### Configuration
-Validate processing with test papers:
 ```bash
-python run.py --mode test --test-papers 10
+python -m agents.ingest.paper_processor.run \
+  --papers-jsonl data/ingest/runs/20251005_172726/pm_papers.jsonl \
+  --max-papers 400
 ```
+
+### Output Artifacts
+
+- Summaries: `data/paper_processor/summaries/summaries_YYYYMMDD_HHMMSS.jsonl`
+- Stats: `data/paper_processor/stats/stats_YYYYMMDD_HHMMSS.json`
+- Latest pointer: `data/paper_processor/latest.json`
+
+Logs go to `logs/paper_processor/paper_processor.log`.
+
+### Notes
+
+- Papers come from `get_papers` with the best available content (full text when available, abstract as fallback)
+- Outputs (summaries, index, stats) are written via `StorageManager` under `data/paper_processor/…`
 
 ## Configuration
 

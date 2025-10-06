@@ -1,8 +1,8 @@
 # GPU-accelerated paper processing with Mistral 7B
-torch>=2.0.0
-transformers>=4.35.0
-accelerate>=0.24.0
-bitsandbytes>=0.41.0
+torch>=2.1
+transformers>=4.41
+accelerate>=0.33
+bitsandbytes>=0.43
 sentence-transformers>=2.2.2
 numpy>=1.24.0
 pandas>=2.0.0
