@@ -196,3 +196,159 @@ Include subtle messaging that signals EvidentFit is **meant to integrate or be a
 >  
 > Designed as a modular platform, EvidentFit can power consumer apps, evidence services, and clinical decision systems — with affiliate commerce as an intermediate revenue stream and long-term potential as a standalone evidence infrastructure.
 
+---
+
+## 🚀 12. Next Steps – 4 to 6 Week Execution Plan
+
+The following plan translates the strategic blueprint into an actionable roadmap. It’s focused on delivering the MVP (supplement-focused platform + affiliate monetization) while setting the foundation for future features and acquisition-readiness.
+
+---
+
+### 🧠 Phase 1 – Finalize Banking Architecture (Weeks 1–2)
+
+The **banking system** is the heart of the platform. It transforms raw paper summaries into actionable knowledge units that power all downstream features. Most of the core ingestion work is done — now we focus on making banking structured, queryable, and scalable.
+
+#### ✅ Goals:
+- Finalize **Tier 1 + Tier 2 banking** (paper-level reasoning + combined summary)  
+- Introduce **Tier 3 deterministic banking** for condition/drug-specific adjustments  
+- Create a schema that will support future cost optimization and personalization
+
+#### 📋 Action Steps:
+
+1. **Define and freeze the banking schema**  
+   - Each banked record should include:  
+     - Compound metadata (name, synonyms, forms)  
+     - Outcome/goals addressed  
+     - Evidence strength (A–D)  
+     - Summary of combined reasoning (Tier 1 + 2)  
+     - Deterministic adjustments for condition/drug/age  
+     - References (PMIDs or DOIs)  
+   - Store this as structured JSON to feed the front-end and future APIs.
+
+2. **Refactor Tier 2 to combine reasoning + grading**  
+   - Current Tier 2 may only summarize reasoning.  
+   - Update it to **merge Tier 1 evidence** into a “combined synthesis” *and* assign final evidence grade (A–D).  
+   - This ensures banked records are standalone and self-contained.
+
+3. **Add Tier 3 deterministic layer**  
+   - Instead of using LLM calls, implement condition/drug/age adjustments with simple rule-based logic.  
+   - Example: If drug = SSRI → adjust ashwagandha recommendation → warning or downgrade.
+
+4. **Bank the outputs to a queryable store**  
+   - Save outputs as `banked_supplements.jsonl` or database entries.  
+   - Include versioning and timestamping to allow future re-banking.
+
+5. **Run initial test bank**  
+   - Bank 10–15 core compounds (e.g., creatine, beta-alanine, omega-3, ashwagandha).  
+   - Validate schema consistency, retrieval speed, and display integration.
+
+---
+
+### 🛠️ Phase 2 – Build “Good / Better / Best” Product Layer (Weeks 2–3)
+
+Affiliate commerce relies on pre-banked product recommendations. This is a small but critical layer.
+
+#### ✅ Goals:
+- Link banked evidence to real-world product choices  
+- Prepare affiliate linking system for launch and future expansion
+
+#### 📋 Action Steps:
+
+1. **Create product tier schema**  
+   - Each compound → 3 pre-selected products:  
+     - `good` (budget, solid quality)  
+     - `better` (trusted brand, mid-tier)  
+     - `best` (premium, clinical-grade)  
+   - Include fields for: product name, ASIN, price, affiliate URL, and rationale.
+
+2. **Populate for pilot compounds**  
+   - Select 3–5 compounds and manually source Amazon links.  
+   - Verify affiliate tag propagation and disclosure compliance.
+
+3. **Design fallback logic**  
+   - If a product is unavailable → auto-hide or redirect to Amazon search URL.
+
+4. **Add affiliate disclosure site-wide**  
+   - Footer + product pages: “We may earn a commission from purchases made through these links.”
+
+---
+
+### 🧪 Phase 3 – Front-End Build (Weeks 3–5)
+
+Now that evidence and product data are banked, build the user-facing layer that turns the platform into a usable product.
+
+#### ✅ Goals:
+- Create a frictionless browsing and stack-building experience  
+- Surface evidence clearly and transparently  
+- Encourage affiliate click-throughs without adding friction
+
+#### 📋 Action Steps:
+
+1. **Homepage** – Implement hero section, CTA, and trust messaging.  
+2. **Methodology Page** – Visualize the five-layer platform architecture.  
+3. **Supplement Goal Pages** – Display compounds by outcome (e.g., muscle gain, endurance).  
+4. **Stack Builder Page** – Allow users to:  
+   - Select compounds  
+   - Choose Good / Better / Best tiers  
+   - See pricing and evidence grades  
+   - Copy or click affiliate links  
+5. **Affiliate Links** – Implement link tracking and ensure proper attribution.
+
+📌 *Design principle:* 3 clicks or fewer from evidence → recommendation → cart.
+
+---
+
+### 🧪 Phase 4 – Optional Enhancements (Weeks 5–6+)
+
+These features are not required for MVP launch but will significantly improve platform value and revenue potential.
+
+#### 📋 Action Steps:
+
+1. **Amazon Cart API Integration (Optional)**  
+   - Generate “Add All to Cart” links dynamically.  
+   - Requires Associates API approval (3+ qualifying sales).
+
+2. **Device-Based Cost Optimizer (Optional)**  
+   - Implement a small endpoint that builds cost-optimized stacks using banked data.  
+   - Limit to ~3 uses per device/month to control costs.
+
+3. **Platform Integration Page**  
+   - Add page highlighting API potential and integration opportunities:  
+     > “Interested in using the EvidentFit evidence engine in your platform? Contact us.”
+
+---
+
+### 📊 Deliverables by End of Week 6
+
+| Deliverable | Description | Status |
+|------------|-------------|--------|
+| 📚 Evidence Banking v1 | JSONL or DB with combined reasoning + grading | ⏳ |
+| 🧠 Deterministic Tier 3 Layer | Rule-based adjustments for condition/drug/age | ⏳ |
+| 💊 Product Banking | Good / Better / Best tiers for initial compounds | ⏳ |
+| 🛍️ Affiliate Integration | Links + disclosure implemented | ⏳ |
+| 📱 Front-End MVP | Homepage, Methodology, Stack Builder pages | ⏳ |
+| 🔗 Platform Integration Page | Signals B2B and acquisition potential | ⏳ |
+
+---
+
+### 🧭 Recommended Milestones
+
+| Week | Focus | Key Outcomes |
+|------|-------|---------------|
+| 1–2 | Finalize banking schema & Tier 3 logic | Fully structured evidence bank |
+| 2–3 | Build product tier database + affiliate links | First revenue-ready dataset |
+| 3–5 | Front-end MVP build | Launch-ready site |
+| 5–6 | Optional features + polish | Cart API, optimizer, integration messaging |
+
+---
+
+### 📌 Guiding Principles
+
+- **Evidence first, always.** Every feature should reinforce EvidentFit as the most trusted and unbiased evidence platform.  
+- **Affiliate is transitional.** It’s a revenue bridge, not the long-term business model.  
+- **Platform, not website.** Every architectural decision should keep integration and acquisition potential in mind.  
+- **Friction kills conversion.** Minimize steps between research and action.  
+- **Modularity = value.** Keep ingestion, banking, and recommendation layers decoupled for easier future integration or sale.
+
+---
+
