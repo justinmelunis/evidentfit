@@ -58,6 +58,31 @@ python -m agents.ingest.paper_processor.run \
 - `data/paper_processor/stats/stats_<timestamp>.json` - Processing statistics
 - Comprehensive telemetry (coverage, chunks, latency, evidence grades)
 
+---
+
+## Monthly Updates
+
+After initial bootstrap, run monthly to keep corpus fresh:
+
+📖 **See [MONTHLY_UPDATES.md](MONTHLY_UPDATES.md)** for complete monthly update guide.
+
+**Quick start (run once per month):**
+```bash
+# Phase 1: Fetch new papers
+python -m agents.ingest.get_papers.pipeline --mode monthly --target 2000
+
+# Phase 2: Process new papers (TO DO - not yet implemented)
+python -m agents.ingest.paper_processor.run --mode monthly --max-papers 2000
+```
+
+**Key features:**
+- Hard-coded per-supplement quality thresholds (stable, never change)
+- Recency guarantee: Top 2-10 most recent papers per supplement
+- Cross-run deduplication (never process same paper twice)
+- Expected growth: ~800-1,200 papers/month (stable, predictable)
+
+---
+
 ## Architecture
 
 ```

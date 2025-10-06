@@ -37,11 +37,27 @@ python -m agents.ingest.get_papers.pipeline --no-fetch-fulltext
 # Adjust full-text concurrency (if rate limited)
 python -m agents.ingest.get_papers.pipeline --fulltext-concurrency 2
 
-# Monthly incremental update
+# Monthly incremental update (see ../MONTHLY_UPDATES.md for details)
 python -m agents.ingest.get_papers.pipeline --mode monthly
 
 # Dry run with report
 python -m agents.ingest.get_papers.pipeline --dry_report 100
+```
+
+## Monthly Updates
+
+For **monthly incremental updates** (recommended to run once per month):
+
+📖 **See [MONTHLY_UPDATES.md](../MONTHLY_UPDATES.md)** for complete guide covering:
+- Hard-coded per-supplement quality thresholds
+- Recency guarantee (top 2-10 papers per supplement)
+- Multi-supplement paper handling
+- Expected monthly growth (~800-1,200 papers)
+- Integration with paper_processor
+
+**Quick start:**
+```bash
+python -m agents.ingest.get_papers.pipeline --mode monthly --target 2000
 ```
 
 ## Scoring System
