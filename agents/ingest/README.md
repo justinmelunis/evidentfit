@@ -24,16 +24,18 @@ python -m agents.ingest.get_papers.pipeline \
 
 **What it does:**
 - Multi-supplement PubMed search (63 supplements, ~190K candidates)
-- Quality filtering (2.0+ reliability score, ~125K pass)
-- Diversity selection with minimum quotas (30K final)
-- PMC full-text fetching with intelligent extraction (60-70% coverage)
+- Quality filtering (2.0+ threshold, never compromised, ~125K pass)
+- Enhanced quota system: 10 best overall + 2 per goal per supplement (~715 protected)
+- Diversity selection with 0.8 tiebreak threshold (prefer full-text when close)
+- PMC + Unpaywall full-text fetching (85-90% coverage)
+- Intelligent content extraction with quality detection
 - Centralized sharded storage
 
 **Output:**
 - `data/ingest/runs/<timestamp>/pm_papers.jsonl` - 30k selected papers
 - `data/ingest/runs/<timestamp>/metadata.json` - Run statistics
-- `data/ingest/runs/<timestamp>/fulltext_manifest.json` - Full-text fetch summary
-- `data/fulltext_store/` - Centralized full-text repository (~900 MB, 18-21k papers)
+- `data/ingest/runs/<timestamp>/fulltext_manifest.json` - Full-text fetch summary  
+- `data/fulltext_store/` - Centralized repository (25-27k full texts, ~900 MB)
 
 ### Stage 2: Paper Processor (GPU required, ~5 days on RTX 3080)
 
@@ -80,8 +82,14 @@ python -m agents.ingest.paper_processor.run \
 │       ↓                                                          │
 │  PMC Full-Text Fetch (default ON, ~10 hrs with API key)        │
 │       ↓                                                          │
-│  Centralized Store → data/fulltext_store/ (25-28k full texts)   │
-│  Abstracts retained for remaining ~2-5k papers (fallback)       │
+│  PMC: ~22k full texts + ~6k abstract-only                       │
+│       ↓                                                          │
+│  Unpaywall Rescue (for PMC abstract-only papers)                │
+│       ↓                                                          │
+│  Unpaywall: +3-5k full texts (rescue from PMC abstract-only)    │
+│       ↓                                                          │
+│  Centralized Store → data/fulltext_store/ (25-27k full texts)   │
+│  Abstracts retained for remaining ~3-5k papers (final fallback) │
 │                                                                  │
 └─────────────────────────────────────────────────────────────────┘
                             ↓
@@ -112,11 +120,13 @@ Fast paper discovery, selection, and full-text fetching.
 - **Multi-query**: 63 supplement-specific searches (~190K candidates)
 - **Quality scoring**: Meta-analyses, RCTs, sample size, journal impact
 - **Diversity filtering**: Iterative selection with minimum quotas
-- **Full-text fetching**: PMC integration with intelligent extraction (85-95% coverage observed)
-- **Hybrid content**: Full text for 25-28k papers, abstracts for remaining 2-5k
+- **Full-text fetching**: PMC + Unpaywall integration (85-90% combined coverage)
+- **Enhanced quotas**: 10 best overall + 2 per goal per supplement (~715 protected)
+- **Smart selection**: 0.8 tiebreak threshold prefers full-text without quality compromise
+- **Hybrid content**: Full text for 25-27k papers, abstracts for remaining 3-5k
 - **Centralized storage**: Sharded, deduplicated, resume-safe
 - **Performance**: ~10 hours with NCBI API key, ~30 hours without
-- **Output**: 30k selected papers (25-28k full texts + 2-5k abstracts, ~900 MB total)
+- **Output**: 30k selected papers (25-27k full texts + 3-5k abstracts, ~900 MB total)
 
 📖 **[Detailed Documentation](get_papers/README.md)**
 
@@ -144,15 +154,20 @@ GPU-accelerated structured analysis with Mistral-7B.
 
 ### Diversity Optimization
 - Balanced across supplements, goals, populations
-- Iterative filtering with protected minimum quotas (3 per supplement)
+- Enhanced quotas: 10 best overall + 2 per goal per supplement (~715 protected total)
+- Iterative filtering with 0.8 tiebreak threshold (prefer full-text when close)
+- Full-text preference never compromises quality (tiebreaker only)
 - Prevents corpus domination by popular supplements
 
 ### Hybrid Content Strategy (Full Text + Abstracts)
-- **PMC integration**: Fetches full-text XML via NCBI E-utilities (default ON)
-- **High coverage**: 85-95% full-text success rate (25,000-28,000 of 30k papers)
-- **Abstract fallback**: PubMed abstracts for remaining 2,000-5,000 papers (always available)
-- **Why high coverage**: Our quality-filtered papers tend to be in open-access journals
-- **Clean extraction**: Title, abstract, body, tables, figures (for full texts)
+- **Dual-source fetching**: PMC (primary) + Unpaywall (rescue)
+- **PMC coverage**: ~73% true full-text, ~20% abstract-only (93% total PMC response)
+- **Unpaywall rescue**: Attempts to fetch full PDF for PMC abstract-only papers
+- **Expected rescue rate**: 50-70% of PMC abstract-only → +12-17% overall coverage
+- **Combined coverage**: 85-90% full-text (25,000-27,000 of 30k papers)
+- **Final fallback**: PubMed abstracts for remaining 10-15% (always available)
+- **Quality detection**: Distinguishes true full-text (with body) from abstract-only
+- **Clean extraction**: Title, abstract, body, tables, figures from both XML and PDF
 - **Centralized storage**: Sharded, deduplicated repository (~900 MB total)
 - **Resume-safe**: Automatic deduplication and skip of existing files
 

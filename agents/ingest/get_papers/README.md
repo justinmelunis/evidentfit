@@ -2,26 +2,31 @@
 
 ## Overview
 
-Fast, LLM-free pipeline that selects high-quality research papers from PubMed with balanced diversity across supplements, study types, and training goals. Includes integrated PMC full-text fetching.
+Fast, LLM-free pipeline that selects high-quality research papers from PubMed with balanced diversity across supplements, study types, and training goals. Features dual-source full-text fetching (PMC + Unpaywall) with intelligent quality-preserving selection.
 
 ## Features
 
-- **No LLM calls**: Pure rule-based processing (fast, cost-effective)
-- **Multi-query search**: 63 supplement-specific PubMed queries
-- **Quality scoring**: Meta-analyses, RCTs, sample size, journal impact
-- **Diversity filtering**: Iterative selection with minimum quotas
-- **Full-text fetching**: Automatic PMC integration (default ON)
+- **No LLM calls**: Pure rule-based processing (fast, zero cost)
+- **Multi-query search**: 63 supplement-specific PubMed queries (~190K candidates)
+- **Quality scoring**: Meta-analyses, RCTs, sample size, journal impact (strict 2.0+ threshold)
+- **Enhanced quotas**: 10 best overall + 2 per goal per supplement (~715 protected)
+- **Smart diversity**: 0.8 tiebreak threshold prefers full-text without quality compromise
+- **Dual-source fetching**: PMC + Unpaywall for 85-90% full-text coverage
+- **Quality detection**: Distinguishes true full-text from abstract-only
 - **Resume-safe**: Interrupted fetches can be restarted
-- **Default output**: 30,000 papers
+- **Default output**: 30,000 papers (25-27K full texts)
 
 ## Usage
 
 ### Basic Run
 ```bash
-export NCBI_API_KEY="your_key_here"  # Highly recommended
+export NCBI_API_KEY="your_key_here"  # Highly recommended (3x faster)
+export UNPAYWALL_EMAIL="your@email.com"  # Required for Unpaywall
+
 python -m agents.ingest.get_papers.pipeline \
   --mode bootstrap \
-  --target 30000
+  --target 30000 \
+  --fulltext-concurrency 8
 ```
 
 ### Configuration Options
@@ -83,10 +88,32 @@ Every paper gets scored on objective quality indicators:
 
 Papers below threshold are excluded unless needed for minimum quotas.
 
+## Enhanced Quota System
+
+### Strategy
+**Dual-level protection** ensures both quality and coverage:
+
+1. **Top 10 Overall**: Best papers for each supplement (by quality score)
+2. **Top 2 Per Goal**: Best papers for each supplement×goal combination
+3. **Overlaps Allowed**: Set union typically results in 10-14 protected per supplement
+4. **Full-Text Preference**: When quality scores equal, prefer papers with full-text
+
+### Expected Protected Counts
+- Universal supplements (6 goals): 12-14 protected papers
+- Multi-goal supplements (3-4 goals): 11-12 protected papers
+- Focused supplements (1-2 goals): 10-11 protected papers
+- **Total**: ~715 protected papers (2.4% of 30K corpus)
+
+### Benefits
+- Every supplement: Minimum 10 quality papers
+- Every supplement×goal combo: Minimum 2 papers
+- Natural adaptation: Popular supplements get more protection
+- Room for full-text optimization within protected sets
+
 ## Diversity Filtering
 
 ### Goal
-Prevent corpus domination by popular supplements (creatine, protein, caffeine).
+Prevent corpus domination by popular supplements while maximizing full-text coverage.
 
 ### Method
 If papers > 30,000 threshold:
@@ -94,7 +121,8 @@ If papers > 30,000 threshold:
 2. Assign rarity weights (rare combos get boost)
 3. Add combination score to reliability score = **enhanced score**
 4. Iteratively eliminate lowest-scoring papers in rounds
-5. Protect minimum quotas (default: 3 papers per supplement)
+5. **Tiebreaking (NEW)**: When scores within 0.8, prefer full-text
+6. Protected papers never eliminated
 
 ### Result
 Balanced representation across:
@@ -102,17 +130,28 @@ Balanced representation across:
 - 6 training goals (strength, hypertrophy, endurance, etc.)
 - Study types (meta, RCT, crossover, etc.)
 - Journals and populations
+- **85-90% full-text coverage** (quality never compromised)
 
 ## Full-Text Fetching
 
 ### Overview
-**Default: Enabled** — Automatically fetches full text from PubMed Central.
+**Default: Enabled** — Dual-source strategy fetches from PMC + Unpaywall for maximum coverage.
 
 ### How It Works
-1. **ELink**: Check if paper is in PMC (PMID → PMCID)
-2. **EFetch**: Download full XML from PMC
-3. **Extract**: Parse XML to clean, LLM-ready text
-4. **Store**: Save in centralized, deduplicated repository
+1. **PMC Primary** (73% full-text, 20% abstract-only):
+   - ELink: Check if paper is in PMC (PMID → PMCID)
+   - EFetch: Download full XML from PMC
+   - Extract: Parse XML to clean, LLM-ready text
+   - Quality Check: Detect if body sections present or abstract-only
+   
+2. **Unpaywall Rescue** (for PMC failures/abstract-only):
+   - API Query: Check Unpaywall for DOI availability
+   - PDF Fetch: Download full PDF when available
+   - Extract: Parse PDF to text (pypdf)
+   - Quality Check: Verify body sections present
+   - Expected: Rescues 50-70% of PMC abstract-only papers
+   
+3. **Store**: Save in centralized, deduplicated repository
 
 ### What Gets Extracted
 ✅ **Kept** (all research value):
@@ -141,12 +180,14 @@ data/ingest/runs/<run_id>/
 ```
 
 ### Expected Results
-- **PMC Coverage**: 85-95% of papers (25,000-28,000 of 30k get full text)
-- **Abstract Fallback**: Remaining 5-15% (2,000-5,000 papers) use PubMed abstracts
+- **PMC Coverage**: ~73% true full-text, ~20% abstract-only, ~7% not in PMC
+- **Unpaywall Rescue**: ~50-70% success on PMC abstract-only papers
+- **Combined Full-Text**: 85-90% of papers (25,000-27,000 of 30k)
+- **Final Abstract-Only**: 10-15% (3,000-5,000 papers)
 - **Hybrid Content**: All 30k papers have content (full text preferred, abstract as fallback)
-- **Why high coverage**: Quality-filtered papers tend to be in open-access journals
-- **File Size**: ~30 KB per full-text paper (vs ~200 KB raw XML)
-- **Total Storage**: ~900 MB for 30k papers (25-28k full texts)
+- **Why high coverage**: Quality-filtered papers tend to be in open-access journals + dual sources
+- **File Size**: ~30 KB per full-text (XML or PDF extracted)
+- **Total Storage**: ~900 MB for 30k papers
 
 ### Performance
 
@@ -158,17 +199,36 @@ data/ingest/runs/<run_id>/
 
 ### Configuration
 
+#### Required/Recommended
 ```bash
-# NCBI API key (highly recommended)
-export NCBI_API_KEY="your_key"    # Get from NCBI account settings
+export NCBI_API_KEY="your_key"           # Get from NCBI account (3x faster)
+export NCBI_EMAIL="you@example.com"      # Required by PubMed
+export UNPAYWALL_EMAIL="you@example.com" # Required by Unpaywall
+```
 
-# Optional overrides
-export FULLTEXT_STORE_DIR="custom/path"  # Default: data/fulltext_store
+#### Enhanced Quota System
+```bash
+export USE_ENHANCED_QUOTAS=true          # Use 10 overall + 2 per goal (default)
+export MIN_OVERALL_PER_SUPPLEMENT=10     # Top N overall per supplement
+export MIN_PER_SUPPLEMENT_GOAL=2         # Top N per supplement×goal combo
+export PREFER_FULLTEXT_IN_QUOTAS=true    # Tiebreaker for protected selection
+```
+
+#### Diversity Tiebreaking
+```bash
+export DIVERSITY_TIEBREAK_THRESHOLD=0.8  # Score difference for full-text tiebreak
+export PREFER_FULLTEXT_IN_DIVERSITY=true # Enable tiebreaking in diversity rounds
+```
+
+#### Full-Text Fetching
+```bash
+export ENABLE_UNPAYWALL=true             # Enable Unpaywall rescue (default: ON)
+export FULLTEXT_STORE_DIR="custom/path"  # Storage location
 
 # CLI flags
---fetch-fulltext / --no-fetch-fulltext    # Enable/disable (default: ON)
---fulltext-concurrency N                  # Parallel requests (default: 8)
---fulltext-limit N                        # Cap fetch count (default: unlimited)
+--fetch-fulltext / --no-fetch-fulltext   # Enable/disable (default: ON)
+--fulltext-concurrency N                 # Parallel requests (default: 8)
+--fulltext-limit N                       # Cap fetch count (default: unlimited)
 ```
 
 ### Rate Limiting

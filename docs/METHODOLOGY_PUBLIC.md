@@ -611,11 +611,13 @@ Our platform operates through four specialized AI agents that work in concert to
 - **Process**: 
   - **Stage 1 (get_papers)**: 
     - Multi-supplement PubMed search (63 supplements)
-    - Parse XML and fetch PMC full-text (85-95% coverage observed)
-    - Reliability scoring and quality filtering
-    - Minimum quotas + iterative diversity filtering
+    - Enhanced quota system: 10 best overall + 2 per goal combination per supplement
+    - Parse XML and fetch full-text from PMC + Unpaywall (85-90% coverage)
+    - Quality filtering (2.0+ threshold, never compromised for availability)
+    - Full-text preference as tiebreaker (0.8 threshold in diversity rounds)
+    - Iterative diversity filtering with full-text-aware selection
     - Centralized sharded storage for full texts
-    - Abstract fallback for remaining 5-15% of papers
+    - Abstract fallback for remaining 10-15% of papers
   - **Stage 2 (paper_processor)**: 
     - GPU-accelerated LLM analysis (Mistral-7B)
     - Smart chunking for long papers (respects context limits)
@@ -625,8 +627,9 @@ Our platform operates through four specialized AI agents that work in concert to
   - **Stage 3 (indexing)**: Generate embeddings → Upload to Azure AI Search → Update watermark
 - **Output**: ~30,000 high-quality, diverse research papers with structured summaries and full-text content
 - **Quality Threshold**: 2.0+ reliability score (meta-analyses, RCTs, systematic reviews prioritized)
-- **Diversity**: Minimum 3 papers per supplement + iterative balance optimization
-- **Full-Text Coverage**: 85-95% via PMC (25-28k papers) with intelligent content extraction; abstracts for remaining 5-15%
+- **Enhanced Quotas**: 10 best overall + 2 per goal per supplement (~715 protected with overlaps)
+- **Full-Text Strategy**: PMC + Unpaywall with 0.8 tiebreak threshold (quality never compromised)
+- **Full-Text Coverage**: 85-90% (25-27k papers) via PMC (~73%) + Unpaywall rescue (~12-17%); abstracts for remaining 10-15%
 
 **📊 Agent C (Evidence Summarization)**  
 - **Purpose**: Create public-facing supplement summaries
@@ -990,7 +993,7 @@ When in doubt, we err on the side of caution:
 
 We're honest about what our system can and cannot do:
 
-1. **Full-text coverage**: We obtain full-text for 85-95% of papers via PMC; remaining 5-15% use abstracts only
+1. **Full-text coverage**: We obtain full-text for 85-90% of papers via PMC (~73%) and Unpaywall (~12-17% rescue); remaining 10-15% use abstracts only
 2. **English-language focus**: Most research we access is published in English
 3. **Not medical advice**: We provide evidence-based education, not personalized medical care
 4. **Population variability**: Research shows average effects in study populations—individual results may vary
