@@ -7,13 +7,44 @@ No per-supplement caps before diversity - only combination weights and iterative
 """
 
 import os
+import math
 import logging
-from typing import Dict, List, Any
+from typing import Dict, List, Any, Set, Optional
 
 logger = logging.getLogger(__name__)
 
 # Environment variables
 DIVERSITY_ROUNDS_THRESHOLD = int(os.getenv("DIVERSITY_ROUNDS_THRESHOLD", "50000"))
+
+
+def _is_survey_like(doc: Dict) -> bool:
+    """
+    Check if document is survey-like (exclude from weight calculation)
+    
+    Args:
+        doc: Paper dictionary
+        
+    Returns:
+        True if survey-like
+    """
+    title = (doc.get("title") or "").lower()
+    study_type = (doc.get("study_type") or "").lower()
+    study_category = (doc.get("study_category") or "").lower()
+    
+    # Check for survey indicators
+    survey_keywords = ["survey", "questionnaire", "prevalence", "cross-sectional"]
+    if any(keyword in title for keyword in survey_keywords):
+        return True
+    
+    # Check study type/category
+    if study_type == "cross-sectional" or study_category == "observational_usage":
+        return True
+    
+    # Check if observational without trial keywords
+    if "observational" in study_type and not any(word in title for word in ["trial", "intervention", "randomized"]):
+        return True
+    
+    return False
 
 
 def analyze_combination_distribution(docs: List[Dict]) -> Dict[str, Dict[str, int]]:
@@ -34,7 +65,10 @@ def analyze_combination_distribution(docs: List[Dict]) -> Dict[str, Dict[str, in
         "journal_supplement": {}    # J Appl Physiol + creatine
     }
     
-    for doc in docs:
+    # Filter out survey-like papers for weight calculation
+    filtered_docs = [doc for doc in docs if not _is_survey_like(doc)]
+    
+    for doc in filtered_docs:
         # Extract factors
         supplements = (doc.get("supplements") or "").split(",")
         primary_goal = doc.get("primary_goal") or ""
@@ -119,15 +153,16 @@ def calculate_combination_weights(combinations: Dict[str, Dict[str, int]], total
 
 def calculate_combination_score(paper: Dict, combination_weights: Dict[str, Dict[str, float]]) -> float:
     """
-    Calculate score based on paper's factor combinations with quality safeguards
+    Calculate score based on paper's factor combinations with gating and normalization
     
     Args:
         paper: Paper dictionary
         combination_weights: Dictionary with combination weights
         
     Returns:
-        Combination score
+        Combination score (gated and normalized)
     """
+    # Compute base combination score
     score = 0.0
     
     # Extract paper factors
@@ -136,10 +171,6 @@ def calculate_combination_score(paper: Dict, combination_weights: Dict[str, Dict
     population = paper.get("population") or ""
     study_type = paper.get("study_type") or ""
     journal = (paper.get("journal") or "").lower()
-    
-    # Quality safeguards: Don't boost low-quality papers too much
-    base_reliability = paper.get("reliability_score", 0)
-    max_combination_boost = min(5.0, base_reliability * 0.3)  # Cap boost at 30% of base score
     
     # Check supplement + goal combinations
     for supp in supplements:
@@ -174,86 +205,161 @@ def calculate_combination_score(paper: Dict, combination_weights: Dict[str, Dict
             weight = combination_weights.get("journal_supplement", {}).get(key, 0.0)
             score += weight
     
-    # Apply quality safeguard: Cap positive combination scores for low-quality papers
-    if score > 0 and base_reliability < 5.0:  # Low-quality paper
-        score = min(score, max_combination_boost)
+    # Gate boosting (do NOT cap counts)
+    category = paper.get("study_category", "other")
+    outcomes_str = (paper.get("outcomes") or "").strip()
+    outcomes_present = bool(outcomes_str)
+    
+    if (category == "observational_usage" or 
+        (not outcomes_present and category not in {"intervention", "meta_analysis", "systematic_review"})):
+        logging.debug(f"combo_gated pmid={paper.get('pmid')} category={category} outcomes={outcomes_present}")
+        return 0.0  # Leave reliability untouched
+    
+    # Normalize by breadth and cap relative to reliability
+    if score > 0:
+        breadth = max(1, len([s for s in supplements if s.strip()]))
+        score *= (1.0 / math.sqrt(breadth))
+        base = float(paper.get("reliability_score", 0.0))
+        score = min(score, min(5.0, 0.30 * base))
+        logging.debug(f"combo_norm pmid={paper.get('pmid')} breadth={breadth} base={base:.1f} final={score:.3f}")
     
     return score
 
 
-def iterative_diversity_filtering(papers: List[Dict], target_count: int, 
-                                 elimination_per_round: int = 2000) -> List[Dict]:
+def iterative_diversity_filtering(papers: list, target_count: int, elimination_per_round: int = 1000) -> list:
     """
     Iteratively eliminate papers while recalculating diversity weights each round.
-    
-    This provides better diversity outcomes than single-pass selection by:
-    1. Eliminating lowest-scoring papers in batches
-    2. Recalculating combination weights after each elimination
-    3. Re-scoring remaining papers with updated weights
-    4. Repeating until target count is reached
-    
-    Args:
-        papers: List of papers with reliability scores
-        target_count: Final number of papers to select
-        elimination_per_round: Number of papers to eliminate each round
-        
-    Returns:
-        List of selected papers with optimal diversity balance
+    Supports an optional protected set of IDs that will not be eliminated.
     """
+    return _iterative_diversity_filtering_internal(papers, target_count, elimination_per_round, protected_ids=None)
+
+# ---- Minimum-quota / protected IDs support ----
+
+# Env-configurable knobs (documented defaults)
+MIN_PER_SUPPLEMENT = int(os.getenv("MIN_PER_SUPPLEMENT", "3"))  # 0 disables
+INCLUDE_LOW_QUALITY_IN_MIN = os.getenv("INCLUDE_LOW_QUALITY_IN_MIN", "true").lower() == "true"
+MIN_QUOTA_RARE_ONLY = os.getenv("MIN_QUOTA_RARE_ONLY", "false").lower() == "true"
+RARE_THRESHOLD = int(os.getenv("RARE_THRESHOLD", "5"))
+EXCLUDED_SUPPS_FOR_MIN = {s.strip() for s in os.getenv("EXCLUDED_SUPPS_FOR_MIN", "nitric-oxide").split(",") if s.strip()}
+
+def _get_supps(doc: Dict[str, Any]) -> List[str]:
+    raw = (doc.get("supplements") or "").split(",")
+    return [s.strip() for s in raw if s.strip()]
+
+def _build_supp_index(docs: List[Dict[str, Any]]) -> Dict[str, List[Dict[str, Any]]]:
+    by_supp: Dict[str, List[Dict[str, Any]]] = {}
+    for d in docs:
+        for s in _get_supps(d):
+            by_supp.setdefault(s, []).append(d)
+    # sort each list by reliability desc, then year desc as tie-breaker
+    for s, lst in by_supp.items():
+        lst.sort(key=lambda x: (x.get("reliability_score", 0.0), x.get("year", 0) or 0), reverse=True)
+    return by_supp
+
+def compute_minimum_quota_ids(
+    all_docs: List[Dict[str, Any]],
+    min_per_supp: Optional[int] = None,
+    include_low_quality: Optional[bool] = None,
+    rare_only: Optional[bool] = None,
+    rare_threshold: Optional[int] = None,
+    exclude_supps: Optional[Set[str]] = None,
+    quality_floor: float = 0.0,
+) -> Set[str]:
+    """
+    Returns a set of doc IDs that should be protected (not eliminated) to ensure
+    each supplement has at least `min_per_supp` papers in the final selection.
+
+    If `include_low_quality=True`, low-reliability docs can be selected to meet the quota.
+    If `rare_only=True`, quotas apply only to supplements with <= rare_threshold papers in all_docs.
+    Supplements listed in `exclude_supps` are ignored (no quotas).
+    """
+    if min_per_supp is None:
+        min_per_supp = MIN_PER_SUPPLEMENT
+    if include_low_quality is None:
+        include_low_quality = INCLUDE_LOW_QUALITY_IN_MIN
+    if rare_only is None:
+        rare_only = MIN_QUOTA_RARE_ONLY
+    if rare_threshold is None:
+        rare_threshold = RARE_THRESHOLD
+    if exclude_supps is None:
+        exclude_supps = EXCLUDED_SUPPS_FOR_MIN
+
+    protected: Set[str] = set()
+    if min_per_supp <= 0:
+        return protected
+
+    by_supp = _build_supp_index(all_docs)
+    for supp, docs in by_supp.items():
+        if supp in exclude_supps:
+            continue
+        if rare_only and len(docs) > rare_threshold:
+            continue
+        picked = 0
+        for d in docs:
+            # Respect an optional quality floor if include_low_quality is False
+            if (include_low_quality or d.get("reliability_score", 0.0) >= quality_floor):
+                if d.get("id"):
+                    protected.add(d["id"])
+                    picked += 1
+            if picked >= min_per_supp:
+                break
+    return protected
+
+def _iterative_diversity_filtering_internal(
+    papers: List[Dict[str, Any]],
+    target_count: int,
+    elimination_per_round: int = 1000,
+    protected_ids: Optional[Set[str]] = None,
+) -> List[Dict[str, Any]]:
+    protected_ids = protected_ids or set()
     current_papers = papers.copy()
     round_num = 1
-    
-    logger.info(f"Starting iterative diversity filtering:")
-    logger.info(f"  Initial papers: {len(current_papers):,}")
-    logger.info(f"  Target papers: {target_count:,}")
-    logger.info(f"  Elimination per round: {elimination_per_round:,}")
-    logger.info(f"  Estimated rounds: {(len(current_papers) - target_count) // elimination_per_round + 1}")
-    
+
     while len(current_papers) > target_count:
         papers_to_eliminate = min(elimination_per_round, len(current_papers) - target_count)
-        
-        logger.info(f"Round {round_num}: {len(current_papers):,} papers -> eliminating {papers_to_eliminate:,}")
-        
+
         # Recalculate combination weights based on current paper set
         combinations = analyze_combination_distribution(current_papers)
         combination_weights = calculate_combination_weights(combinations, len(current_papers))
-        
-        # Re-score all current papers with updated weights
+
+        # Re-score with updated weights
         for paper in current_papers:
             combination_score = calculate_combination_score(paper, combination_weights)
             paper["combination_score"] = combination_score
             paper["enhanced_score"] = paper.get("reliability_score", 0) + combination_score
-        
-        # Sort by enhanced score and eliminate lowest-scoring papers
-        current_papers.sort(key=lambda x: x.get("enhanced_score", 0), reverse=True)
-        current_papers = current_papers[:-papers_to_eliminate]  # Remove bottom papers
-        
-        # Show progress
-        if round_num <= 3 or round_num % 5 == 0:
-            # Show top combination weights for first few rounds and every 5th round
-            # Flatten nested weights structure for display
-            flat_weights = []
-            for combo_type, combo_dict in combination_weights.items():
-                for combo, weight in combo_dict.items():
-                    flat_weights.append((f"{combo_type}:{combo}", weight))
-            top_weights = sorted(flat_weights, key=lambda x: abs(x[1]), reverse=True)[:5]
-            logger.info(f"  Top combination weights: {dict(top_weights)}")
-        
+
+        # Sort ascending by enhanced score so we try to remove the worst first
+        current_papers.sort(key=lambda x: x.get("enhanced_score", 0))
+
+        # Remove from the bottom up, skipping protected IDs.
+        eliminated = 0
+        survivors: List[Dict[str, Any]] = []
+        for d in current_papers:
+            if eliminated < papers_to_eliminate and d.get("id") not in protected_ids:
+                # eliminate this one
+                eliminated += 1
+                continue
+            survivors.append(d)
+
+        current_papers = survivors
         round_num += 1
-        
-        # Safety check
-        if round_num > 50:  # Prevent infinite loops
-            logger.warning(f"⚠️  Safety limit reached at round {round_num}. Stopping.")
+
+        # Safety: if we couldn't eliminate enough because too many are protected, exit.
+        if eliminated == 0 and len(current_papers) > target_count:
             break
-    
-    logger.info(f"Iterative filtering complete:")
-    logger.info(f"  Final papers: {len(current_papers):,}")
-    logger.info(f"  Rounds completed: {round_num - 1}")
-    
-    # Final sort by enhanced score
+
+    # Final sort by enhanced score (desc) for stable output
     current_papers.sort(key=lambda x: x.get("enhanced_score", 0), reverse=True)
-    
     return current_papers[:target_count]
+
+# Backward-compatible wrapper that allows passing protected IDs
+def iterative_diversity_filtering_with_protection(
+    papers: List[Dict[str, Any]],
+    target_count: int,
+    elimination_per_round: int = 1000,
+    protected_ids: Optional[Set[str]] = None,
+) -> List[Dict[str, Any]]:
+    return _iterative_diversity_filtering_internal(papers, target_count, elimination_per_round, protected_ids)
 
 
 def should_run_iterative_diversity(candidate_count: int, target_count: int) -> bool:

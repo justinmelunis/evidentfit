@@ -7,10 +7,101 @@ No Azure calls - pure local file operations.
 
 import os
 import json
+import shutil
+import gzip
+import datetime
 import logging
-from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Any
+from typing import Dict, List, Any, Tuple
+
+from evidentfit_shared.utils import PROJECT_ROOT
+
+RUNS_BASE_DIR = PROJECT_ROOT / Path(os.getenv("RUNS_BASE_DIR", "data/ingest/runs"))
+COMPRESS_PAPERS = os.getenv("COMPRESS_PAPERS", "false").lower() == "true"
+KEEP_LAST_RUNS = int(os.getenv("KEEP_LAST_RUNS", "8"))
+
+def _atomic_write_text(path: Path, content: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    with open(tmp, "w", encoding="utf-8") as f:
+        f.write(content)
+    os.replace(tmp, path)
+
+def _now_run_id() -> str:
+    return datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+
+def create_run_dir(run_id: str | None = None) -> Tuple[str, Path]:
+    rid = run_id or _now_run_id()
+    run_dir = RUNS_BASE_DIR / rid
+    run_dir.mkdir(parents=True, exist_ok=True)
+    return rid, run_dir
+
+def prune_old_runs(keep_last: int = KEEP_LAST_RUNS) -> None:
+    if keep_last <= 0 or not RUNS_BASE_DIR.exists():
+        return
+    # keep only the most recent N timestamped dirs (YYYYMMDD_HHMMSS)
+    dirs = [p for p in RUNS_BASE_DIR.iterdir() if p.is_dir()]
+    dirs = [p for p in dirs if len(p.name) == 15 and "_" in p.name and p.name.replace("_","").isdigit()]
+    dirs.sort(key=lambda p: p.name, reverse=True)
+    for d in dirs[keep_last:]:
+        shutil.rmtree(d, ignore_errors=True)
+
+def _papers_filename(run_dir: Path) -> Path:
+    return run_dir / ("pm_papers.jsonl.gz" if COMPRESS_PAPERS else "pm_papers.jsonl")
+
+def _metadata_filename(run_dir: Path) -> Path:
+    return run_dir / "metadata.json"
+
+def save_selected_papers(selected_docs: List[Dict], run_dir: Path) -> Path:
+    """Write selected docs as JSONL (optionally gz) into the run dir. Returns file path."""
+    out_path = _papers_filename(run_dir)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = out_path.with_suffix(out_path.suffix + ".tmp")
+    if COMPRESS_PAPERS:
+        with gzip.open(tmp, "wt", encoding="utf-8") as f:
+            for d in selected_docs:
+                f.write(json.dumps(d, ensure_ascii=False) + "\n")
+    else:
+        with open(tmp, "w", encoding="utf-8") as f:
+            for d in selected_docs:
+                f.write(json.dumps(d, ensure_ascii=False) + "\n")
+    os.replace(tmp, out_path)
+    return out_path
+
+def save_run_metadata(metadata: Dict[str, Any], run_dir: Path) -> Path:
+    """Write metadata.json into the run dir."""
+    meta_path = _metadata_filename(run_dir)
+    _atomic_write_text(meta_path, json.dumps(metadata, indent=2, ensure_ascii=False))
+    return meta_path
+
+def save_protected_quota_report(report: Dict[str, Any], run_dir: Path) -> Path:
+    """Write protected-quota report (per-supp reserved vs kept) into the run dir."""
+    out = run_dir / "protected_quota_report.json"
+    _atomic_write_text(out, json.dumps(report, indent=2, ensure_ascii=False))
+    return out
+
+def update_latest_pointer(run_id: str, run_dir: Path, papers_path: Path, metadata_path: Path) -> Path:
+    """Write a small pointer file with paths to latest artifacts."""
+    pointer = {
+        "run_id": run_id,
+        "run_dir": str(run_dir.as_posix()),
+        "papers_path": str(papers_path.as_posix()),
+        "metadata_path": str(metadata_path.as_posix()),
+        "created_at": datetime.datetime.utcnow().isoformat() + "Z"
+    }
+    latest = RUNS_BASE_DIR / "latest.json"
+    _atomic_write_text(latest, json.dumps(pointer, indent=2))
+    return latest
+
+def read_latest_pointer() -> Dict[str, Any]:
+    latest = RUNS_BASE_DIR / "latest.json"
+    with open(latest, "r", encoding="utf-8") as f:
+        return json.load(f)
+
+def get_latest_run_paths() -> Tuple[str, Path, Path]:
+    """Return (run_id, papers_path, metadata_path) from latest.json."""
+    p = read_latest_pointer()
+    return p["run_id"], Path(p["papers_path"]), Path(p["metadata_path"])
 
 logger = logging.getLogger(__name__)
 
@@ -144,89 +235,91 @@ def load_run_metadata(data_dir: str = DEFAULT_DATA_DIR,
     return metadata
 
 
-def create_metadata_summary(docs: List[Dict], run_info: Dict[str, Any]) -> Dict[str, Any]:
+def create_metadata_summary(selected_docs: List[Dict[str, Any]], run_info: Dict[str, Any]) -> Dict[str, Any]:
     """
-    Create metadata summary for the run
-    
-    Args:
-        docs: List of selected papers
-        run_info: Run information dictionary
-        
-    Returns:
-        Metadata dictionary
+    Build a rich, human-auditable metadata summary from the selected docs.
+    Computes: supplement_distribution, study_type_distribution, goal_distribution,
+    quality_distribution, top_supplement_goal_combinations, top_goal_population_combinations,
+    and simple diagnostics (general/other shares).
     """
-    # Count papers by supplement
-    supplement_counts = {}
-    for doc in docs:
-        supplements = doc.get("supplements", "").split(",") if doc.get("supplements") else []
-        for supp in supplements:
-            supp = supp.strip()
-            if supp:
-                supplement_counts[supp] = supplement_counts.get(supp, 0) + 1
-    
-    # Count papers by study type
-    study_type_counts = {}
-    for doc in docs:
-        study_type = doc.get("study_type", "unknown")
-        study_type_counts[study_type] = study_type_counts.get(study_type, 0) + 1
-    
-    # Count papers by primary goal
-    goal_counts = {}
-    for doc in docs:
-        goal = doc.get("primary_goal", "unknown")
-        goal_counts[goal] = goal_counts.get(goal, 0) + 1
-    
-    # Quality distribution
-    quality_distribution = {"4.0+": 0, "3.0-3.9": 0, "2.0-2.9": 0, "<2.0": 0}
-    for doc in docs:
-        quality = doc.get("reliability_score", 0)
-        if quality >= 4.0:
-            quality_distribution["4.0+"] += 1
-        elif quality >= 3.0:
-            quality_distribution["3.0-3.9"] += 1
-        elif quality >= 2.0:
-            quality_distribution["2.0-2.9"] += 1
+    total = len(selected_docs)
+    supp_counts: Dict[str, int] = {}
+    study_type_counts: Dict[str, int] = {}
+    study_category_counts: Dict[str, int] = {}
+    goal_counts: Dict[str, int] = {}
+    quality_bins = {"4.0+": 0, "3.0-3.9": 0, "2.0-2.9": 0, "<2.0": 0}
+    combo_supp_goal: Dict[str, int] = {}
+    combo_goal_pop: Dict[str, int] = {}
+
+    def bump(d: Dict[str, int], k: str, inc: int = 1):
+        if not k:
+            return
+        d[k] = d.get(k, 0) + inc
+
+    for doc in selected_docs:
+        # Supplements
+        supps = []
+        s = (doc.get("supplements") or "").strip()
+        if s:
+            supps = [x.strip() for x in s.split(",") if x.strip()]
+            for sp in supps:
+                bump(supp_counts, sp)
+
+        # Study type
+        bump(study_type_counts, (doc.get("study_type") or "other"))
+        # Study category
+        bump(study_category_counts, (doc.get("study_category") or "other"))
+
+        # Goals
+        bump(goal_counts, (doc.get("primary_goal") or "general"))
+
+        # Quality bins
+        q = float(doc.get("reliability_score", 0.0) or 0.0)
+        if q >= 4.0:
+            quality_bins["4.0+"] += 1
+        elif q >= 3.0:
+            quality_bins["3.0-3.9"] += 1
+        elif q >= 2.0:
+            quality_bins["2.0-2.9"] += 1
         else:
-            quality_distribution["<2.0"] += 1
-    
-    # Top combination pairs (sample from first 100 papers)
-    combo_analysis = {"supplement_goal": {}, "goal_population": {}}
-    for doc in docs[:100]:  # Analyze top 100 papers
-        supplements = doc.get("supplements", "").split(",")
-        primary_goal = doc.get("primary_goal", "")
-        population = doc.get("population", "")
-        
-        for supp in supplements:
-            if supp.strip() and primary_goal:
-                key = f"{supp.strip()}_{primary_goal}"
-                combo_analysis["supplement_goal"][key] = combo_analysis["supplement_goal"].get(key, 0) + 1
-        
+            quality_bins["<2.0"] += 1
+
+        # Combos
+        primary_goal = (doc.get("primary_goal") or "").strip()
+        population = (doc.get("population") or "").strip()
+        if supps and primary_goal:
+            for sp in supps:
+                bump(combo_supp_goal, f"{sp}_{primary_goal}")
         if primary_goal and population:
-            key = f"{primary_goal}_{population}"
-            combo_analysis["goal_population"][key] = combo_analysis["goal_population"].get(key, 0) + 1
-    
-    # Top combinations (sorted by count)
-    top_supplement_goals = dict(sorted(combo_analysis["supplement_goal"].items(), 
-                                     key=lambda x: x[1], reverse=True)[:10])
-    top_goal_populations = dict(sorted(combo_analysis["goal_population"].items(), 
-                                     key=lambda x: x[1], reverse=True)[:5])
-    
-    metadata = {
-        "run_info": run_info,
-        "summary": {
-            "total_papers": len(docs),
-            "supplement_distribution": dict(sorted(supplement_counts.items(), 
-                                                 key=lambda x: x[1], reverse=True)),
-            "study_type_distribution": study_type_counts,
-            "goal_distribution": goal_counts,
-            "quality_distribution": quality_distribution,
-            "top_supplement_goal_combinations": top_supplement_goals,
-            "top_goal_population_combinations": top_goal_populations
-        },
-        "timestamp": datetime.utcnow().isoformat() + "Z"
+            bump(combo_goal_pop, f"{primary_goal}_{population}")
+
+    # Sort and truncate "top" combos
+    top_sg = dict(sorted(combo_supp_goal.items(), key=lambda x: x[1], reverse=True)[:10])
+    top_gp = dict(sorted(combo_goal_pop.items(), key=lambda x: x[1], reverse=True)[:5])
+
+    # Diagnostics
+    general_share = (goal_counts.get("general", 0) / total * 100.0) if total else 0.0
+    other_study_share = (study_type_counts.get("other", 0) / total * 100.0) if total else 0.0
+    nitric_oxide_count = supp_counts.get("nitric-oxide", 0)
+    nitric_oxide_share = (nitric_oxide_count / total * 100.0) if total else 0.0
+
+    summary = {
+        "total_papers": total,
+        "supplement_distribution": dict(sorted(supp_counts.items(), key=lambda x: x[1], reverse=True)),
+        "study_type_distribution": dict(sorted(study_type_counts.items(), key=lambda x: x[1], reverse=True)),
+        "study_category_distribution": dict(sorted(study_category_counts.items(), key=lambda x: x[1], reverse=True)),
+        "goal_distribution": dict(sorted(goal_counts.items(), key=lambda x: x[1], reverse=True)),
+        "quality_distribution": quality_bins,
+        "top_supplement_goal_combinations": top_sg,
+        "top_goal_population_combinations": top_gp,
+        "diagnostics": {
+            "general_share_percent": round(general_share, 2),
+            "other_study_type_share_percent": round(other_study_share, 2),
+            "nitric_oxide_share_percent": round(nitric_oxide_share, 2),
+        }
     }
-    
-    return metadata
+
+    return {"run_info": run_info, "summary": summary}
 
 
 def get_storage_stats(data_dir: str = DEFAULT_DATA_DIR) -> Dict[str, Any]:

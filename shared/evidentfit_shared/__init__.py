@@ -1,1 +1,1 @@
-__all__ = ["foundry_client", "search_client", "types", "guardrails"]
+__all__ = ["foundry_client", "search_client", "types", "guardrails", "utils"]

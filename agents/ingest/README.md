@@ -1,13 +1,13 @@
-# EvidentFit Ingest Agents
+# Agent A: Ingest Pipeline
 
 ## Overview
 
-The EvidentFit Ingest system has been split into two specialized agents for optimal performance and maintainability:
+**Agent A** is the ingestion/indexing agent that populates the Azure AI Search index with research papers. It consists of two sequential pipeline stages:
 
-1. **get_papers** - LLM-free paper fetching and selection (fast, high-recall)
-2. **paper_processor** - Heavy LLM processing and indexing (existing agent)
+1. **get_papers** - LLM-free paper fetching and selection pipeline (fast, high-recall)
+2. **paper_processor** - LLM processing and indexing pipeline (embedding + upload)
 
-This separation allows for fast, high-recall paper discovery without LLM costs, followed by targeted processing of selected papers.
+This two-stage architecture allows for fast, cost-effective paper discovery followed by targeted LLM processing of only the selected papers.
 
 ## Core Objectives
 
@@ -19,112 +19,127 @@ This separation allows for fast, high-recall paper discovery without LLM costs, 
 
 ## Architecture
 
-### Two-Agent Data Flow
+### Agent A Data Flow
 
 ```
-get_papers Agent (LLM-free):
-Multi-Query PubMed Search (30 supplements)
+Stage 1: get_papers (LLM-free pipeline)
+Multi-Query PubMed Search (63 supplements)
     ↓ [Date-based chunking to bypass 10K limit]
 XML Parsing & Metadata Extraction
-    ↓ [Parse Articles]
-Phase 1: Reliability Scoring (3.0-3.5 threshold)
-    ↓ [Quality Filter - maximize recall]
-Phase 2: Iterative Diversity Filtering (if >50K papers)
-    ↓ [Dynamic Selection - 50,000 papers]
+    ↓ [Rule-based parsing]
+Reliability Scoring & Quality Filter
+    ↓ [Quality threshold: 2.0]
+Diversity Filtering (if needed)
+    ↓ [Iterative diversity with minimum quotas]
 Local JSONL Storage
-    ↓ [data/ingest/raw/pm_papers.jsonl]
+    ↓ [data/ingest/runs/{timestamp}/pm_papers.jsonl]
 
-paper_processor Agent (LLM-heavy):
+Stage 2: paper_processor (LLM pipeline)
 Read JSONL from get_papers
     ↓ [Load selected papers]
 LLM Processing & Embeddings
-    ↓ [Heavy processing]
+    ↓ [Generate embeddings]
 Azure AI Search Index
-    ↓ [Upsert Documents]
+    ↓ [Upsert documents]
 Watermark Update
 ```
 
-### Agent Responsibilities
+### Pipeline Stage Responsibilities
 
-#### **get_papers Agent**
+#### **Stage 1: get_papers**
 - **Purpose**: Fast, LLM-free paper discovery and selection
 - **Input**: PubMed queries, quality thresholds, diversity parameters
-- **Processing**: Rule-based parsing, scoring, diversity filtering
-- **Output**: Selected papers in JSONL format + metadata
+- **Processing**: Rule-based parsing, scoring, diversity filtering, minimum quotas
+- **Output**: Selected papers in JSONL format + metadata + quota reports
 - **No LLM calls**: Pure rule-based processing for speed and cost efficiency
+- **Default target**: 30,000 papers
 
-#### **paper_processor Agent** 
-- **Purpose**: Heavy LLM processing and indexing
-- **Input**: JSONL from get_papers agent
-- **Processing**: LLM-based content analysis, embeddings, indexing
-- **Output**: Indexed papers in Azure AI Search
-- **LLM-heavy**: Uses embeddings and AI for content processing
+#### **Stage 2: paper_processor** 
+- **Purpose**: LLM processing and indexing to Azure AI Search
+- **Input**: JSONL from get_papers stage
+- **Processing**: Embeddings generation, content vectorization
+- **Output**: Indexed papers in Azure AI Search (Papers index)
+- **LLM-heavy**: Uses Azure AI Foundry embeddings
+- **Watermark**: Updates last ingestion timestamp
 
 ### Operating Modes
 
 #### **Bootstrap Mode**
 - Initial population of the index
-- Multi-query search across 30 supplements from 1990-01-01 to present
-- Lower quality threshold (3.0) to maximize recall
-- Iterative diversity filtering if >50K papers
-- Outputs 50,000 selected papers to JSONL
+- Multi-query search across 63 supplements from 1990-01-01 to present
+- Quality threshold: 2.0 (balanced selectivity)
+- Minimum quotas: 3 papers per supplement (configurable)
+- Iterative diversity filtering if papers > diversity threshold (30,000)
+- Default target: 30,000 papers
+- Outputs to timestamped run directory
 
 #### **Monthly Mode**
 - Incremental updates based on watermark
 - Fetches only papers published since last run
-- Lower quality threshold (2.5) for monthly updates
-- Simple top-K selection if ≤50K papers
-- Outputs selected papers to JSONL
+- Quality threshold: 2.0 (same as bootstrap)
+- Simple top-K selection if papers ≤ diversity threshold
+- Outputs to timestamped run directory
 
 ## Usage
 
 ### Command Line Interface
 
-The ingest system supports three task modes:
-
 ```bash
-# Run only get_papers agent (LLM-free fetching)
-python agents/ingest/run.py --task get_papers --mode bootstrap
+# AGENT A: Run complete ingestion pipeline (both stages)
+# TODO: Create run.py that orchestrates both stages
+python agents/ingest/run.py --mode bootstrap --target 30000
 
-# Run only paper_processor agent (LLM processing)
-python agents/ingest/run.py --task paper_processor
+# STAGE 1 ONLY: Get papers (LLM-free fetching, parsing, scoring, selection)
+python agents/ingest/get_papers/pipeline.py --mode bootstrap --target 30000
 
-# Run both agents sequentially
-python agents/ingest/run.py --task both --mode monthly
-
-# Direct get_papers pipeline
-python -m agents.ingest.get_papers.pipeline --mode bootstrap --limit 6000
+# STAGE 2 ONLY: Paper processor (LLM processing and indexing)
+python agents/ingest/paper_processor/run_optimized_pipeline.py
 ```
 
 ### Configuration
 
-Environment variables for get_papers agent:
+Environment variables for Stage 1 (get_papers):
 
 ```bash
-# Quality thresholds (lowered for better recall)
-QUALITY_FLOOR_BOOTSTRAP=3.0    # Bootstrap mode threshold
-QUALITY_FLOOR_MONTHLY=2.5      # Monthly mode threshold
+# Quality thresholds
+QUALITY_FLOOR_BOOTSTRAP=2.0    # Bootstrap mode threshold (default: 2.0)
+QUALITY_FLOOR_MONTHLY=2.0      # Monthly mode threshold (default: 2.0)
 
 # Diversity filtering
-DIVERSITY_ROUNDS_THRESHOLD=50000  # Run iterative filtering if >50K papers
+DIVERSITY_ROUNDS_THRESHOLD=30000  # Run iterative filtering if papers > threshold (default: 30000)
 
 # Limits
-INGEST_LIMIT=50000              # Target number of papers
-MAX_TOTAL_PAPERS=200000         # Global safety limit
-MAX_TEMP_LIMIT=100000           # Temporary limit during processing
+INGEST_LIMIT=30000              # Default target number of papers (default: 30000)
+MAX_TOTAL_PAPERS=500000         # Global safety limit for PubMed fetch (default: 500000)
+
+# Minimum quotas (per-supplement protection)
+MIN_PER_SUPPLEMENT=3            # Minimum papers per supplement (0 disables)
+INCLUDE_LOW_QUALITY_IN_MIN=true # Include low-quality papers to meet quotas
+MIN_QUOTA_RARE_ONLY=false       # Only apply quotas to rare supplements
+RARE_THRESHOLD=5                # Papers threshold to consider supplement "rare"
+EXCLUDED_SUPPS_FOR_MIN=nitric-oxide  # Comma-separated supplements to exclude from quotas
+
+# Storage
+RUNS_BASE_DIR=data/ingest/runs  # Base directory for run outputs
+KEEP_LAST_RUNS=8                # Number of old runs to keep (auto-pruning)
+COMPRESS_PAPERS=false           # Compress JSONL files (gzip)
 
 # PubMed API
 NCBI_EMAIL=your@email.com       # Required for PubMed API
-NCBI_API_KEY=optional_key       # Optional API key
+NCBI_API_KEY=optional_key       # Optional API key for higher rate limits
+
+# Logging
+LOG_LEVEL=info                  # Log level (debug, info, warning, error)
 ```
 
 ### Output Files
 
-The get_papers agent creates:
+Stage 1 (get_papers) creates:
 
-- `data/ingest/raw/pm_papers.jsonl` - Selected papers in JSONL format
-- `data/ingest/raw/metadata.json` - Run metadata and statistics
-- `data/ingest/raw/watermark.json` - Watermark for incremental updates
+- `data/ingest/runs/{timestamp}/pm_papers.jsonl` - Selected papers in JSONL format
+- `data/ingest/runs/{timestamp}/metadata.json` - Run metadata and statistics
+- `data/ingest/runs/{timestamp}/protected_quota_report.json` - Minimum quota tracking
+- `data/ingest/runs/latest.json` - Pointer to latest run
 
 ## Scoring Methodology
 
