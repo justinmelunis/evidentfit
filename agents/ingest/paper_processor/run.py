@@ -173,15 +173,25 @@ def main():
     ap.add_argument("--ctx-tokens", type=int, default=16384)
     ap.add_argument("--max-new-tokens", type=int, default=640)
     ap.add_argument("--model", type=str, default="mistralai/Mistral-7B-Instruct-v0.3")
-    ap.add_argument("--resume-summaries", type=str, default=None, help="Path to an existing summaries .jsonl or .jsonl.tmp to resume into")
+    ap.add_argument("--resume-summaries", type=str, default=None, help="Path to an existing summaries .jsonl or .jsonl.tmp to resume into (bootstrap mode only)")
+    ap.add_argument("--mode", type=str, choices=["bootstrap", "monthly"], default="bootstrap", help="Run mode: bootstrap (create new) or monthly (append to master)")
+    ap.add_argument("--master-summaries", type=str, default=None, help="Path to master summaries file (required for monthly mode)")
     args = ap.parse_args()
+    
+    # Validation
+    if args.mode == "monthly":
+        if not args.master_summaries:
+            raise ValueError("--master-summaries required for monthly mode")
+        if args.resume_summaries:
+            raise ValueError("Resume not supported in monthly mode (safety). Re-run from start - cross-run dedupe prevents duplicates.")
 
-    run_id = f"paper_processor_{int(time.time())}"
+    run_id = f"paper_processor_{args.mode}_{int(time.time())}"
     setup_logging()
     LOG.info("=" * 80)
-    LOG.info("PAPER PROCESSOR START (streaming + resume)")
+    LOG.info(f"PAPER PROCESSOR START ({args.mode.upper()} MODE)")
     LOG.info("=" * 80)
-    LOG.info(f"Run: {run_id}")
+    LOG.info(f"Run ID: {run_id}")
+    LOG.info(f"Mode: {args.mode}")
 
     papers_jsonl = resolve_selected_papers(args.papers_jsonl)
     LOG.info(f"Selected papers: {papers_jsonl}")
@@ -204,16 +214,41 @@ def main():
     storage = StorageManager()
     storage.initialize()
 
-    # Resume: pre-load seen dedupe keys from existing summaries (tmp or final)
+    # Monthly vs Bootstrap mode setup
     seen_keys = set()
-    if args.resume_summaries:
-        resume_path = Path(args.resume_summaries)
-        LOG.info(f"Resume requested from: {resume_path}")
-        for dk in storage.iter_dedupe_keys(resume_path):
-            seen_keys.add(dk)
-        storage.open_summaries_writer(resume_path=str(resume_path))
+    master_size_before = 0
+    
+    if args.mode == "monthly":
+        # Monthly mode: Append to master with cross-run deduplication
+        master_path = Path(args.master_summaries)
+        LOG.info(f"Monthly mode: Master summaries at {master_path}")
+        
+        if not master_path.exists():
+            LOG.warning(f"Master not found, will create: {master_path}")
+        else:
+            # Load dedupe keys from master
+            LOG.info("Loading dedupe keys from master for cross-run deduplication...")
+            seen_keys = storage.load_master_dedupe_keys(master_path)
+            LOG.info(f"Loaded {len(seen_keys):,} dedupe keys from master")
+            
+            # Count current master size
+            with open(master_path, "r", encoding="utf-8") as f:
+                master_size_before = sum(1 for line in f if line.strip())
+            LOG.info(f"Master size before: {master_size_before:,} papers")
+        
+        # Open master for appending (auto-creates backup)
+        storage.open_summaries_appender(master_path)
+        
     else:
-        storage.open_summaries_writer()
+        # Bootstrap mode: Create new file or resume from tmp
+        if args.resume_summaries:
+            resume_path = Path(args.resume_summaries)
+            LOG.info(f"Resume requested from: {resume_path}")
+            for dk in storage.iter_dedupe_keys(resume_path):
+                seen_keys.add(dk)
+            storage.open_summaries_writer(resume_path=str(resume_path))
+        else:
+            storage.open_summaries_writer()
 
     # Telemetry counters
     papers_in = 0
@@ -305,7 +340,11 @@ def main():
                 norm_chunks,
             )
 
-            storage.write_summary_line(merged)
+            # Write summary (tracks for monthly delta if in monthly mode)
+            if args.mode == "monthly":
+                storage.write_summary_line_monthly(merged)
+            else:
+                storage.write_summary_line(merged)
             papers_out += 1
             
             paper_elapsed = time.time() - t0
@@ -353,9 +392,39 @@ def main():
 
         final_summaries_path = storage.close_summaries_writer()
 
+        # Monthly mode: Calculate master size after, save delta, rebuild index
+        master_size_after = 0
+        delta_path = None
+        index_path = None
+        
+        if args.mode == "monthly":
+            master_path = Path(args.master_summaries)
+            
+            # Count master size after appending
+            with open(master_path, "r", encoding="utf-8") as f:
+                master_size_after = sum(1 for line in f if line.strip())
+            
+            LOG.info(f"Master size after: {master_size_after:,} papers (+{master_size_after - master_size_before:,})")
+            
+            # Rebuild master index
+            LOG.info("Rebuilding master index...")
+            index = storage.build_master_index(master_path)
+            index_path = storage.save_master_index(index, master_path)
+            LOG.info(f"Master index saved: {index_path} ({len(index):,} entries)")
+            
+            # Validate master
+            LOG.info("Validating master...")
+            valid, errors = storage.validate_master(master_path, index_path)
+            if not valid:
+                LOG.error(f"Master validation failed: {errors}")
+                LOG.error("Consider restoring from backup!")
+            else:
+                LOG.info("Master validation passed")
+
         elapsed = time.time() - start
         stats = {
             "run_id": run_id,
+            "mode": args.mode,
             "papers_in": papers_in,
             "papers_out": papers_out,
             "skipped_empty": skipped_empty,
@@ -409,16 +478,38 @@ def main():
             },
             "summaries_path": str(final_summaries_path.as_posix()),
         }
+        
+        # Add monthly-specific stats
+        if args.mode == "monthly":
+            stats["master_size_before"] = master_size_before
+            stats["master_size_after"] = master_size_after
+            stats["net_additions"] = master_size_after - master_size_before
+            stats["master_index_path"] = str(index_path.as_posix()) if index_path else None
+        
         storage.save_processing_stats(stats)
+        
+        # Save monthly delta
+        if args.mode == "monthly":
+            LOG.info("Saving monthly delta...")
+            delta_path = storage.save_monthly_delta(stats)
+            LOG.info(f"Monthly delta saved: {delta_path}")
+        
         LOG.info("Done.")
         
         # Enhanced final summary
         print("\n" + "=" * 80)
-        print("PAPER PROCESSOR COMPLETE")
+        print(f"PAPER PROCESSOR COMPLETE ({args.mode.upper()} MODE)")
         print("=" * 80)
         print(f"Papers: {papers_out} successful / {papers_in} total ({papers_out/papers_in*100:.1f}%)")
         print(f"Skipped: {skipped_empty} empty, {skipped_dedup} duplicates")
         print(f"Failed: {len(failed_papers)} papers ({len(failed_papers)/papers_in*100:.1f}%)")
+        
+        if args.mode == "monthly":
+            print(f"\nMaster Corpus:")
+            print(f"  Before: {master_size_before:,} papers")
+            print(f"  After: {master_size_after:,} papers")
+            print(f"  Added: {master_size_after - master_size_before:,} papers")
+        
         print(f"\nFull-text: {fulltext_used}/{papers_out} ({fulltext_used/papers_out*100:.1f}%)")
         print(f"Abstract-only: {abstract_only}/{papers_out} ({abstract_only/papers_out*100:.1f}%)")
         print(f"\nChunking: {chunks_total} total chunks, avg {chunks_total/papers_out:.2f} per paper")
@@ -428,6 +519,8 @@ def main():
               f"median={sorted(per_paper_latency)[len(per_paper_latency)//2] if per_paper_latency else 0:.1f}s, "
               f"max={max(per_paper_latency) if per_paper_latency else 0:.1f}s")
         print(f"\nOutput: {final_summaries_path}")
+        if delta_path:
+            print(f"Delta: {delta_path}")
         print("=" * 80)
 
     except Exception as e:
