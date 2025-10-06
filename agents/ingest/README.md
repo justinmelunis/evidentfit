@@ -57,12 +57,18 @@ python -m agents.ingest.get_papers.pipeline --mode monthly --target 2000
 ```
 
 ```bash
-# Phase 2: Process new papers with GPU (~1-2 days)
-# TODO: Not yet implemented - use bootstrap mode for now
-python -m agents.ingest.paper_processor.run --max-papers 2000
+# Phase 2: Process new papers with GPU (~18-24 hours)
+python -m agents.ingest.paper_processor.run \
+  --mode monthly \
+  --master-summaries data/paper_processor/master/summaries_master.jsonl \
+  --max-papers 2000
 ```
 
-**Expected monthly additions**: 800-1,200 papers (stable, predictable)
+**What happens:**
+- ✓ get_papers: ~4K papers fetched → ~900 selected (quality-filtered)
+- ✓ paper_processor: Loads 30K dedupe keys → processes ~850 NEW → appends to master
+- ✓ Auto-backup master, save monthly delta, rebuild index, validate
+- ✓ Expected: ~800-900 papers added to corpus/month (stable)
 
 ---
 
@@ -172,34 +178,53 @@ Stream write → Resume-safe output
 
 ## One-Time Setup (After Bootstrap Completes)
 
-### Generate Monthly Thresholds
+Run these steps once to prepare for monthly updates:
 
-After your bootstrap run finishes:
+### 1. Generate Monthly Thresholds
+
+After get_papers bootstrap finishes:
 
 ```bash
 # Analyze bootstrap corpus and generate hard-coded thresholds
 python scripts/generate_monthly_thresholds.py data/ingest/runs/<timestamp>/pm_papers.jsonl
 
-# This creates: agents/ingest/get_papers/monthly_thresholds.py
+# This creates: agents/ingest/get_papers/monthly_thresholds.py (80 supplements)
 # Review the thresholds, then commit:
 git add agents/ingest/get_papers/monthly_thresholds.py
 git commit -m "Set monthly quality thresholds from bootstrap corpus"
 ```
 
-### Initialize Master Summaries (paper_processor)
+### 2. Initialize Master Summaries
+
+After paper_processor bootstrap completes:
 
 ```bash
-# After paper_processor bootstrap completes:
+# Create directory structure
 mkdir -p data/paper_processor/master
 mkdir -p data/paper_processor/monthly_deltas
 
-# Copy bootstrap output as master
+# Designate bootstrap output as master
 cp data/paper_processor/summaries/summaries_<timestamp>.jsonl \
    data/paper_processor/master/summaries_master.jsonl
 
 # Save bootstrap as first delta (audit trail)
 cp data/paper_processor/master/summaries_master.jsonl \
    data/paper_processor/monthly_deltas/2025-10-05_bootstrap.jsonl
+
+# Build initial index
+python -c "from agents.ingest.paper_processor.storage_manager import StorageManager; \
+from pathlib import Path; \
+s = StorageManager(); \
+idx = s.build_master_index(Path('data/paper_processor/master/summaries_master.jsonl')); \
+s.save_master_index(idx, Path('data/paper_processor/master/summaries_master.jsonl')); \
+print(f'Index built: {len(idx):,} entries')"
+```
+
+### 3. Validate Setup
+
+```bash
+# Verify master is valid
+python scripts/validate_master_summaries.py
 ```
 
 **Now you're ready for monthly updates!**
@@ -260,14 +285,21 @@ data/paper_processor/
 ```
 data/ingest/runs/20251105_xxxxxx/
 ├── pm_papers.jsonl              # ~900 new papers
-└── metadata.json                # Includes monthly filter stats
+├── metadata.json                # Includes monthly filter stats
+└── fulltext_manifest.json       # +800-900 new full texts
 
 data/fulltext_store/             # Incremental additions
 └── <shard>/<shard>/             # +800-900 new full texts
 
 data/paper_processor/
-├── master/summaries_master.jsonl  # Appended ~850 summaries (TODO)
-└── monthly_deltas/2025-11-05_delta.jsonl  # Monthly backup (TODO)
+├── master/
+│   ├── summaries_master.jsonl            # Appended ~850 summaries (30K → 30.85K)
+│   ├── summaries_master.jsonl.backup_*   # Auto-created before append
+│   └── master_index.json                 # Rebuilt after append
+├── monthly_deltas/
+│   └── 2025-11-05_delta.jsonl            # ~850 papers with metadata
+└── stats/
+    └── stats_<timestamp>.json            # Monthly run statistics
 ```
 
 ---
@@ -298,6 +330,16 @@ python scripts/analyze_corpus_quality.py data/ingest/runs/<timestamp>/pm_papers.
 cat data/ingest/runs/<timestamp>/fulltext_manifest.json | jq '.coverage'
 ```
 
+### Monthly Growth Trends
+
+```bash
+# Analyze monthly additions over time
+python scripts/monthly_growth_report.py
+
+# Validate master summaries (check for duplicates)
+python scripts/validate_master_summaries.py
+```
+
 ---
 
 ## Troubleshooting
@@ -317,8 +359,11 @@ cat data/ingest/runs/<timestamp>/fulltext_manifest.json | jq '.coverage'
 |---------|----------|
 | **CUDA Out of Memory** | Use `--batch-size 1` (default), reduce `--ctx-tokens` |
 | **Slow Processing** | Expected: ~4-5 papers/min on RTX 3080 |
-| **Run Interrupted** | Use `--resume-summaries <path>.jsonl.tmp` |
+| **Run Interrupted (bootstrap)** | Use `--resume-summaries <path>.jsonl.tmp` |
+| **Run Interrupted (monthly)** | Re-run from start - cross-run dedupe prevents duplicates |
 | **Missing Fields** | Two-pass extraction auto-repairs missing fields |
+| **Master Validation Failed** | Restore from `.backup_*` file, re-run monthly |
+| **Duplicates in Master** | Run `rebuild_master_from_deltas.py` to rebuild clean master |
 
 ---
 
