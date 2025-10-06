@@ -60,21 +60,51 @@ def main():
     print("=" * 70)
     print(f"Total papers:       {manifest['total']:,}")
     
-    # Handle both old and new manifest formats
-    if 'content_breakdown' in manifest:
+    # Handle different manifest formats
+    if 'unpaywall_total' in manifest:
+        # Newest format with Unpaywall tracking
+        fulltext_count = manifest.get('full_text_with_body', 0)
+        fulltext_pct = manifest.get('full_text_percent', 0)
+        pmc_full = manifest.get('pmc_full_text', 0)
+        pmc_abstract = manifest.get('pmc_abstract_only', 0)
+        unpaywall_full = manifest.get('unpaywall_full_text', 0)
+        unpaywall_rescued = manifest.get('unpaywall_rescued', 0)
+        abstract_final = manifest.get('abstract_only_final', 0)
+        abstract_final_pct = manifest.get('abstract_only_percent', 0)
+        
+        print(f"Full text (total):  {fulltext_count:,} ({fulltext_pct}%)")
+        print(f"  ├─ PMC full:      {pmc_full:,}")
+        print(f"  └─ Unpaywall:     {unpaywall_full:,} ({unpaywall_rescued} rescued from PMC abstract-only)")
+        print(f"Abstract only:      {abstract_final:,} ({abstract_final_pct}%)")
+    elif 'full_text_with_body' in manifest:
+        # Old format with quality detection but no Unpaywall
+        fulltext_count = manifest.get('full_text_with_body', 0)
+        fulltext_pct = manifest.get('full_text_percent', 0)
+        abstract_from_pmc = manifest.get('abstract_only_from_pmc', 0)
+        abstract_from_pmc_pct = manifest.get('abstract_only_percent', 0)
+        pmc_total = manifest.get('pmc_ok', 0)
+        no_pmc = manifest['total'] - pmc_total
+        no_pmc_pct = round(no_pmc / manifest['total'] * 100, 2) if manifest['total'] else 0
+        
+        print(f"Full text (w/ body): {fulltext_count:,} ({fulltext_pct}%)")
+        print(f"PMC abstract only:  {abstract_from_pmc:,} ({abstract_from_pmc_pct}%)")
+        print(f"No PMC content:     {no_pmc:,} ({no_pmc_pct}%)")
+    elif 'content_breakdown' in manifest:
+        # Old content_breakdown format
         fulltext_count = manifest['content_breakdown']['fulltext_available']
         fulltext_pct = manifest['content_breakdown']['fulltext_percent']
         abstract_only = manifest['content_breakdown']['abstract_only']
         abstract_pct = manifest['content_breakdown']['abstract_only_percent']
+        print(f"Full text:          {fulltext_count:,} ({fulltext_pct}%)")
+        print(f"Abstract only:      {abstract_only:,} ({abstract_pct}%)")
     else:
-        # Calculate from pmc_ok for older manifests
+        # Legacy format
         fulltext_count = manifest.get('pmc_ok', 0)
         fulltext_pct = manifest.get('pmc_ok_percent', 0)
         abstract_only = manifest['total'] - fulltext_count
         abstract_pct = round(abstract_only / manifest['total'] * 100, 2) if manifest['total'] else 0
-    
-    print(f"Full text:          {fulltext_count:,} ({fulltext_pct}%)")
-    print(f"Abstract only:      {abstract_only:,} ({abstract_pct}%)")
+        print(f"PMC content:        {fulltext_count:,} ({fulltext_pct}%)")
+        print(f"No PMC:             {abstract_only:,} ({abstract_pct}%)")
     
     if 'storage_estimate_mb' in manifest:
         print(f"Storage used:       {manifest['storage_estimate_mb']:.1f} MB")

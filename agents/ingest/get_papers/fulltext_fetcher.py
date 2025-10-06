@@ -48,14 +48,20 @@ try:
 except ImportError:
     BeautifulSoup = None  # Will use fallback tag stripping
 
+try:
+    from pypdf import PdfReader
+except ImportError:
+    PdfReader = None  # PDF extraction unavailable
+
 logger = logging.getLogger(__name__)
 
 EUTILS_BASE = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils"
 NCBI_PMC_OA = "https://www.ncbi.nlm.nih.gov/pmc/utils/oa/oa.fcgi"
+UNPAYWALL_API_BASE = "https://api.unpaywall.org/v2"
 
 DEFAULT_TIMEOUT = httpx.Timeout(connect=10.0, read=30.0, write=30.0, pool=10.0)
 HEADERS = {
-    "User-Agent": "EvidentFit-Fulltext-Fetcher/1.0 (+https://example.com; contact: ops@evidentfit.local)"
+    "User-Agent": "EvidentFit-Fulltext-Fetcher/1.0 (+https://evidentfit.com; contact: research@evidentfit.com)"
 }
 
 # NCBI rate limiting: 3 req/sec without API key, 10 req/sec with key
@@ -63,6 +69,10 @@ NCBI_API_KEY = os.getenv("NCBI_API_KEY", "").strip()
 RATE_LIMIT_DELAY = 0.34 if not NCBI_API_KEY else 0.11  # Conservative: ~3/sec or ~9/sec
 MAX_RETRIES = 3
 RETRY_BACKOFF = [1, 5, 15]  # Exponential backoff for 429 errors
+
+# Unpaywall configuration
+UNPAYWALL_EMAIL = os.getenv("UNPAYWALL_EMAIL", "research@evidentfit.com")  # Required
+ENABLE_UNPAYWALL = os.getenv("ENABLE_UNPAYWALL", "true").lower() == "true"
 
 def _read_jsonl(path: Path) -> Iterable[Dict[str, Any]]:
     with open(path, "r", encoding="utf-8") as f:
@@ -383,6 +393,102 @@ async def _fetch_text(client: httpx.AsyncClient, url: str) -> Optional[str]:
     except Exception:
         return None
 
+# ============================================================================
+# Unpaywall Integration
+# ============================================================================
+
+def _extract_text_from_pdf(pdf_bytes: bytes, max_pages: int = 50) -> Optional[str]:
+    """Extract text from PDF bytes. Returns None if extraction fails."""
+    if not PdfReader:
+        logger.warning("pypdf not available - cannot extract PDF text")
+        return None
+    
+    try:
+        import io
+        pdf_file = io.BytesIO(pdf_bytes)
+        reader = PdfReader(pdf_file)
+        
+        text_parts = []
+        pages_to_read = min(len(reader.pages), max_pages)
+        
+        for i in range(pages_to_read):
+            try:
+                page_text = reader.pages[i].extract_text()
+                if page_text:
+                    text_parts.append(page_text)
+            except Exception as e:
+                logger.debug(f"Failed to extract page {i}: {e}")
+                continue
+        
+        if not text_parts:
+            return None
+        
+        full_text = "\n\n".join(text_parts)
+        
+        # Basic cleanup for PDFs
+        # Remove common PDF artifacts
+        full_text = re.sub(r'\s+', ' ', full_text)  # Normalize whitespace
+        full_text = re.sub(r'(\w)-\s+(\w)', r'\1\2', full_text)  # Fix hyphenation
+        full_text = full_text.replace('\x00', '')  # Remove null bytes
+        
+        # Quality check: must have reasonable content
+        if len(full_text) < 500:
+            return None
+        
+        return full_text
+        
+    except Exception as e:
+        logger.debug(f"PDF extraction failed: {e}")
+        return None
+
+async def _fetch_unpaywall(
+    client: httpx.AsyncClient,
+    doi: str,
+) -> Optional[Tuple[str, bytes, str]]:
+    """
+    Query Unpaywall for DOI and fetch PDF if available.
+    Returns (url, pdf_bytes, format) or None.
+    format is 'pdf' or 'html'
+    """
+    if not doi or not ENABLE_UNPAYWALL:
+        return None
+    
+    try:
+        # Query Unpaywall API
+        api_url = f"{UNPAYWALL_API_BASE}/{doi}"
+        params = {"email": UNPAYWALL_EMAIL}
+        
+        r = await client.get(api_url, params=params)
+        if r.status_code != 200:
+            return None
+        
+        data = r.json()
+        best_oa = data.get("best_oa_location")
+        if not best_oa:
+            return None
+        
+        # Prefer PDF, fallback to HTML
+        pdf_url = best_oa.get("url_for_pdf")
+        html_url = best_oa.get("url")
+        
+        if pdf_url:
+            # Fetch PDF
+            pdf_r = await client.get(pdf_url, follow_redirects=True)
+            if pdf_r.status_code == 200 and len(pdf_r.content) > 10000:  # At least 10KB
+                return (pdf_url, pdf_r.content, "pdf")
+        
+        if html_url:
+            # Fetch HTML (basic, for future enhancement)
+            html_r = await client.get(html_url, follow_redirects=True)
+            if html_r.status_code == 200 and len(html_r.content) > 1000:
+                return (html_url, html_r.content, "html")
+        
+        return None
+        
+    except Exception as e:
+        logger.debug(f"Unpaywall fetch failed for {doi}: {e}")
+        return None
+
 async def _fetch_one_fulltext(
     client: httpx.AsyncClient,
     paper: Dict[str, Any],
@@ -420,9 +526,23 @@ async def _fetch_one_fulltext(
                     xml_text = await _fetch_text(client, xml_url)
                     if xml_text:
                         # Extract content but don't store raw XML (saves ~200KB per paper)
-                        record["fulltext_text"] = _extract_article_content(xml_text)
-                        record["sources"]["pmc"]["status"] = "ok"
+                        fulltext = _extract_article_content(xml_text)
+                        record["fulltext_text"] = fulltext
                         record["sources"]["pmc"]["fulltext_bytes"] = len(xml_text)
+                        
+                        # Quality check: actual body sections or just abstract?
+                        has_body = bool(re.search(
+                            r'(INTRODUCTION|METHODS|RESULTS|DISCUSSION|BACKGROUND|MATERIALS AND METHODS|STUDY DESIGN|PARTICIPANTS):',
+                            fulltext
+                        ))
+                        
+                        if has_body:
+                            record["sources"]["pmc"]["status"] = "ok"
+                            record["sources"]["pmc"]["has_body_sections"] = True
+                        else:
+                            record["sources"]["pmc"]["status"] = "abstract_only"
+                            record["sources"]["pmc"]["has_body_sections"] = False
+                        
                         return (pmid or doi or "unknown", record)
                 
                 # Fallback: Use EFetch to get PMC XML (works for all PMC articles, not just OA)
@@ -444,11 +564,26 @@ async def _fetch_one_fulltext(
                     if r.status_code == 200 and r.text and len(r.text) > 1000:
                         xml_text = r.text
                         # Extract content but don't store raw XML (saves ~200KB per paper)
-                        record["fulltext_text"] = _extract_article_content(xml_text)
+                        fulltext = _extract_article_content(xml_text)
+                        record["fulltext_text"] = fulltext
                         record["sources"]["pmc"]["xml_url"] = f"{fallback_xml_url}?db=pmc&id={pmcid}&rettype=xml"
-                        record["sources"]["pmc"]["status"] = "ok_efetch"
                         record["sources"]["pmc"]["fulltext_bytes"] = len(xml_text)
-                        logger.debug(f"Fetched via EFetch for {pmcid} ({len(xml_text)} bytes → {len(record['fulltext_text'])} chars)")
+                        
+                        # Quality check: Do we have actual body sections or just title+abstract?
+                        has_body = bool(re.search(
+                            r'(INTRODUCTION|METHODS|RESULTS|DISCUSSION|BACKGROUND|MATERIALS AND METHODS|STUDY DESIGN|PARTICIPANTS):',
+                            fulltext
+                        ))
+                        
+                        if has_body:
+                            record["sources"]["pmc"]["status"] = "ok_efetch"
+                            record["sources"]["pmc"]["has_body_sections"] = True
+                            logger.debug(f"Full text with body for {pmcid} ({len(xml_text)} bytes → {len(fulltext)} chars)")
+                        else:
+                            record["sources"]["pmc"]["status"] = "abstract_only"
+                            record["sources"]["pmc"]["has_body_sections"] = False
+                            logger.debug(f"Abstract only for {pmcid} ({len(xml_text)} bytes → {len(fulltext)} chars)")
+                        
                         return (pmid or doi or "unknown", record)
                 except Exception as e:
                     logger.debug(f"EFetch failed for {pmcid}: {e}")
@@ -458,7 +593,63 @@ async def _fetch_one_fulltext(
             record["sources"]["pmc"]["status"] = "error"
             record["sources"]["pmc"]["error"] = str(e)
 
-    # No PMC text fetched — leave DOI/publisher hints only.
+    # Unpaywall fallback: Try if PMC failed OR returned abstract-only
+    pmc_status = record["sources"]["pmc"]["status"]
+    needs_unpaywall = pmc_status in ("none", "error", "abstract_only")
+    
+    if needs_unpaywall and doi and ENABLE_UNPAYWALL:
+        try:
+            unpaywall_result = await _fetch_unpaywall(client, doi)
+            if unpaywall_result:
+                url, content_bytes, format_type = unpaywall_result
+                
+                # Add unpaywall source to record
+                record["sources"]["unpaywall"] = {
+                    "url": url,
+                    "format": format_type,
+                    "status": "ok",
+                    "content_bytes": len(content_bytes)
+                }
+                
+                if format_type == "pdf":
+                    # Extract text from PDF
+                    pdf_text = _extract_text_from_pdf(content_bytes)
+                    if pdf_text:
+                        # Check if we got body sections
+                        has_body = bool(re.search(
+                            r'(Introduction|Methods|Results|Discussion|Background|Materials and Methods|Study Design|Participants)',
+                            pdf_text,
+                            re.IGNORECASE
+                        ))
+                        
+                        record["fulltext_text"] = pdf_text
+                        record["sources"]["unpaywall"]["has_body_sections"] = has_body
+                        
+                        if has_body:
+                            record["sources"]["unpaywall"]["status"] = "ok_pdf"
+                            logger.debug(f"Unpaywall PDF with body for {doi} ({len(content_bytes)} bytes → {len(pdf_text)} chars)")
+                        else:
+                            record["sources"]["unpaywall"]["status"] = "abstract_only"
+                            logger.debug(f"Unpaywall PDF abstract-only for {doi}")
+                        
+                        # Override PMC abstract-only with Unpaywall full text
+                        if pmc_status == "abstract_only" and has_body:
+                            logger.info(f"✓ Unpaywall rescued abstract-only PMC: {pmid}")
+                        
+                        return (pmid or doi or "unknown", record)
+                    else:
+                        record["sources"]["unpaywall"]["status"] = "extraction_failed"
+                
+                elif format_type == "html":
+                    # Basic HTML handling (future: improve with BeautifulSoup)
+                    record["sources"]["unpaywall"]["status"] = "html_available"
+                    # For now, don't extract HTML - keep PMC abstract or original abstract
+        
+        except Exception as e:
+            logger.debug(f"Unpaywall fallback failed for {doi}: {e}")
+            record["sources"]["unpaywall"] = {"status": "error", "error": str(e)}
+
+    # Return what we have (PMC, Unpaywall, or just hints)
     return (pmid or doi or "unknown", record)
 
 async def _bounded_worker(
@@ -478,13 +669,51 @@ def _write_json_atomic(path: Path, payload: Dict[str, Any]) -> None:
     os.replace(tmp, path)
 
 def _manifest_stats(entries: List[Dict[str, Any]]) -> Dict[str, Any]:
-    # Count both "ok" (OA service) and "ok_efetch" (fallback) as successful
-    ok = sum(1 for e in entries if e.get("pmc_status") in ("ok", "ok_efetch"))
+    """
+    Calculate comprehensive stats tracking PMC and Unpaywall sources.
+    """
     total = len(entries)
+    
+    # PMC stats
+    pmc_full = sum(1 for e in entries if e.get("pmc_status") in ("ok", "ok_efetch") and e.get("pmc_has_body", False))
+    pmc_abstract = sum(1 for e in entries if e.get("pmc_status") == "abstract_only")
+    pmc_total = pmc_full + pmc_abstract
+    
+    # Unpaywall stats
+    unpaywall_full = sum(1 for e in entries if e.get("unpaywall_status") == "ok_pdf" and e.get("unpaywall_has_body", False))
+    unpaywall_abstract = sum(1 for e in entries if e.get("unpaywall_status") == "abstract_only")
+    unpaywall_total = unpaywall_full + unpaywall_abstract
+    
+    # Combined full-text count (PMC OR Unpaywall with body)
+    full_text_total = sum(1 for e in entries if e.get("pmc_has_body", False) or e.get("unpaywall_has_body", False))
+    
+    # Papers with no full text from either source
+    no_fulltext = total - full_text_total
+    
     return {
         "total": total,
-        "pmc_ok": ok,
-        "pmc_ok_percent": round((ok / total) * 100, 2) if total else 0.0
+        
+        # PMC breakdown
+        "pmc_total": pmc_total,
+        "pmc_full_text": pmc_full,
+        "pmc_abstract_only": pmc_abstract,
+        "pmc_percent": round((pmc_total / total) * 100, 2) if total else 0.0,
+        
+        # Unpaywall breakdown
+        "unpaywall_total": unpaywall_total,
+        "unpaywall_full_text": unpaywall_full,
+        "unpaywall_rescued": sum(1 for e in entries if e.get("pmc_status") == "abstract_only" and e.get("unpaywall_has_body", False)),
+        "unpaywall_percent": round((unpaywall_total / total) * 100, 2) if total else 0.0,
+        
+        # Overall full-text coverage
+        "full_text_with_body": full_text_total,
+        "full_text_percent": round((full_text_total / total) * 100, 2) if total else 0.0,
+        "abstract_only_final": no_fulltext,
+        "abstract_only_percent": round((no_fulltext / total) * 100, 2) if total else 0.0,
+        
+        # Legacy compatibility
+        "pmc_ok": pmc_total,
+        "pmc_ok_percent": round((pmc_total / total) * 100, 2) if total else 0.0
     }
 
 def fetch_fulltexts_for_jsonl(
@@ -550,11 +779,18 @@ def fetch_fulltexts_for_jsonl(
                 else:
                     _write_json_atomic(store_path, data)
                     saved_count += 1
+                # Extract detailed status for manifest
+                pmc_source = (data.get("sources", {}).get("pmc", {}) or {})
+                unpaywall_source = (data.get("sources", {}).get("unpaywall", {}) or {})
+                
                 entries.append({
                     "pmid": pmid,
                     "doi": doi,
                     "stored_path": str(store_path.resolve()),
-                    "pmc_status": pmc_status
+                    "pmc_status": pmc_source.get("status", "none"),
+                    "pmc_has_body": pmc_source.get("has_body_sections", False),
+                    "unpaywall_status": unpaywall_source.get("status", "none"),
+                    "unpaywall_has_body": unpaywall_source.get("has_body_sections", False)
                 })
         # Build detailed stats
         manifest_stats = _manifest_stats(entries)
