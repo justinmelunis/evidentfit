@@ -1,180 +1,200 @@
-from typing import Dict, Any, List
-import re
-from collections import Counter, defaultdict
+"""
+Schema helpers for the paper processor.
 
-def create_optimized_prompt(p: Dict[str, Any]) -> str:
-    title = p.get("title", "Unknown Title")
-    abstract = p.get("content", "")
-    supplements = p.get("supplements", "")
-    study_type = p.get("study_type", "")
-    journal = p.get("journal", "")
-    year = p.get("year", "")
-    pmid = p.get("pmid", "")
-    doi = p.get("doi", "")
-
-    return f"""You are a domain expert. Read the paper below and produce ONLY one JSON object (no prose).
-The JSON must follow this schema (all keys required):
-
-{{
-  "id": string,
-  "title": string,
-  "journal": string,
-  "year": number|null,
-  "doi": string|null,
-  "pmid": string|null,
-
-  "study_type": string,
-  "study_design": string,
-
-  "population": {{
-    "age_range": string,
-    "sex": "male"|"female"|"mixed"|"not_reported",
-    "training_status": "athletes"|"trained"|"untrained"|"sedentary"|"not_reported",
-    "sample_size": number|null
-  }},
-
-  "summary": string,                    // 2–5 sentences
-  "key_findings": [string],             // bullet-style distilled facts
-
-  "supplements": [string],              // list of supplements tested/referenced
-  "supplement_primary": string|null,    // main supplement focus if any
-
-  "dosage": {{
-    "loading": string|null,
-    "maintenance": string|null,
-    "timing": string|null,
-    "form": string|null
-  }},
-
-  "primary_outcome": string,            // strength | endurance | power | weight_loss | performance | general
-  "outcome_measures": {{
-    "strength": [string],
-    "endurance": [string],
-    "power": [string]
-  }},
-
-  "safety_issues": [string],
-  "adverse_events": string|null,
-
-  "evidence_grade": "A"|"B"|"C"|"D",
-  "quality_score": number,              // 0–10
-
-  "limitations": [string],
-  "clinical_relevance": string,
-
-  "keywords": [string],
-  "relevance_tags": [string]
-}}
-
-Use concise, unambiguous language. If unknown, use null or "not_reported".
-Paper metadata:
-  title: {title}
-  journal: {journal}
-  year: {year}
-  pmid: {pmid}
-  doi: {doi}
-  supplements_hint: {supplements}
-  study_type_hint: {study_type}
-
-Abstract:
-{abstract}
+This version strengthens prompts to reduce empty/omitted fields and adds
+a repair prompt for targeted re-asks when key fields are missing.
 """
 
-def validate_optimized_schema(d: Dict[str, Any]) -> bool:
-    required = [
-        "id","title","journal","year","doi","pmid",
-        "study_type","study_design","population","summary","key_findings",
-        "supplements","supplement_primary","dosage","primary_outcome",
-        "outcome_measures","safety_issues","adverse_events",
-        "evidence_grade","quality_score","limitations","clinical_relevance",
-        "keywords","relevance_tags"
-    ]
-    for k in required:
-        if k not in d:
-            return False
-    if not isinstance(d.get("key_findings"), list): return False
-    if not isinstance(d.get("supplements"), list): return False
-    if not isinstance(d.get("outcome_measures"), dict): return False
-    if not isinstance(d.get("population"), dict): return False
-    if not isinstance(d.get("limitations"), list): return False
-    if not isinstance(d.get("keywords"), list): return False
-    if not isinstance(d.get("relevance_tags"), list): return False
-    if not isinstance(d.get("quality_score"), (int, float)): return False
-    if d.get("evidence_grade") not in {"A","B","C","D"}: return False
-    return True
+import json
+import hashlib
+from typing import Dict, List, Any, Tuple
 
-def normalize_data(d: Dict[str, Any]) -> Dict[str, Any]:
-    d = dict(d)
-    # year → int|null
-    y = d.get("year")
-    if isinstance(y, str):
-        m = re.search(r"\d{4}", y)
-        d["year"] = int(m.group(0)) if m else None
-    # lists
-    for k in ["key_findings","supplements","limitations","keywords","relevance_tags"]:
-        v = d.get(k)
-        if v is None: d[k] = []
-        elif not isinstance(v, list): d[k] = [v]
-    # outcome_measures shape
-    om = d.get("outcome_measures") or {}
-    d["outcome_measures"] = {
-        "strength": list(om.get("strength", []) or []),
-        "endurance": list(om.get("endurance", []) or []),
-        "power": list(om.get("power", []) or []),
+# -----------------------------
+# Required fields & utilities
+# -----------------------------
+
+# NOTE: Keep this list aligned with your UI/use-cases. The model is instructed
+# to fill these with concrete values, or 'unknown'/[] if not present.
+REQUIRED_FIELDS: Dict[str, Any] = {
+    "id": "unknown",
+    "title": "unknown",
+    "journal": "unknown",
+    "year": None,
+    "pmid": None,
+    "doi": None,
+    "summary": "unknown",
+    "key_findings": [],
+    "supplements": [],
+    "evidence_grade": "D",
+    "quality_score": 0.0,
+    "study_type": "unknown",
+    "outcome_measures": {
+        "strength": [],
+        "endurance": [],
+        "power": []
+    },
+    "keywords": [],
+    "relevance_tags": [],
+  }
+
+def _minified_json_skeleton() -> str:
+    """Return a compact JSON skeleton for the model to follow."""
+    return json.dumps(REQUIRED_FIELDS, ensure_ascii=False, separators=(",", ":"))
+
+# -----------------------------
+# Dedupe key & normalization
+# -----------------------------
+
+def create_dedupe_key(obj: Dict[str, Any]) -> str:
+    """Stable dedupe key based on pmid/doi or title+year."""
+    pmid = (obj.get("pmid") or "").strip() if isinstance(obj.get("pmid"), str) else obj.get("pmid")
+    if pmid:
+        return f"pmid_{pmid}"
+    doi = (obj.get("doi") or "").strip().lower() if isinstance(obj.get("doi"), str) else obj.get("doi")
+    if doi:
+        return f"doi_{doi}"
+    title = (obj.get("title") or "").strip().lower()
+    year = str(obj.get("year") or "")
+    basis = f"{title}|{year}"
+    return f"hash_{hashlib.sha1(basis.encode('utf-8')).hexdigest()[:16]}"
+
+def normalize_data(obj: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Normalize fields into the optimized schema format; ensure required keys exist.
+    This doesn't grade quality; it enforces presence and default values.
+    """
+    out = dict(REQUIRED_FIELDS)  # defaults
+    out.update(obj or {})
+
+    # Basic tidy-ups
+    if isinstance(out.get("title"), str):
+        out["title"] = out["title"].strip() or "unknown"
+    if isinstance(out.get("journal"), str):
+        out["journal"] = out["journal"].strip() or "unknown"
+    if not out.get("summary") or not str(out.get("summary")).strip():
+        out["summary"] = "unknown"
+
+    # Ensure lists exist
+    for k in ("key_findings", "supplements", "keywords", "relevance_tags"):
+        out[k] = list(out.get(k) or [])
+
+    # Outcome measures presence
+    om = out.get("outcome_measures") or {}
+    out["outcome_measures"] = {
+        "strength": list(om.get("strength") or []),
+        "endurance": list(om.get("endurance") or []),
+        "power": list(om.get("power") or []),
     }
-    # population defaults
-    pop = d.get("population") or {}
-    d["population"] = {
-        "age_range": pop.get("age_range") or "not_reported",
-        "sex": pop.get("sex") or "not_reported",
-        "training_status": pop.get("training_status") or "not_reported",
-        "sample_size": pop.get("sample_size") if isinstance(pop.get("sample_size"), (int,float)) else None,
-    }
-    # dosage defaults
-    doz = d.get("dosage") or {}
-    d["dosage"] = {
-        "loading": doz.get("loading"),
-        "maintenance": doz.get("maintenance"),
-        "timing": doz.get("timing"),
-        "form": doz.get("form"),
-    }
-    # quality bounds
+
+    # Evidence grade normalization
+    eg = str(out.get("evidence_grade") or "D").upper()
+    if eg not in ("A", "B", "C", "D"):
+        eg = "D"
+    out["evidence_grade"] = eg
+
+    # Quality score bounds
     try:
-        qs = float(d.get("quality_score", 0.0))
+        qs = float(out.get("quality_score", 0.0))
     except Exception:
         qs = 0.0
-    d["quality_score"] = max(0.0, min(10.0, qs))
-    # id/title fallbacks
-    d["id"] = str(d.get("id") or d.get("pmid") or d.get("doi") or "unknown")
-    d["title"] = d.get("title") or "Unknown Title"
-    d["journal"] = d.get("journal") or "Unknown Journal"
-    # primary_outcome guard
-    d["primary_outcome"] = d.get("primary_outcome") or "general"
-    return d
+    out["quality_score"] = max(0.0, min(qs, 5.0))
 
-def create_dedupe_key(d: Dict[str, Any]) -> str:
-    base = (d.get("pmid") or d.get("doi") or (d.get("title","").lower().strip()))
-    return re.sub(r"\W+", "_", base)[:128] if base else "unknown"
+    # Study type
+    st = str(out.get("study_type") or "unknown").lower()
+    out["study_type"] = st
 
-def create_search_index(papers: List[Dict[str, Any]]) -> Dict[str, Any]:
-    years = []
-    st_counts = Counter()
-    eg_counts = Counter()
-    supp_counts = Counter()
+    # Dedupe key
+    out.setdefault("dedupe_key", create_dedupe_key(out))
+    return out
 
-    for p in papers:
-        y = p.get("year")
-        if isinstance(y, int): years.append(y)
-        st_counts[p.get("study_type","unknown")] += 1
-        eg_counts[p.get("evidence_grade","D")] += 1
-        for s in p.get("supplements", []) or []:
-            if s: supp_counts[s] += 1
+def validate_optimized_schema(obj: Dict[str, Any]) -> bool:
+    """Lightweight validation that all required keys are present (not grading content)."""
+    for k in REQUIRED_FIELDS.keys():
+        if k not in obj:
+            return False
+    return True
 
-    stats = {
-        "total_papers": len(papers),
-        "study_types": dict(st_counts),
-        "evidence_grades": dict(eg_counts),
-        "year_range": {"min": min(years) if years else None, "max": max(years) if years else None},
-        "supplements": dict(supp_counts)
+# -----------------------------
+# Prompt builders
+# -----------------------------
+
+def _one_shot_example() -> str:
+    """A tiny one-shot that mirrors the schema shape to bias completions."""
+    example = {
+        "id": "pmid_12345678",
+        "title": "Creatine supplementation improves strength in trained adults",
+        "journal": "Journal of Sports Nutrition",
+        "year": 2020,
+        "pmid": "12345678",
+        "doi": "10.1000/j.jssn.2020.123",
+        "summary": "Randomized controlled trials show moderate-to-large improvements in 1RM and repeated-sprint performance with creatine monohydrate (3–5 g/day, loading optional).",
+        "key_findings": [
+            "Increased 1RM (bench/squat) vs placebo in 6–12 weeks",
+            "Improved repeated-sprint performance",
+            "No serious adverse events reported"
+        ],
+        "supplements": ["creatine monohydrate"],
+        "evidence_grade": "A",
+        "quality_score": 4.2,
+        "study_type": "randomized_controlled_trial",
+        "outcome_measures": {
+            "strength": ["1RM bench press", "1RM squat"],
+            "endurance": ["repeated sprint test"],
+            "power": []
+        },
+        "keywords": ["creatine", "strength", "RCT"],
+        "relevance_tags": ["performance", "resistance_training"]
     }
-    return {"statistics": stats}
+    return json.dumps(example, ensure_ascii=False)
+
+def create_optimized_prompt(paper: Dict[str, Any]) -> str:
+    """
+    Build a strict prompt that forces a complete JSON object. The model is told to:
+      - Fill every required field OR use 'unknown'/[] as appropriate.
+      - Return ONLY minified JSON (no prose).
+    """
+    meta_bits = {
+        "title": paper.get("title") or "",
+        "journal": paper.get("journal") or "",
+        "year": paper.get("year"),
+        "pmid": paper.get("pmid"),
+        "doi": paper.get("doi"),
+        "chunk_idx": paper.get("chunk_idx"),
+        "chunk_total": paper.get("chunk_total"),
+    }
+    content = paper.get("content") or ""
+    skeleton = _minified_json_skeleton()
+    example = _one_shot_example()
+
+    prompt = (
+        "You are a clinical evidence analyst. Extract a structured, Q&A-ready JSON summary from the paper text.\n"
+        "RULES:\n"
+        "1) Output ONLY minified JSON (no backticks, no explanations).\n"
+        "2) Include ALL required fields exactly as in the schema. If information is not present, use 'unknown' (for strings) or [] (for arrays) or null (for year/ids).\n"
+        "3) Keep the JSON valid and strictly UTF-8.\n"
+        f"SCHEMA (minified skeleton):\n{skeleton}\n"
+        "ONE-SHOT EXAMPLE (shape to mirror, values are illustrative only):\n"
+        f"{example}\n"
+        "METADATA (helpful context — do not copy blindly):\n"
+        f"{json.dumps(meta_bits, ensure_ascii=False)}\n"
+        "TEXT:\n"
+        f"{content}\n"
+    )
+    return prompt
+
+def create_repair_prompt(missing_fields: List[str], prior_json: Dict[str, Any], paper: Dict[str, Any]) -> str:
+    """
+    Request ONLY the missing fields; return minified JSON with just those keys.
+    """
+    content = paper.get("content") or ""
+    fields_str = json.dumps(sorted(list(set(missing_fields))), ensure_ascii=False)
+    prior = json.dumps(prior_json, ensure_ascii=False, separators=(",", ":"))
+
+    return (
+        "The previous JSON was missing required fields. Provide ONLY the missing keys (no extra keys), "
+        "as minified JSON. For strings use 'unknown' if absent; for arrays use [] if absent; for year/ids use null if unknown.\n"
+        f"MISSING_KEYS: {fields_str}\n"
+        f"PRIOR_JSON: {prior}\n"
+        "TEXT (for context, keep answer short):\n"
+        f"{content}\n"
+    )
