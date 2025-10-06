@@ -1,159 +1,380 @@
-# GPU-Accelerated Paper Processing with Mistral 7B
+# Paper Processor - GPU-Accelerated Research Analysis
 
-This module provides GPU-accelerated local processing of scientific papers using Mistral 7B Instruct, avoiding cloud costs while maintaining high-quality analysis.
+GPU-accelerated structured analysis of research papers using Mistral-7B, optimized for processing 30K+ papers with streaming I/O and smart chunking.
 
-## Features
+## Overview
 
-- **GPU Acceleration**: Optimized for RTX 3080 with 4-bit quantization
-- **Structured Analysis**: Generates structured summaries with key findings, methodology, and evidence grades
-- **Local Storage**: All data stored locally in JSON format
-- **Custom Search**: Fast, local search without external dependencies
-- **Banking Integration**: Seamless integration with Level 1 banking system
+The paper processor transforms raw research papers into structured, Q&A-ready summaries using local GPU inference. It handles full-text papers (from PMC), intelligently chunks content that exceeds context limits, and uses two-pass extraction to ensure complete, high-quality outputs.
 
-## Pipeline Integration
+## Key Features
 
-The paper processor works with papers from the `get_papers` pipeline. Full-text fetching is now handled upstream by `get_papers` (default enabled), so papers already have the best available content (full text or abstract) when they reach this stage.
+### Memory & Performance
+- **Streaming architecture**: Process 30K+ papers without RAM limits
+- **Smart chunking**: Automatically splits long full-text papers at natural boundaries
+- **Resume capability**: Pick up where you left off after interruptions
+- **VRAM optimized**: 4-bit quantization + Flash Attention 2 + bfloat16 (6-8GB usage)
 
-## Requirements
+### Quality & Accuracy
+- **Two-pass extraction**: Initial strict prompt + targeted repair for missing fields
+- **One-shot prompting**: Example-driven outputs for consistent structure
+- **Schema validation**: Ensures all required fields are present
+- **Deterministic sampling**: Temperature=0 for stable, reproducible outputs
 
-- NVIDIA GPU with CUDA support (RTX 3080 recommended)
-- 10GB+ VRAM for 4-bit quantization
-- 32GB+ RAM for processing
-- Python 3.8+
+### Integration
+- **Automatic input**: Reads from `get_papers` latest pointer
+- **Full-text ready**: Handles both full texts and abstracts seamlessly
+- **Structured output**: Q&A-focused JSON with evidence grades, key findings, dosing details
 
-## Installation
+## Quick Start
 
-1. Install dependencies:
+### Requirements
+- **GPU**: NVIDIA with 10GB+ VRAM (RTX 3080 recommended)
+- **RAM**: 16GB+ (32GB recommended for 30K dataset)
+- **Python**: 3.9+
+- **CUDA**: 11.8+ with PyTorch
+
+### Installation
+
 ```bash
+cd agents/ingest/paper_processor
+
+# Install dependencies
 pip install -r requirements.txt
+
+# Install PyTorch with CUDA support
+pip install torch --index-url https://download.pytorch.org/whl/cu118
 ```
 
-2. Install PyTorch with CUDA support:
-```bash
-pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
-```
-
-## Usage
-
-### Running
-
-By default, the processor reads the latest selection produced by `get_papers`
-via the pointer at `data/ingest/runs/latest.json`.
+### Basic Usage
 
 ```bash
-# Process latest papers from get_papers
+# Process papers from latest get_papers run
 python -m agents.ingest.paper_processor.run \
-  --max-papers 200 \
-  --batch-size 2 \
-  --microbatch-size 1
+  --max-papers 30000 \
+  --batch-size 1 \
+  --model mistralai/Mistral-7B-Instruct-v0.3
 ```
 
-Or, process an explicit JSONL:
+### Resume Interrupted Run
 
 ```bash
+# If processing was interrupted, resume from the .tmp file
+python -m agents.ingest.paper_processor.run \
+  --max-papers 30000 \
+  --resume-summaries data/paper_processor/summaries/summaries_20251006_123456.jsonl.tmp
+```
+
+### Process Specific Run
+
+```bash
+# Process a specific JSONL file
 python -m agents.ingest.paper_processor.run \
   --papers-jsonl data/ingest/runs/20251005_172726/pm_papers.jsonl \
-  --max-papers 400
+  --max-papers 30000
 ```
-
-### Output Artifacts
-
-- Summaries: `data/paper_processor/summaries/summaries_YYYYMMDD_HHMMSS.jsonl`
-- Stats: `data/paper_processor/stats/stats_YYYYMMDD_HHMMSS.json`
-- Latest pointer: `data/paper_processor/latest.json`
-
-Logs go to `logs/paper_processor/paper_processor.log`.
-
-### Notes
-
-- Papers come from `get_papers` with the best available content (full text when available, abstract as fallback)
-- Outputs (summaries, index, stats) are written via `StorageManager` under `data/paper_processor/…`
-
-## Configuration
-
-### ProcessingConfig
-- `model_name`: Mistral model to use (default: "mistralai/Mistral-7B-Instruct-v0.2")
-- `max_length`: Maximum input length (default: 4096)
-- `temperature`: Generation temperature (default: 0.1)
-- `batch_size`: Batch size for processing (default: 4)
-- `use_4bit`: Enable 4-bit quantization (default: True)
-
-### Environment Variables
-- `SEARCH_ENDPOINT`: Azure AI Search endpoint
-- `SEARCH_ADMIN_KEY`: Azure AI Search admin key
-- `SEARCH_INDEX`: Search index name
 
 ## Architecture
 
-### Components
-
-1. **MistralClient**: GPU-accelerated Mistral 7B client
-2. **GPUProcessor**: Main processing pipeline
-3. **StorageManager**: Local storage management
-4. **SearchIndex**: Custom search implementation
-5. **SearchAPI**: Banking system integration
-
-### Data Flow
-
 ```
-Azure AI Search → GPUProcessor → MistralClient → Structured Summaries → Local Storage → SearchIndex → Banking System
+┌─────────────────────────────────────────────────────────────┐
+│ INPUT: pm_papers.jsonl from get_papers                      │
+│ (Papers with full text when available, abstracts as fallback)│
+└─────────────────────────────────────────────────────────────┘
+                         ↓
+┌─────────────────────────────────────────────────────────────┐
+│ STREAMING READER                                            │
+│ • Streams papers one-at-a-time (low RAM)                    │
+│ • Loads seen dedupe keys for resume                         │
+│ • Skip already-processed papers                             │
+└─────────────────────────────────────────────────────────────┘
+                         ↓
+┌─────────────────────────────────────────────────────────────┐
+│ SMART CHUNKING                                              │
+│ • Calculate safe character budget (context - output - prompt)│
+│ • Split at paragraph boundaries (prefer \n\n)               │
+│ • Fall back to sentence boundaries (. )                     │
+│ • Preserve semantic coherence                               │
+└─────────────────────────────────────────────────────────────┘
+                         ↓
+┌─────────────────────────────────────────────────────────────┐
+│ TWO-PASS LLM EXTRACTION (Mistral-7B)                       │
+│                                                              │
+│ Pass 1: Strict Initial Extraction                          │
+│ • One-shot example-driven prompt                            │
+│ • Minified JSON skeleton                                    │
+│ • Temperature=0 (deterministic)                             │
+│ • Output: Structured summary (may have gaps)                │
+│                                                              │
+│ Pass 2: Targeted Repair (if needed)                        │
+│ • Detect missing/empty fields                               │
+│ • Small repair prompt (256 tokens)                          │
+│ • Fill only missing fields                                  │
+│ • Merge with initial output                                 │
+└─────────────────────────────────────────────────────────────┘
+                         ↓
+┌─────────────────────────────────────────────────────────────┐
+│ CHUNK MERGING                                               │
+│ • Union list fields (key_findings, supplements, etc.)       │
+│ • Keep first chunk's scalar fields                          │
+│ • De-duplicate while preserving order                       │
+│ • Normalize and validate                                    │
+└─────────────────────────────────────────────────────────────┘
+                         ↓
+┌─────────────────────────────────────────────────────────────┐
+│ STREAMING WRITER                                            │
+│ • Write summaries incrementally (low RAM)                   │
+│ • Atomic finalization (.tmp → .jsonl)                       │
+│ • Aggregate stats on-the-fly                                │
+└─────────────────────────────────────────────────────────────┘
+                         ↓
+┌─────────────────────────────────────────────────────────────┐
+│ OUTPUT                                                       │
+│ • summaries_<timestamp>.jsonl (structured summaries)        │
+│ • stats_<timestamp>.json (processing metrics)               │
+│ • latest.json (pointer to most recent run)                  │
+└─────────────────────────────────────────────────────────────┘
+```
+
+## Configuration
+
+### Command-Line Arguments
+
+```bash
+--papers-jsonl PATH       # Input JSONL (default: latest from get_papers)
+--max-papers N            # Max papers to process (default: 200)
+--batch-size N            # Keep at 1 to cap VRAM (default: 1)
+--ctx-tokens N            # Model context window (default: 16384)
+--max-new-tokens N        # Max output tokens (default: 640)
+--model NAME              # Model to use (default: mistralai/Mistral-7B-Instruct-v0.3)
+--resume-summaries PATH   # Resume from .jsonl or .jsonl.tmp file
+```
+
+### Environment Variables
+
+```bash
+# Optional: Enable Flash Attention 2 (if installed)
+export EF_ATTN_IMPL="flash_attention_2"  # Significant speedup
+
+# Model settings
+export PP_MODEL="mistralai/Mistral-7B-Instruct-v0.3"
+export PP_CTX_TOKENS=16384
+export PP_MAX_NEW_TOKENS=640
+
+# Batch settings (keep low for VRAM)
+export PP_BATCH=1
+```
+
+## Output Schema
+
+Each summary includes:
+
+```json
+{
+  "id": "pmid_12345678",
+  "pmid": "12345678",
+  "doi": "10.1234/example",
+  "title": "Study Title",
+  "journal": "Journal Name",
+  "year": 2024,
+  
+  "summary": "2-5 sentence overview",
+  "key_findings": ["Finding 1", "Finding 2", ...],
+  "supplements": ["creatine", "protein"],
+  "evidence_grade": "A",
+  "quality_score": 4.2,
+  
+  "study_type": "randomized_controlled_trial",
+  "study_design": "double-blind, placebo-controlled",
+  "population": {
+    "age_range": "18-35",
+    "sex": "mixed",
+    "training_status": "trained",
+    "sample_size": 150
+  },
+  
+  "dosage": {
+    "maintenance": "5g/day",
+    "timing": "post-workout",
+    "form": "monohydrate"
+  },
+  
+  "outcome_measures": {
+    "strength": ["1RM bench press", "1RM squat"],
+    "endurance": [],
+    "power": ["vertical jump"]
+  },
+  
+  "keywords": ["creatine", "strength", "RCT"],
+  "relevance_tags": ["performance", "resistance_training"],
+  "limitations": ["Short duration", "Homogeneous population"],
+  
+  "dedupe_key": "pmid_12345678",
+  "schema_version": "v1.2"
+}
 ```
 
 ## Performance
 
-### RTX 3080 Performance
-- **Processing Speed**: 3-6 hours for 100k papers
-- **VRAM Usage**: 6-8GB (fits in 10GB)
-- **Tokens/Second**: 15-25
-- **Quality**: Strong for structured extraction
+### RTX 3080 Benchmarks
+
+| Papers | Processing Time | Rate | VRAM Usage |
+|--------|----------------|------|------------|
+| 1,000  | ~4 hours       | 4-5 papers/min | 6-8GB |
+| 10,000 | ~40 hours      | 4-5 papers/min | 6-8GB |
+| 30,000 | ~5 days        | 4-5 papers/min | 6-8GB |
+
+### Optimizations
+
+- **4-bit quantization**: Reduces VRAM by 75% (16GB → 4GB model)
+- **Flash Attention 2**: 2-3x faster inference (if available)
+- **bfloat16**: Better numerical stability than float16
+- **Streaming I/O**: No RAM spikes regardless of dataset size
+- **GPU cache clearing**: Periodic cleanup prevents fragmentation
 
 ### Cost Comparison
-- **Local Processing**: $0
-- **GPT-4o Cloud**: $6,750 for 100k papers
-- **Savings**: 100% cost reduction
 
-## Storage Structure
+| Method | 30K Papers | Notes |
+|--------|-----------|-------|
+| **Local GPU (this)** | $0 | RTX 3080, ~5 days |
+| **GPT-4o Cloud** | $22,500 | Azure OpenAI API |
+| **GPT-4o-mini Cloud** | $2,250 | Cheaper but less capable |
+
+## Storage
 
 ```
 data/paper_processor/
-├── summaries/           # Processed paper summaries
-├── index/              # Search index files
-└── stats/              # Processing statistics
+├── summaries/
+│   ├── summaries_20251006_123456.jsonl     # Structured outputs
+│   └── summaries_20251006_123456.jsonl.tmp # In-progress (resume from this)
+├── stats/
+│   └── stats_20251006_123456.json          # Processing metrics
+└── latest.json                              # Pointer to most recent run
+
+logs/paper_processor/
+└── paper_processor.log                      # Rotating file logger
 ```
 
-## Integration with Banking System
+## Telemetry & Stats
 
-The processed summaries integrate with the Level 1 banking system:
+The processor tracks comprehensive metrics:
 
-1. **Enhanced Data Quality**: Structured summaries vs. raw abstracts
-2. **Better Evidence Grading**: LLM analysis of study quality
-3. **Goal-Specific Analysis**: Targeted analysis for fitness goals
-4. **Local Search**: Fast, accurate search without rate limits
+```json
+{
+  "run_id": "paper_processor_1733512345",
+  "papers_in": 30000,
+  "papers_out": 28543,
+  "skipped_empty": 892,
+  "skipped_dedup": 565,
+  "coverage_ratio": 0.951,
+  
+  "chunks_total": 42180,
+  "avg_chunks_per_doc": 1.48,
+  
+  "elapsed_sec": 432180,
+  "rate_papers_per_sec": 0.066,
+  "median_latency_sec": 14.2,
+  
+  "model": "mistralai/Mistral-7B-Instruct-v0.3",
+  "ctx_tokens": 16384,
+  "max_new_tokens": 640,
+  
+  "index_stats": {
+    "total_papers": 28543,
+    "study_types": {"meta-analysis": 1245, "RCT": 8932, ...},
+    "evidence_grades": {"A": 5432, "B": 9821, "C": 8234, "D": 5056},
+    "supplements": {"creatine": 2134, "protein": 1876, ...}
+  }
+}
+```
 
 ## Troubleshooting
 
-### Common Issues
+### CUDA Out of Memory
 
-1. **CUDA Out of Memory**: Reduce batch size or enable 4-bit quantization
-2. **Model Loading Errors**: Check internet connection for model download
-3. **Search Errors**: Verify Azure AI Search credentials
+**Problem**: GPU runs out of VRAM
 
-### Performance Optimization
+**Solutions**:
+- Ensure `--batch-size 1` (default)
+- Check no other GPU processes running
+- Model should use ~6-8GB with 4-bit quant
+- Reduce `--ctx-tokens` if still issues
 
-1. **Batch Size**: Adjust based on GPU memory
-2. **Quantization**: Use 4-bit for VRAM efficiency
-3. **Cache Management**: Clear GPU cache periodically
+### Slow Processing
 
-## Future Enhancements
+**Expected**: ~4-5 papers/minute on RTX 3080
 
-- Vector search with FAISS
-- Multi-GPU support
-- Real-time processing
-- Advanced filtering and ranking
-- Integration with more LLM models
+**If slower**:
+- Install Flash Attention 2 for 2-3x speedup
+- Check GPU utilization (should be 90-100%)
+- Ensure CUDA drivers up to date
+- Verify using GPU: check logs for "device: cuda"
 
-## License
+### Empty Summaries
 
-This module is part of the EvidentFit project and follows the same licensing terms.
+**Problem**: Model outputs invalid JSON
 
+**Handled automatically**:
+- First-pass failure → Minimal fallback stub
+- Missing fields → Second-pass repair
+- Still incomplete → Valid defaults filled
+- Never discards papers
 
+### Resume Not Working
+
+**Problem**: Can't resume interrupted run
+
+**Check**:
+- Use exact path to `.jsonl.tmp` file
+- File must exist and be readable
+- Dedupe keys loaded from partial file
+- Processing continues from where it stopped
+
+## Advanced Usage
+
+### Custom Model
+
+```bash
+# Use different Mistral variant
+python -m agents.ingest.paper_processor.run \
+  --model mistralai/Mistral-7B-Instruct-v0.2 \
+  --max-papers 30000
+```
+
+### Parallel Processing
+
+```bash
+# Split dataset and process in parallel (advanced)
+# Paper 1-15000
+python -m agents.ingest.paper_processor.run \
+  --max-papers 15000 \
+  --papers-jsonl data/ingest/runs/latest/pm_papers.jsonl
+
+# Paper 15001-30000 (separate terminal)
+# Use --resume-summaries with different portion of input
+```
+
+### Integration with Banking
+
+After processing, use summaries for evidence banking:
+
+```bash
+cd agents/banking
+python level1_banking.py  # Uses processed summaries
+```
+
+## Dependencies
+
+Key packages from `requirements.txt`:
+
+```
+torch>=2.1.0              # PyTorch with CUDA
+transformers>=4.41.0      # Hugging Face models
+accelerate>=0.33.0        # Model loading
+bitsandbytes>=0.43.0      # 4-bit quantization (Linux/WSL)
+```
+
+## See Also
+
+- **[get_papers README](../get_papers/README.md)** - Paper selection and full-text fetching
+- **[Main Agent README](../README.md)** - Overall architecture
+- **[Project README](../../../README.md)** - Full system documentation

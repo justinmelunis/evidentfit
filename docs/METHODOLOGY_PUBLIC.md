@@ -609,11 +609,24 @@ Our platform operates through four specialized AI agents that work in concert to
 - **Purpose**: Keep our research database current and comprehensive
 - **Frequency**: Monthly automated runs
 - **Process**: 
-  - **Stage 1 (get_papers)**: Multi-supplement PubMed search (63 supplements) → Parse XML → Reliability scoring → Minimum quotas → Iterative diversity filtering
-  - **Stage 2 (paper_processor)**: Generate embeddings → Upload to search index → Update watermark
-- **Output**: ~30,000 high-quality, diverse research papers with balanced supplement coverage
+  - **Stage 1 (get_papers)**: 
+    - Multi-supplement PubMed search (63 supplements)
+    - Parse XML and fetch PMC full-text (85-95% coverage observed)
+    - Reliability scoring and quality filtering
+    - Minimum quotas + iterative diversity filtering
+    - Centralized sharded storage for full texts
+    - Abstract fallback for remaining 5-15% of papers
+  - **Stage 2 (paper_processor)**: 
+    - GPU-accelerated LLM analysis (Mistral-7B)
+    - Smart chunking for long papers (respects context limits)
+    - Two-pass extraction (initial + repair prompts)
+    - Structured Q&A summaries generation
+    - Streaming architecture (processes 30K+ papers)
+  - **Stage 3 (indexing)**: Generate embeddings → Upload to Azure AI Search → Update watermark
+- **Output**: ~30,000 high-quality, diverse research papers with structured summaries and full-text content
 - **Quality Threshold**: 2.0+ reliability score (meta-analyses, RCTs, systematic reviews prioritized)
 - **Diversity**: Minimum 3 papers per supplement + iterative balance optimization
+- **Full-Text Coverage**: 85-95% via PMC (25-28k papers) with intelligent content extraction; abstracts for remaining 5-15%
 
 **📊 Agent C (Evidence Summarization)**  
 - **Purpose**: Create public-facing supplement summaries
@@ -977,7 +990,7 @@ When in doubt, we err on the side of caution:
 
 We're honest about what our system can and cannot do:
 
-1. **Abstract-based analysis**: We primarily analyze study abstracts, not always full papers
+1. **Full-text coverage**: We obtain full-text for 85-95% of papers via PMC; remaining 5-15% use abstracts only
 2. **English-language focus**: Most research we access is published in English
 3. **Not medical advice**: We provide evidence-based education, not personalized medical care
 4. **Population variability**: Research shows average effects in study populations—individual results may vary

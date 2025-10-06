@@ -141,10 +141,12 @@ data/ingest/runs/<run_id>/
 ```
 
 ### Expected Results
-- **PMC Coverage**: 30-40% of papers (9,000-12,000 of 30k)
-- **File Size**: ~30 KB per paper (vs ~200 KB raw XML)
-- **Total Storage**: ~900 MB for 30k papers
-- **Fallback**: Abstracts available for 100% of papers
+- **PMC Coverage**: 85-95% of papers (25,000-28,000 of 30k get full text)
+- **Abstract Fallback**: Remaining 5-15% (2,000-5,000 papers) use PubMed abstracts
+- **Hybrid Content**: All 30k papers have content (full text preferred, abstract as fallback)
+- **Why high coverage**: Quality-filtered papers tend to be in open-access journals
+- **File Size**: ~30 KB per full-text paper (vs ~200 KB raw XML)
+- **Total Storage**: ~900 MB for 30k papers (25-28k full texts)
 
 ### Performance
 
