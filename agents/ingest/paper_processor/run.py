@@ -222,6 +222,12 @@ def main():
     skipped_dedup = 0
     chunks_total = 0
     per_paper_latency: List[float] = []
+    
+    # NEW: Enhanced tracking
+    fulltext_used = 0
+    abstract_only = 0
+    failed_papers: List[Dict[str, Any]] = []
+    slow_papers: List[Dict[str, Any]] = []
 
     # On-the-fly aggregate stats
     year_values: List[int] = []
@@ -246,6 +252,12 @@ def main():
                 skipped_dedup += 1
                 continue
             seen_keys.add(dkey)
+            
+            # Track full-text vs abstract usage
+            if p.get("fulltext_source") or p.get("has_fulltext"):
+                fulltext_used += 1
+            else:
+                abstract_only += 1
 
             # Chunk
             chunks = _split_text_safely(content, args.ctx_tokens, args.max_new_tokens)
@@ -278,7 +290,14 @@ def main():
                     continue
 
             if not norm_chunks:
-                LOG.debug("All chunks failed validation; skipping paper.")
+                LOG.warning(f"All chunks failed validation - Paper: {p.get('pmid')} - {p.get('title', '')[:60]}")
+                failed_papers.append({
+                    "pmid": p.get("pmid"),
+                    "doi": p.get("doi"),
+                    "title": p.get("title", "")[:100],
+                    "reason": "all_chunks_failed_validation",
+                    "chunks_attempted": len(chunk_summaries) if chunk_summaries else 0
+                })
                 continue
 
             merged = _merge_chunk_summaries(
@@ -288,7 +307,9 @@ def main():
 
             storage.write_summary_line(merged)
             papers_out += 1
-            per_paper_latency.append(time.time() - t0)
+            
+            paper_elapsed = time.time() - t0
+            per_paper_latency.append(paper_elapsed)
 
             # Update aggregates for stats
             y = merged.get("year")
@@ -301,6 +322,31 @@ def main():
             for s in (merged.get("supplements") or []):
                 if s:
                     supplement_counts[s] += 1
+            
+            # Performance monitoring: Track slow papers
+            if paper_elapsed > 60:  # >1 minute
+                slow_papers.append({
+                    "pmid": p.get("pmid"),
+                    "title": p.get("title", "")[:100],
+                    "elapsed_sec": round(paper_elapsed, 2),
+                    "chunks": len(chunks),
+                    "content_chars": len(content)
+                })
+                LOG.warning(f"Slow paper detected: {p.get('pmid')} took {paper_elapsed:.1f}s ({len(chunks)} chunks, {len(content):,} chars)")
+            
+            # Progress reporting: Every 100 papers
+            if papers_out % 100 == 0:
+                elapsed = time.time() - start
+                rate = papers_out / elapsed if elapsed > 0 else 0
+                remaining_papers = args.max_papers - papers_out
+                eta_sec = remaining_papers / rate if rate > 0 else 0
+                eta_hours = eta_sec / 3600
+                progress_pct = (papers_out / args.max_papers * 100) if args.max_papers > 0 else 0
+                
+                LOG.info(f"PROGRESS: {papers_out}/{args.max_papers} papers ({progress_pct:.1f}%) | "
+                        f"Rate: {rate*60:.1f} papers/min | "
+                        f"ETA: {eta_hours:.1f}h | "
+                        f"Full-text: {fulltext_used}/{papers_out} ({fulltext_used/papers_out*100:.1f}%)")
 
             if torch.cuda.is_available() and (idx % max(1, args.batch_size) == 0):
                 torch.cuda.empty_cache()
@@ -315,14 +361,42 @@ def main():
             "skipped_empty": skipped_empty,
             "skipped_dedup": skipped_dedup,
             "coverage_ratio": (papers_out / papers_in) if papers_in else None,
+            
+            # Full-text validation
+            "fulltext_used": fulltext_used,
+            "abstract_only": abstract_only,
+            "fulltext_ratio": (fulltext_used / papers_out) if papers_out > 0 else 0.0,
+            
+            # Error recovery
+            "failed_papers": failed_papers,
+            "failed_count": len(failed_papers),
+            "failure_rate": (len(failed_papers) / papers_in) if papers_in > 0 else 0.0,
+            
+            # Performance monitoring
+            "slow_papers": slow_papers,
+            "slow_count": len(slow_papers),
+            "slow_rate": (len(slow_papers) / papers_out) if papers_out > 0 else 0.0,
+            
+            # Chunking stats
             "chunks_total": chunks_total,
             "avg_chunks_per_doc": (chunks_total / papers_out) if papers_out else 0.0,
+            
+            # Timing stats
             "elapsed_sec": elapsed,
+            "elapsed_hours": elapsed / 3600,
             "rate_papers_per_sec": (papers_out / elapsed) if elapsed > 0 else None,
+            "rate_papers_per_min": (papers_out / elapsed * 60) if elapsed > 0 else None,
             "median_latency_sec": (sorted(per_paper_latency)[len(per_paper_latency)//2] if per_paper_latency else None),
+            "min_latency_sec": min(per_paper_latency) if per_paper_latency else None,
+            "max_latency_sec": max(per_paper_latency) if per_paper_latency else None,
+            
+            # Model config
             "model": args.model,
             "ctx_tokens": args.ctx_tokens,
             "max_new_tokens": args.max_new_tokens,
+            "batch_size": args.batch_size,
+            
+            # Index stats
             "index_stats": {
                 "total_papers": papers_out,
                 "study_types": dict(study_type_counts),
@@ -337,7 +411,24 @@ def main():
         }
         storage.save_processing_stats(stats)
         LOG.info("Done.")
-        print(f"\nProcessed {papers_out} papers (of {papers_in}) in {elapsed:.2f}s")
+        
+        # Enhanced final summary
+        print("\n" + "=" * 80)
+        print("PAPER PROCESSOR COMPLETE")
+        print("=" * 80)
+        print(f"Papers: {papers_out} successful / {papers_in} total ({papers_out/papers_in*100:.1f}%)")
+        print(f"Skipped: {skipped_empty} empty, {skipped_dedup} duplicates")
+        print(f"Failed: {len(failed_papers)} papers ({len(failed_papers)/papers_in*100:.1f}%)")
+        print(f"\nFull-text: {fulltext_used}/{papers_out} ({fulltext_used/papers_out*100:.1f}%)")
+        print(f"Abstract-only: {abstract_only}/{papers_out} ({abstract_only/papers_out*100:.1f}%)")
+        print(f"\nChunking: {chunks_total} total chunks, avg {chunks_total/papers_out:.2f} per paper")
+        print(f"Slow papers (>60s): {len(slow_papers)}/{papers_out} ({len(slow_papers)/papers_out*100:.1f}%)")
+        print(f"\nTime: {elapsed/3600:.2f} hours ({papers_out/elapsed*60:.1f} papers/min)")
+        print(f"Latency: min={min(per_paper_latency) if per_paper_latency else 0:.1f}s, "
+              f"median={sorted(per_paper_latency)[len(per_paper_latency)//2] if per_paper_latency else 0:.1f}s, "
+              f"max={max(per_paper_latency) if per_paper_latency else 0:.1f}s")
+        print(f"\nOutput: {final_summaries_path}")
+        print("=" * 80)
 
     except Exception as e:
         LOG.exception(f"Processor error: {e}")
