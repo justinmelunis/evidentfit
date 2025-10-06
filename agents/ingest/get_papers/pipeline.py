@@ -316,6 +316,8 @@ def apply_diversity_selection(docs: List[Dict], target_count: int, protected_ids
             target_count=target_count,
             elimination_per_round=5000,  # Larger elimination rounds for 50K target
             protected_ids=protected_ids or set(),
+            tiebreak_threshold=DIVERSITY_TIEBREAK_THRESHOLD,
+            prefer_fulltext=PREFER_FULLTEXT_IN_DIVERSITY,
         )
     else:
         logger.info(f"Iterative diversity OFF (total={total_docs:,} <= threshold={threshold:,}); using top-K by enhanced_score")
