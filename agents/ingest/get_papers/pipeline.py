@@ -473,6 +473,19 @@ def main():
             logger.warning("No papers processed. Exiting.")
             return
         
+        # Step 2.5: Apply monthly quality filter (if monthly mode)
+        if args.mode == "monthly":
+            logger.info("\n" + "=" * 40)
+            logger.info("STEP 2.5: APPLYING MONTHLY QUALITY FILTER")
+            logger.info("=" * 40)
+            
+            from get_papers.monthly_filter import apply_monthly_quality_filter
+            all_docs, monthly_removal_stats = apply_monthly_quality_filter(all_docs, args.mode)
+            
+            if not all_docs:
+                logger.warning("No papers passed monthly quality filter. Exiting.")
+                return
+        
         # Step 3: Apply quality filter (but we'll protect a per-supplement minimum set)
         logger.info("\n" + "=" * 40)
         logger.info("STEP 3: APPLYING QUALITY FILTER")
