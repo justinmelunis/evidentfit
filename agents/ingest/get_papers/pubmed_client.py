@@ -114,7 +114,7 @@ PM_SEARCH_QUERY = os.getenv("PM_SEARCH_QUERY") or \
 def pubmed_esearch(term: str, mindate: Optional[str] = None, maxdate: Optional[str] = None, 
                    retmax: int = 200, retstart: int = 0) -> Dict:
     """
-    Search PubMed using ESearch API
+    Search PubMed using ESearch API with retry logic
     
     Args:
         term: Search query
@@ -145,22 +145,46 @@ def pubmed_esearch(term: str, mindate: Optional[str] = None, maxdate: Optional[s
         if maxdate:
             params["maxdate"] = maxdate
     
-    # Rate limiting - 1 second between requests
-    time.sleep(1.0)
-    
-    with httpx.Client(timeout=60) as client:
-        response = client.get("https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi", params=params)
-        response.raise_for_status()
-        
+    # Retry logic for timeouts and transient errors
+    max_retries = 3
+    for attempt in range(max_retries):
         try:
-            return response.json()
+            # Rate limiting - 1 second between requests
+            time.sleep(1.0)
+            
+            with httpx.Client(timeout=60) as client:
+                response = client.get("https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi", params=params)
+                response.raise_for_status()
+                
+                try:
+                    return response.json()
+                except Exception as e:
+                    logger.error(f"JSON decode error: {e}")
+                    logger.error(f"Response content: {response.text[:500]}...")
+                    # Try to clean the response
+                    import re
+                    cleaned_text = re.sub(r'[\x00-\x1f\x7f-\x9f]', '', response.text)
+                    return json.loads(cleaned_text)
+                    
         except Exception as e:
-            logger.error(f"JSON decode error: {e}")
-            logger.error(f"Response content: {response.text[:500]}...")
-            # Try to clean the response
-            import re
-            cleaned_text = re.sub(r'[\x00-\x1f\x7f-\x9f]', '', response.text)
-            return json.loads(cleaned_text)
+            if attempt < max_retries - 1:
+                # Check if it's a 429 rate limit error or timeout
+                if "429" in str(e) or "Too Many Requests" in str(e):
+                    wait_time = (attempt + 1) * 10  # Longer wait for rate limits
+                    logger.warning(f"PubMed rate limit hit (attempt {attempt + 1}/{max_retries}): {e}")
+                    logger.warning(f"Waiting {wait_time} seconds before retry...")
+                elif "timeout" in str(e).lower() or "timed out" in str(e).lower():
+                    wait_time = (attempt + 1) * 5  # Standard backoff for timeouts
+                    logger.warning(f"PubMed timeout (attempt {attempt + 1}/{max_retries}): {e}")
+                    logger.warning(f"Retrying in {wait_time} seconds...")
+                else:
+                    wait_time = (attempt + 1) * 5  # Standard exponential backoff
+                    logger.warning(f"PubMed API error (attempt {attempt + 1}/{max_retries}): {e}")
+                    logger.warning(f"Retrying in {wait_time} seconds...")
+                time.sleep(wait_time)
+            else:
+                logger.error(f"PubMed ESearch failed after {max_retries} attempts: {e}")
+                raise
 
 
 def pubmed_efetch_xml(pmids: List[str]) -> Dict:
@@ -224,6 +248,7 @@ def search_supplement_simple(query: str, mindate: Optional[str] = None) -> List[
     """
     pmids = []
     retstart = 0
+    failed_batches = []
     
     while True:
         try:
@@ -248,8 +273,25 @@ def search_supplement_simple(query: str, mindate: Optional[str] = None) -> List[
                 return pmids
                 
         except Exception as e:
-            logger.error(f"Error in simple search: {e}")
-            break
+            # With retry logic in pubmed_esearch, this should be rare
+            # But if it happens after 3 retries, log and continue to next batch
+            logger.error(f"Error in simple search at retstart={retstart}: {e}")
+            failed_batches.append(retstart)
+            
+            # Try to continue with next batch
+            retstart += 200
+            
+            # Safety: if too many failures, give up
+            if len(failed_batches) >= 5:
+                logger.error(f"Too many failed batches ({len(failed_batches)}), stopping simple search")
+                break
+                
+            continue
+    
+    # Report any paper loss
+    if failed_batches:
+        logger.warning(f"Simple search WARNING: {len(failed_batches)} batch(es) failed (approximately {len(failed_batches) * 200} papers lost)")
+        logger.warning(f"Failed retstart positions: {failed_batches}")
     
     return pmids
 
@@ -303,9 +345,43 @@ def search_supplement_chunked(query: str, start_date: str, total_count: int,
         
         logger.info(f"CHUNK {chunk_num}: {chunk_start} to {chunk_end}")
         
-        # Search this date range
+        # OPTIMIZATION: Check count for this date range FIRST before pulling any papers
+        # This lets us decide if we need to sub-chunk BEFORE pulling data
+        try:
+            count_check = pubmed_esearch(query, mindate=chunk_start, maxdate=chunk_end, retmax=1, retstart=0)
+            chunk_total = int(count_check.get("esearchresult", {}).get("count", "0"))
+            
+            # If this chunk itself exceeds 9,999, recursively chunk it BEFORE pulling papers
+            if chunk_total >= 9999:
+                logger.warning(f"CHUNK {chunk_num} NEEDS SUB-CHUNKING: {chunk_total:,} papers in this date range (exceeds 9,999 limit)")
+                logger.warning(f"Recursively sub-chunking this date range BEFORE pulling papers: {chunk_start} to {chunk_end}")
+                
+                # Recursively chunk this date range
+                chunk_pmids = search_supplement_chunked(
+                    query, 
+                    chunk_start, 
+                    chunk_total,
+                    recursion_depth + 1
+                )
+                logger.info(f"Recursive sub-chunking complete: {len(chunk_pmids):,} papers retrieved")
+                
+                # Skip to next chunk since we already got all papers via recursion
+                logger.info(f"CHUNK {chunk_num} COMPLETE: {len(chunk_pmids):,} papers retrieved (via sub-chunking)")
+                all_pmids.extend(chunk_pmids)
+                current_dt = chunk_end_dt + timedelta(days=1)
+                chunk_num += 1
+                continue
+                
+        except Exception as e:
+            logger.error(f"Error checking count for chunk {chunk_num}: {e}")
+            logger.warning(f"Proceeding with normal pull despite count check failure")
+            chunk_total = 0  # Will be set on first batch
+        
+        # Normal case: chunk has < 9,999 papers, pull them all
+        logger.info(f"CHUNK {chunk_num}: Pulling {chunk_total:,} papers (no sub-chunking needed)")
         chunk_pmids = []
         retstart = 0
+        failed_batches = []
         
         while True:
             try:
@@ -324,26 +400,29 @@ def search_supplement_chunked(query: str, start_date: str, total_count: int,
                 chunk_total = int(batch.get("esearchresult", {}).get("count", "0"))
                 if retstart >= chunk_total:
                     break
-                
-                # Check if this chunk hit the 9,999 limit (needs recursive chunking)
-                if retstart >= 9999 and chunk_total > 9999:
-                    logger.warning(f"CHUNK {chunk_num} HIT 9,999 LIMIT: {chunk_total:,} total papers in this date range")
-                    logger.warning(f"Recursively chunking this date range: {chunk_start} to {chunk_end}")
-                    
-                    # Recursively chunk this date range
-                    recursive_pmids = search_supplement_chunked(
-                        query, 
-                        chunk_start, 
-                        chunk_total,
-                        recursion_depth + 1
-                    )
-                    chunk_pmids.extend(recursive_pmids)
-                    logger.info(f"Recursive chunking complete: {len(recursive_pmids):,} additional papers")
-                    break
                     
             except Exception as e:
-                logger.error(f"Error in chunk {chunk_num}: {e}")
-                break
+                # Log error but track which batch failed - don't break immediately
+                logger.error(f"Error in chunk {chunk_num} at retstart={retstart}: {e}")
+                logger.error(f"This batch of ~200 papers will be LOST unless we retry")
+                failed_batches.append(retstart)
+                
+                # Try to continue with next batch instead of giving up on entire chunk
+                # This prevents losing ALL remaining papers if one batch fails
+                retstart += 200
+                
+                # Safety: if we have too many consecutive failures, give up
+                if len(failed_batches) >= 5:
+                    logger.error(f"Too many failed batches ({len(failed_batches)}), stopping this chunk")
+                    break
+                    
+                # Otherwise continue to next batch
+                continue
+        
+        # Report any paper loss
+        if failed_batches:
+            logger.warning(f"CHUNK {chunk_num} WARNING: {len(failed_batches)} batch(es) failed (approximately {len(failed_batches) * 200} papers lost)")
+            logger.warning(f"Failed retstart positions: {failed_batches}")
         
         logger.info(f"CHUNK {chunk_num} COMPLETE: {len(chunk_pmids):,} papers retrieved")
         all_pmids.extend(chunk_pmids)
