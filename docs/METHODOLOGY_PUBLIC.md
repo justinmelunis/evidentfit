@@ -36,7 +36,7 @@ The U.S. National Library of Medicine's database of 35+ million peer-reviewed bi
 - ❌ Studies with severe methodological flaws
 - ❌ Non-human populations or irrelevant contexts
 
-**Current Database**: ~10,000 carefully curated research papers, selected from 200,000+ available studies via comprehensive multi-query search, local staging, and iterative diversity filtering, updated monthly.
+**Current Database**: ~30,000 carefully curated research papers, selected from 190,000+ candidate studies via comprehensive multi-supplement search (63 supplements), quality filtering (reliability scoring), and iterative diversity filtering with minimum quotas, updated monthly.
 
 ### How We Evaluate Quality
 
@@ -84,13 +84,15 @@ We're very selective about what studies make it into our database:
 
 ### Complete Supplement Coverage
 
-We track research on 27+ different supplement categories, including:
+We track research on **63 different supplements**, including:
 - **Popular supplements**: Creatine, protein powder, caffeine, beta-alanine
-- **Specialized compounds**: HMB, citrulline, betaine, taurine
-- **Essential nutrients**: Vitamin D, magnesium, omega-3, iron
-- **Emerging supplements**: Ashwagandha, rhodiola, cordyceps
+- **Performance compounds**: HMB, citrulline, betaine, taurine, nitrate
+- **Essential nutrients**: Vitamin D, magnesium, omega-3, iron, B12
+- **Emerging supplements**: Ashwagandha, rhodiola, cordyceps, alpha-GPC, theacrine
+- **Specialized compounds**: Collagen, resveratrol, NAC, CoQ10, phosphatidylserine
+- **Alternative forms**: Multiple creatine forms, protein sources, omega-3 types
 
-We use both common names and scientific terminology to make sure we don't miss relevant research.
+We use both common names and scientific terminology to ensure comprehensive research coverage.
 
 ### How We Build Our Research Database
 
@@ -103,54 +105,71 @@ We don't just grab random studies—we systematically search and evaluate resear
 
   PubMed Database (35+ million studies)
        ↓
-  We search for all relevant supplement studies for 30 different supplements
-  (Separate searches for each supplement, going back to 1990)
+  Multi-Supplement Search (63 supplements)
+  (Individual queries per supplement, 1990 → present)
+  (Date-based chunking to bypass PubMed's 10K limit)
        ↓
 ┌─────────────────────┐
-│ Step 1: Collect     │ → Search each supplement individually
-│ Everything Relevant │ → Get ALL available human exercise studies
-│                     │ → Filter out animal studies and irrelevant research
-│                     │ → Cast the widest possible net
+│ Step 1: Fetch &     │ → Search each supplement individually (63 queries)
+│ Parse               │ → Fetch ~190,000 PMIDs from PubMed
+│                     │ → Parse XML metadata and abstracts
+│                     │ → Filter out animal/in-vitro studies during parsing
+│                     │ → Extract supplements, outcomes, study type
 └─────────────────────┘
        ↓
-  ~150,000+ Studies Found
+  ~125,000 Human Studies Parsed
+  (~65,000 filtered: animal studies, missing abstracts, parsing errors)
        ↓
 ┌─────────────────────┐
-│ Step 2: Rate        │ → Score every study for quality
-│ Quality             │ → Meta-analyses and RCTs get highest scores
-│                     │ → Consider sample size, journal reputation
-│                     │ → Only keep studies that meet our standards
+│ Step 2: Quality     │ → Reliability scoring (study type, sample size, journal)
+│ Filter              │ → Meta-analyses score highest (13+ points)
+│                     │ → RCTs and systematic reviews prioritized (10-12 points)
+│                     │ → Quality threshold: 2.0+ (removes ~55,000 low-quality)
 └─────────────────────┘
        ↓
-  ~60,000+ Quality Studies
+  ~69,000 Quality Studies
        ↓
 ┌─────────────────────┐
-│ Step 3: Balance     │ → Make sure we cover all supplements fairly
-│ Coverage            │ → Don't let popular supplements dominate
-│                     │ → Ensure rare but important research is included
-│                     │ → Progressive refinement for optimal balance
+│ Step 3: Minimum     │ → Protect 3+ papers per supplement (192 protected)
+│ Quota Protection    │ → Ensure rare supplements aren't eliminated
+│                     │ → Sorted by quality within each supplement
+│                     │ → Protected IDs exempt from diversity filtering
 └─────────────────────┘
        ↓
-         Final Database: ~10,000 Best Studies
+┌─────────────────────┐
+│ Step 4: Iterative   │ → Progressive elimination in rounds
+│ Diversity Filtering │ → Recalculate weights each round
+│                     │ → Balance supplement-goal-population combinations
+│                     │ → Ensure diverse, representative coverage
+└─────────────────────┘
+       ↓
+         Final Database: ~30,000 Best Studies
          (The research that powers your recommendations)
 ```
 
-**The Result**: We evaluate over 200,000 supplement studies and select only the best 10,000 for our database. This ensures you get recommendations based on the highest quality research while covering the full spectrum of supplements—not just the most popular ones.
+**The Result**: We evaluate ~190,000 PMIDs, parse ~125,000 papers, and select the best ~30,000 for our database. This ensures you get recommendations based on the highest quality research while maintaining balanced coverage across all 63 supplements—not just the most popular ones.
 
 ### Why Our Approach Is Different
 
 Most supplement sites cherry-pick studies that support what they want to sell. We do the opposite:
 
 **🎯 We Start With ALL The Research**
-Instead of searching for "studies that show X works," we search for "all studies about X" and let the evidence speak for itself.
+Instead of searching for "studies that show X works," we search for "all studies about X" and let the evidence speak for itself. We run 63 separate PubMed queries—one for each supplement—to ensure comprehensive coverage.
 
 **⚖️ We Balance Quality With Coverage**
-Popular supplements like creatine have thousands of studies. Newer supplements might have dozens. A simple "take the best studies" approach would give you a database that's 90% creatine research. 
+Popular supplements like creatine have 20,000+ studies. Emerging supplements might have hundreds. A simple "take the best studies" approach would give you a database that's 90% creatine research.
 
-Our system ensures every supplement gets fair representation while still prioritizing the highest quality research.
+Our **minimum quota system** protects at least 3 papers per supplement, ensuring even rare supplements get representation. Then our **iterative diversity filtering** progressively refines the selection to balance coverage while prioritizing quality.
 
 **🔄 We Continuously Refine**
-Rather than making all decisions at once, we progressively refine our selection. This means high-quality research on lesser-known supplements doesn't get buried by the sheer volume of creatine studies.
+Our diversity filtering works in rounds, recalculating balance weights after each elimination. This progressive refinement means high-quality research on lesser-known supplements doesn't get buried by the sheer volume of creatine studies.
+
+**🛡️ Protected Quality Standards**
+While we ensure coverage, we never sacrifice quality:
+- All papers must pass a reliability threshold (2.0+)
+- Protected papers are still the highest-quality for their supplement
+- Meta-analyses and RCTs are prioritized within quotas
+- Low-evidence supplements are flagged transparently (Grade C/D)
 
 **The Bottom Line**: You get recommendations based on the best available research for each supplement, not just the supplements with the most research.
 
@@ -341,8 +360,8 @@ The Stack Planner builds a complete, personalized supplement protocol tailored t
 **Why Three Levels?**
 Our banking system operates at three distinct levels to balance performance, personalization, and accuracy:
 
-**Level 1: Goal × Supplement Evidence (162 combinations)**
-- Pre-computed evidence grades for every supplement × goal combination (6 goals × 27 supplements)
+**Level 1: Goal × Supplement Evidence (378 combinations)**
+- Pre-computed evidence grades for every supplement × goal combination (6 goals × 63 supplements)
 - **LLM Research Agent**: Reads and analyzes research papers to assign evidence grades (A/B/C/D)
 - Grades based on research outcomes (positive/negative/mixed results), not just paper count
 - **Supporting Publications**: Each evidence grade includes top 3 supporting research papers with full metadata
@@ -576,10 +595,11 @@ Our platform operates through four specialized AI agents that work in concert to
 │  DATA FLOW SUMMARY                                                             │
 │                                                                                 │
 │  Monthly: Agent A → New Papers → Agent C → Updated Summaries                   │
-│  As Needed: Agent E → Banking Cache Updates                                    │
+│  As Needed: Agent E → GPU-Accelerated Banking Cache Updates (Mistral 7B)      │
 │  Real-Time: User → Agent B → Cached Banking + Live Search → Response          │
 │                                                                                 │
 │  🎯 Result: Fast, personalized, evidence-based supplement recommendations      │
+│      with $0 processing costs (local GPU vs $6,750 cloud)                     │
 └─────────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -588,8 +608,12 @@ Our platform operates through four specialized AI agents that work in concert to
 **🔍 Agent A (Research Ingestion)**
 - **Purpose**: Keep our research database current and comprehensive
 - **Frequency**: Monthly automated runs
-- **Process**: Search PubMed → Filter relevance → Score quality → Index papers
-- **Output**: 10,000+ high-quality research papers in searchable index
+- **Process**: 
+  - **Stage 1 (get_papers)**: Multi-supplement PubMed search (63 supplements) → Parse XML → Reliability scoring → Minimum quotas → Iterative diversity filtering
+  - **Stage 2 (paper_processor)**: Generate embeddings → Upload to search index → Update watermark
+- **Output**: ~30,000 high-quality, diverse research papers with balanced supplement coverage
+- **Quality Threshold**: 2.0+ reliability score (meta-analyses, RCTs, systematic reviews prioritized)
+- **Diversity**: Minimum 3 papers per supplement + iterative balance optimization
 
 **📊 Agent C (Evidence Summarization)**  
 - **Purpose**: Create public-facing supplement summaries
@@ -600,8 +624,9 @@ Our platform operates through four specialized AI agents that work in concert to
 **🏦 Agent E (Banking Initialization)**
 - **Purpose**: Pre-compute evidence grades and personalized reasoning
 - **Frequency**: When evidence base changes or new profiles needed
-- **Process**: LLM reads papers → Assigns grades → Generates profile-specific explanations
+- **Process**: GPU-accelerated Mistral 7B reads papers → Generates structured summaries → Assigns grades → Generates profile-specific explanations
 - **Output**: 162 evidence grades + 360 personalized reasoning sets
+- **Cost**: $0 (local GPU processing vs $6,750 cloud processing)
 
 **💬 Agent B (User API)**
 - **Purpose**: Deliver real-time personalized recommendations
@@ -619,15 +644,28 @@ Our platform operates through four specialized AI agents that work in concert to
 
 **Our Solution**: A **three-level evidence banking system** that pre-computes evidence at different granularities while allowing real-time personalization.
 
-### LLM Research Agent Methodology
+### GPU-Accelerated LLM Research Agent Methodology
 
 **How Our AI Evaluates Evidence:**
 
-Our LLM Research Agent doesn't just count papers—it **reads and analyzes** research content to make evidence-based determinations:
+Our GPU-accelerated LLM Research Agent (Mistral 7B Instruct) doesn't just count papers—it **reads and analyzes** research content to make evidence-based determinations using local processing:
 
-**📚 Paper Analysis Process:**
+**🚀 GPU-Accelerated Processing:**
+- **Local Processing**: Runs on your RTX 3080 GPU, avoiding cloud costs
+- **4-bit Quantization**: Optimized for 10GB VRAM with 6-8GB usage
+- **Structured Analysis**: Generates detailed summaries with key findings, methodology, and evidence grades
+- **Batch Processing**: Efficient processing of 100k+ papers in 3-6 hours
+
+**📚 Enhanced Paper Analysis Process:**
 1. **Retrieval**: Fetch top relevant studies for each supplement × goal combination
-2. **Content Review**: LLM reads study abstracts, methodologies, and key findings
+2. **Structured Analysis**: Mistral 7B reads study abstracts and generates structured summaries with:
+   - Key findings and results
+   - Methodology and study design
+   - Population and demographics
+   - Intervention details
+   - Outcomes and effect sizes
+   - Limitations and clinical significance
+   - Evidence quality assessment
 3. **Quality Assessment**: Evaluates study design (meta-analysis > RCT > crossover > observational)
 4. **Outcome Analysis**: Determines if results are positive, negative, or mixed for the specific goal
 5. **Consistency Check**: Looks for agreement across multiple studies
@@ -640,27 +678,32 @@ Our LLM Research Agent doesn't just count papers—it **reads and analyzes** res
 - **Grade D**: Insufficient evidence or studies consistently showing no benefit
 
 **🔬 Example Analysis:**
-*"Creatine for Strength": LLM reads 67 studies → finds multiple meta-analyses showing 5-15% strength gains → consistent across RCTs → clinically meaningful effects → assigns Grade A*
+*"Creatine for Strength": Mistral 7B reads 67 studies → generates structured summaries → finds multiple meta-analyses showing 5-15% strength gains → consistent across RCTs → clinically meaningful effects → assigns Grade A*
+
+**💰 Cost Benefits:**
+- **Local Processing**: $0 (vs $6,750 for GPT-4o cloud processing)
+- **No Rate Limits**: Process unlimited papers without API restrictions
+- **Complete Control**: Full control over processing pipeline and data
 
 ### Three-Level Architecture
 
 #### **Level 1: Goal × Supplement Evidence Banking**
 - **What**: Evidence grades (A/B/C/D) for each supplement × goal combination
 - **Cached**: 162 combinations (6 goals × 27 supplements)
-- **Source**: **LLM Research Agent** reads and analyzes research papers for goal-specific outcomes
-- **Methodology**: AI evaluates study quality, consistency, effect sizes, and relevance to assign grades
+- **Source**: **GPU-Accelerated LLM Research Agent** (Mistral 7B) reads and analyzes research papers for goal-specific outcomes
+- **Methodology**: AI evaluates study quality, consistency, effect sizes, and relevance to assign grades using structured summaries
 - **Supporting Publications**: Each evidence grade includes top 3 supporting research papers with full metadata
 - **Updated**: Monthly when new research is ingested
-- **Example**: "Creatine for strength = Grade A (LLM analyzed 67 studies, found consistent 5-15% strength gains across multiple meta-analyses) + 3 key publications"
+- **Example**: "Creatine for strength = Grade A (Mistral 7B analyzed 67 studies, generated structured summaries, found consistent 5-15% strength gains across multiple meta-analyses) + 3 key publications"
 
 #### **Level 2: Profile-Specific Reasoning Banking**
 - **What**: Personalized "why" explanations based on demographics and research
 - **Cached**: 360 profile combinations (goal × weight bin × sex × age bin)
-- **Source**: **LLM Research Agent** analyzes retrieved papers and generates profile-specific reasoning
-- **Methodology**: AI reads research papers and creates personalized explanations based on user demographics
+- **Source**: **GPU-Accelerated LLM Research Agent** (Mistral 7B) analyzes retrieved papers and generates profile-specific reasoning
+- **Methodology**: AI reads research papers and creates personalized explanations based on user demographics using structured summaries
 - **Profile-Specific Publications**: Each reasoning includes supporting research papers relevant to the user's demographic profile
 - **Updated**: When evidence base changes or new profiles are encountered
-- **Example**: "For your profile (28yo male, strength), creatine enhances power output because studies in male athletes show 5g/day increases 1RM by 8-15% (LLM analyzed 12 relevant studies in this demographic) + 3 demographic-specific publications"
+- **Example**: "For your profile (28yo male, strength), creatine enhances power output because studies in male athletes show 5g/day increases 1RM by 8-15% (Mistral 7B analyzed 12 relevant studies in this demographic) + 3 demographic-specific publications"
 
 #### **Level 3: Real-Time Adjustments**
 - **What**: Dynamic modifications based on conversation context
