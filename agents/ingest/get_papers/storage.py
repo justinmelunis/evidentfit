@@ -16,7 +16,7 @@ from typing import Dict, List, Any, Tuple
 
 from evidentfit_shared.utils import PROJECT_ROOT
 
-RUNS_BASE_DIR = PROJECT_ROOT / Path(os.getenv("RUNS_BASE_DIR", "data/ingest/runs"))
+RUNS_BASE_DIR = PROJECT_ROOT / os.getenv("RUNS_BASE_DIR", "data/ingest/runs")
 COMPRESS_PAPERS = os.getenv("COMPRESS_PAPERS", "false").lower() == "true"
 KEEP_LAST_RUNS = int(os.getenv("KEEP_LAST_RUNS", "8"))
 
