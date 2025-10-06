@@ -180,12 +180,14 @@ data/ingest/runs/<run_id>/
 ```
 
 ### Expected Results
-- **PMC Coverage**: ~73% true full-text, ~20% abstract-only, ~7% not in PMC
-- **Unpaywall Rescue**: ~50-70% success on PMC abstract-only papers
-- **Combined Full-Text**: 85-90% of papers (25,000-27,000 of 30k)
-- **Final Abstract-Only**: 10-15% (3,000-5,000 papers)
+- **PMC Checked**: 100% of papers (all PubMed papers checked for PMC availability)
+- **PMC Full-Text**: ~73% have full body sections in XML (~22k papers)
+- **PMC Abstract-Only**: ~27% missing body sections in PMC XML (~8k papers)
+- **Unpaywall Rescue**: ~60-75% success on PMC abstract-only (~5-6k papers)
+- **Combined Full-Text**: 90%+ of papers (27,000-28,000 of 30k)
+- **Final Abstract-Only**: ~7-10% (2,000-3,000 papers)
 - **Hybrid Content**: All 30k papers have content (full text preferred, abstract as fallback)
-- **Why high coverage**: Quality-filtered papers tend to be in open-access journals + dual sources
+- **Why high coverage**: Quality-filtered papers in open-access journals + dual sources
 - **File Size**: ~30 KB per full-text (XML or PDF extracted)
 - **Total Storage**: ~900 MB for 30k papers
 

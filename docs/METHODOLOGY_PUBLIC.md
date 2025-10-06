@@ -629,7 +629,7 @@ Our platform operates through four specialized AI agents that work in concert to
 - **Quality Threshold**: 2.0+ reliability score (meta-analyses, RCTs, systematic reviews prioritized)
 - **Enhanced Quotas**: 10 best overall + 2 per goal per supplement (~715 protected with overlaps)
 - **Full-Text Strategy**: PMC + Unpaywall with 0.8 tiebreak threshold (quality never compromised)
-- **Full-Text Coverage**: 85-90% (25-27k papers) via PMC (~73%) + Unpaywall rescue (~12-17%); abstracts for remaining 10-15%
+- **Full-Text Coverage**: 90%+ (27-28k papers) via PMC (~73%) + Unpaywall rescue (~17-20%); abstracts for remaining ~7-10%
 
 **📊 Agent C (Evidence Summarization)**  
 - **Purpose**: Create public-facing supplement summaries
@@ -993,7 +993,7 @@ When in doubt, we err on the side of caution:
 
 We're honest about what our system can and cannot do:
 
-1. **Full-text coverage**: We obtain full-text for 85-90% of papers via PMC (~73%) and Unpaywall (~12-17% rescue); remaining 10-15% use abstracts only
+1. **Full-text coverage**: We obtain full-text for 90%+ of papers via PMC (~73%) and Unpaywall (~17-20% rescue); remaining ~7-10% use abstracts only
 2. **English-language focus**: Most research we access is published in English
 3. **Not medical advice**: We provide evidence-based education, not personalized medical care
 4. **Population variability**: Research shows average effects in study populations—individual results may vary
