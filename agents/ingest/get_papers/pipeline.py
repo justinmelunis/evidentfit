@@ -63,11 +63,6 @@ EXCLUDED_SUPPS_FOR_MIN = {s.strip() for s in os.getenv("EXCLUDED_SUPPS_FOR_MIN",
 USE_ENHANCED_QUOTAS = os.getenv("USE_ENHANCED_QUOTAS", "true").lower() == "true"
 MIN_OVERALL_PER_SUPPLEMENT = int(os.getenv("MIN_OVERALL_PER_SUPPLEMENT", "10"))
 MIN_PER_SUPPLEMENT_GOAL = int(os.getenv("MIN_PER_SUPPLEMENT_GOAL", "2"))
-PREFER_FULLTEXT_IN_QUOTAS = os.getenv("PREFER_FULLTEXT_IN_QUOTAS", "true").lower() == "true"
-
-# Diversity tiebreaking
-DIVERSITY_TIEBREAK_THRESHOLD = float(os.getenv("DIVERSITY_TIEBREAK_THRESHOLD", "0.8"))
-PREFER_FULLTEXT_IN_DIVERSITY = os.getenv("PREFER_FULLTEXT_IN_DIVERSITY", "true").lower() == "true"
 
 
 def setup_logging() -> logging.Logger:
@@ -316,8 +311,6 @@ def apply_diversity_selection(docs: List[Dict], target_count: int, protected_ids
             target_count=target_count,
             elimination_per_round=5000,  # Larger elimination rounds for 50K target
             protected_ids=protected_ids or set(),
-            tiebreak_threshold=DIVERSITY_TIEBREAK_THRESHOLD,
-            prefer_fulltext=PREFER_FULLTEXT_IN_DIVERSITY,
         )
     else:
         logger.info(f"Iterative diversity OFF (total={total_docs:,} <= threshold={threshold:,}); using top-K by enhanced_score")
@@ -435,6 +428,8 @@ def main():
     parser.add_argument("--fulltext-concurrency", type=int, default=8, help="Max concurrent PMC requests")
     parser.add_argument("--fulltext-store", type=str, default=str((PROJECT_ROOT / "data" / "fulltext_store").as_posix()),
                        help="Centralized full-text store directory")
+    parser.add_argument("--upgrade-existing-abstracts", action="store_true", default=False,
+                       help="In monthly mode, also attempt to upgrade existing abstract-only papers to fulltext")
     
     args = parser.parse_args()
     
@@ -500,7 +495,6 @@ def main():
                 all_docs=all_docs,
                 min_overall=MIN_OVERALL_PER_SUPPLEMENT,
                 min_per_goal=MIN_PER_SUPPLEMENT_GOAL,
-                prefer_fulltext=PREFER_FULLTEXT_IN_QUOTAS,
                 quality_floor=QUALITY_FLOOR_BOOTSTRAP if args.mode == "bootstrap" else QUALITY_FLOOR_MONTHLY,
             )
         else:
@@ -635,12 +629,70 @@ def main():
         fulltext_manifest_path = None
         if args.fetch_fulltext:
             logger.info("\n" + "=" * 40)
-            logger.info("STEP 6: FETCHING FULL TEXTS (PMC when available)")
+            logger.info("STEP 6: FETCHING FULL TEXTS")
             logger.info("=" * 40)
+            
+            # In monthly mode with upgrade flag, combine new papers with existing corpus
+            papers_to_fetch = papers_file
+            if args.mode == "monthly" and args.upgrade_existing_abstracts:
+                logger.info("Monthly mode with --upgrade-existing-abstracts enabled")
+                logger.info("Will attempt to upgrade existing abstract-only papers")
+                
+                # Load previous run's papers
+                latest_file = RUNS_BASE_DIR / "latest.json"
+                if latest_file.exists():
+                    import json
+                    with open(latest_file, 'r') as f:
+                        latest_data = json.load(f)
+                    prev_papers_path = Path(latest_data.get("papers_path", ""))
+                    
+                    if prev_papers_path.exists() and prev_papers_path != papers_file:
+                        logger.info(f"Loading previous run papers from: {prev_papers_path}")
+                        logger.info("Combining with new papers for fulltext fetch")
+                        
+                        # Create a combined temp file
+                        import tempfile
+                        temp_dir = Path(tempfile.gettempdir())
+                        combined_papers = temp_dir / f"combined_papers_{run_id}.jsonl"
+                        
+                        # Combine papers (dedupe by PMID)
+                        seen_pmids = set()
+                        with open(combined_papers, 'w', encoding='utf-8') as out_f:
+                            # Write new papers first
+                            with open(papers_file, 'r', encoding='utf-8') as in_f:
+                                for line in in_f:
+                                    try:
+                                        paper = json.loads(line)
+                                        pmid = paper.get("pmid")
+                                        if pmid and pmid not in seen_pmids:
+                                            seen_pmids.add(pmid)
+                                            out_f.write(line)
+                                    except:
+                                        pass
+                            
+                            # Add previous papers (not already in new set)
+                            with open(prev_papers_path, 'r', encoding='utf-8') as in_f:
+                                for line in in_f:
+                                    try:
+                                        paper = json.loads(line)
+                                        pmid = paper.get("pmid")
+                                        if pmid and pmid not in seen_pmids:
+                                            seen_pmids.add(pmid)
+                                            out_f.write(line)
+                                    except:
+                                        pass
+                        
+                        logger.info(f"Combined {len(seen_pmids)} unique papers for fulltext fetch")
+                        papers_to_fetch = combined_papers
+                    else:
+                        logger.info("No previous run found or same as current, fetching new papers only")
+                else:
+                    logger.info("No previous run found (no latest.json), fetching new papers only")
+            
             run_manifest_dir = run_dir  # write manifest into the run dir
             try:
                 ft_manifest = fetch_fulltexts_for_jsonl(
-                    papers_file,
+                    papers_to_fetch,
                     fulltext_store_dir,
                     run_manifest_dir,
                     max_concurrency=args.fulltext_concurrency,
@@ -649,6 +701,15 @@ def main():
                 )
                 fulltext_manifest_path = run_manifest_dir / "fulltext_manifest.json"
                 logger.info(f"Full-text manifest: {ft_manifest}")
+                
+                # Clean up temp file if created
+                if args.mode == "monthly" and args.upgrade_existing_abstracts and papers_to_fetch != papers_file:
+                    try:
+                        papers_to_fetch.unlink()
+                        logger.info("Cleaned up temporary combined papers file")
+                    except:
+                        pass
+                        
             except Exception as e:
                 logger.error(f"Full-text fetch step failed: {e}")
         else:

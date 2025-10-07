@@ -260,7 +260,6 @@ def compute_enhanced_quota_ids(
     all_docs: List[Dict[str, Any]],
     min_overall: int = 10,
     min_per_goal: int = 2,
-    prefer_fulltext: bool = True,
     quality_floor: float = 0.0,
 ) -> Set[str]:
     """
@@ -268,7 +267,6 @@ def compute_enhanced_quota_ids(
     - Protects top N overall papers per supplement
     - PLUS top M papers per supplement×goal combination
     - Allows overlaps (typically results in 10-14 protected per supplement)
-    - Prefers full-text when quality scores are equal
     
     Returns set of protected doc IDs.
     """
@@ -284,21 +282,11 @@ def compute_enhanced_quota_ids(
         if not quality_docs:
             continue
         
-        # Sort by: reliability DESC, then fulltext availability DESC (if prefer_fulltext)
+        # Sort by reliability score DESC, with year as tiebreaker
         def sort_key(doc):
             score = doc.get("reliability_score", 0.0)
-            # Tiebreaker: full-text availability (from sources metadata or flag)
-            has_fulltext = False
-            if prefer_fulltext:
-                sources = doc.get("sources", {})
-                pmc = sources.get("pmc", {}) if isinstance(sources, dict) else {}
-                unpaywall = sources.get("unpaywall", {}) if isinstance(sources, dict) else {}
-                has_fulltext = (
-                    pmc.get("has_body_sections", False) or
-                    unpaywall.get("has_body_sections", False) or
-                    doc.get("has_fulltext", False)  # Fallback flag
-                )
-            return (-score, not has_fulltext)  # Negative for DESC, not for tiebreak
+            year = doc.get("year", 0) or 0
+            return (-score, -year)  # Both descending
         
         sorted_docs = sorted(quality_docs, key=sort_key)
         
@@ -375,8 +363,6 @@ def _iterative_diversity_filtering_internal(
     target_count: int,
     elimination_per_round: int = 1000,
     protected_ids: Optional[Set[str]] = None,
-    tiebreak_threshold: float = 0.8,
-    prefer_fulltext: bool = True,
 ) -> List[Dict[str, Any]]:
     """
     Iteratively eliminate papers while recalculating diversity weights each round.
@@ -386,8 +372,6 @@ def _iterative_diversity_filtering_internal(
         target_count: Target number of papers
         elimination_per_round: How many to eliminate per round
         protected_ids: Set of IDs that cannot be eliminated
-        tiebreak_threshold: When enhanced scores are within this value, use full-text as tiebreaker
-        prefer_fulltext: If True, prefer papers with full-text in tiebreak situations
     """
     protected_ids = protected_ids or set()
     current_papers = papers.copy()
@@ -405,33 +389,11 @@ def _iterative_diversity_filtering_internal(
             combination_score = calculate_combination_score(paper, combination_weights)
             paper["combination_score"] = combination_score
             paper["enhanced_score"] = paper.get("reliability_score", 0) + combination_score
-            
-            # Check full-text availability for tiebreaking
-            if prefer_fulltext:
-                sources = paper.get("sources", {})
-                pmc = sources.get("pmc", {}) if isinstance(sources, dict) else {}
-                unpaywall = sources.get("unpaywall", {}) if isinstance(sources, dict) else {}
-                paper["_has_fulltext"] = (
-                    pmc.get("has_body_sections", False) or
-                    unpaywall.get("has_body_sections", False) or
-                    paper.get("has_fulltext", False)  # Fallback flag
-                )
 
-        # Sort with tiebreaking: enhanced_score ASC, then prefer NOT full-text (eliminate those first)
-        def sort_key(doc):
-            score = doc.get("enhanced_score", 0)
-            has_ft = doc.get("_has_fulltext", False) if prefer_fulltext else False
-            return (score, has_ft)  # Lower score first, then non-fulltext first (False < True)
-        
-        current_papers.sort(key=sort_key)
+        # Sort by enhanced_score ASC (lowest first for elimination)
+        current_papers.sort(key=lambda doc: doc.get("enhanced_score", 0))
 
-        # Find cutoff score for this round
-        if papers_to_eliminate < len(current_papers):
-            cutoff_score = current_papers[papers_to_eliminate - 1].get("enhanced_score", 0)
-        else:
-            cutoff_score = float('inf')
-
-        # Remove from the bottom up, applying tiebreak in the threshold zone
+        # Eliminate papers from the bottom, respecting protected IDs
         eliminated = 0
         survivors: List[Dict[str, Any]] = []
         for d in current_papers:
@@ -442,20 +404,6 @@ def _iterative_diversity_filtering_internal(
             if eliminated >= papers_to_eliminate:
                 survivors.append(d)
                 continue
-            
-            score = d.get("enhanced_score", 0)
-            
-            # If score is clearly above cutoff, keep it
-            if score > cutoff_score + tiebreak_threshold:
-                survivors.append(d)
-                continue
-            
-            # If score is within tiebreak threshold of cutoff, consider full-text
-            if prefer_fulltext and abs(score - cutoff_score) <= tiebreak_threshold:
-                if d.get("_has_fulltext", False):
-                    # In tiebreak zone with full-text: keep it
-                    survivors.append(d)
-                    continue
             
             # Eliminate this paper
             eliminated += 1
@@ -477,16 +425,12 @@ def iterative_diversity_filtering_with_protection(
     target_count: int,
     elimination_per_round: int = 1000,
     protected_ids: Optional[Set[str]] = None,
-    tiebreak_threshold: float = 0.8,
-    prefer_fulltext: bool = True,
 ) -> List[Dict[str, Any]]:
     return _iterative_diversity_filtering_internal(
         papers, 
         target_count, 
         elimination_per_round, 
-        protected_ids,
-        tiebreak_threshold,
-        prefer_fulltext
+        protected_ids
     )
 
 

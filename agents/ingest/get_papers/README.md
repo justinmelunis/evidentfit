@@ -395,19 +395,24 @@ For each paper (concurrent, async):
      │   └─ Abstract-only in XML → Mark for Unpaywall rescue
      └─ Not in PMC → Mark for Unpaywall rescue
   
-  2. Unpaywall Rescue (for PMC failures)
+  2. Unpaywall Rescue (for PMC failures & abstract-only)
      ├─ Query Unpaywall API by DOI
-     ├─ Download best OA PDF
-     ├─ Extract text with PyPDF
+     ├─ Download best OA content (PDF or HTML)
+     ├─ Extract text:
+     │   ├─ PDF: PyPDF extraction
+     │   └─ HTML: Trafilatura (article-aware) + BeautifulSoup fallback
      ├─ Quality check: Has body sections?
-     │   ├─ Yes → Full text
+     │   ├─ Yes → Full text (upgrades PMC abstract-only)
      │   └─ No → Abstract-only
-     └─ Not available → Use PubMed abstract
+     └─ Not available → Keep PubMed abstract
   
-  3. Save to Centralized Store
+  3. Save to Centralized Store (Smart Caching)
      ├─ Shard by key (2-level hex: pmid_xxx or doi_xxx)
-     ├─ Store: {title, pmid, doi, fulltext_text, source, has_body_sections}
-     └─ Skip if already exists (resume-safe)
+     ├─ Store: {pmid, doi, fulltext_text, sources{pmc, unpaywall}, has_body_sections}
+     ├─ Smart skip: Only skip if file exists AND has fulltext
+     │   ├─ Has fulltext → Skip (resume-safe)
+     │   └─ Abstract-only → Re-fetch to attempt upgrade
+     └─ Include skipped files in manifest (complete database state)
 ```
 
 ### Coverage Statistics
@@ -416,9 +421,13 @@ For each paper (concurrent, async):
 
 | Source | Full Texts | Abstract-Only | Total |
 |--------|------------|---------------|-------|
-| PMC | ~22,000 (73%) | ~8,000 (27%) | 30,000 checked |
-| Unpaywall Rescue | +5,000-6,000 | ~2,000-3,000 | ~8,000 attempted |
-| **Final** | **~27,000-28,000 (90%+)** | **~2,000-3,000 (10%)** | **30,000** |
+| PMC | ~20,000 (67%) | ~4,000 (13%) | 23,800 available |
+| Unpaywall PDF | +5,000 | ~700 | ~5,700 attempted |
+| Unpaywall HTML | +300-400 | ~50 | ~350-450 attempted |
+| Not Available | - | ~6,200 (21%) | 6,200 |
+| **Final** | **~25,300-25,400 (84-85%)** | **~4,600-4,700 (15-16%)** | **30,000** |
+
+**Note**: Unpaywall rescues ~5,300-5,400 papers that PMC couldn't provide with fulltext.
 
 ### Quality Detection
 
@@ -452,16 +461,63 @@ data/fulltext_store/
 **Record schema:**
 ```json
 {
-  "key": "pmid_12345678",
   "pmid": "12345678",
   "doi": "10.1234/example",
-  "title": "Study title",
-  "fulltext_text": "Full extracted text...",
-  "source": "pmc",
-  "has_body_sections": true,
-  "fetched_at": "2025-10-06T12:00:00Z"
+  "abstract": "Paper abstract from PubMed...",
+  "fulltext_text": "Full extracted text (or null if only abstract)...",
+  "sources": {
+    "pmc": {
+      "pmcid": "PMC1234567",
+      "status": "ok_efetch",
+      "has_body_sections": true,
+      "fulltext_bytes": 125000
+    },
+    "unpaywall": {
+      "url": "https://...",
+      "format": "pdf",
+      "status": "ok_pdf",
+      "has_body_sections": true,
+      "content_bytes": 250000
+    }
+  }
 }
 ```
+
+### Manifest Statistics
+
+The `fulltext_manifest.json` provides comprehensive statistics about the **complete database state** (not just newly fetched papers):
+
+**Database State** (all papers in store):
+```json
+{
+  "total": 30000,                      // All papers in database
+  "pmc_total": 23834,                  // Papers available in PMC
+  "pmc_full_text": 19957,              // PMC papers with fulltext
+  "pmc_abstract_only": 3877,           // PMC papers with abstract only
+  "unpaywall_total": 1050,             // Papers where Unpaywall attempted
+  "unpaywall_full_text": 392,          // Unpaywall papers with fulltext
+  "unpaywall_rescued": 250,            // PMC abstract-only → Unpaywall fulltext
+  "full_text_with_body": 25300,        // Total papers with fulltext (PMC + Unpaywall)
+  "full_text_percent": 84.33,          // Fulltext coverage
+  "abstract_only_final": 4700          // Papers with only abstract available
+}
+```
+
+**Run Operations** (this fetch run only):
+```json
+{
+  "saved": 5200,                       // New files written
+  "skipped_existing": 24800,           // Files already in database
+  "skipped_with_fulltext": 23500,      // Skipped files that have fulltext
+  "new_fulltext_fetched": 4100,        // New fulltexts acquired this run
+  "attempted_upgrades": 1100           // Abstract-only files re-fetched
+}
+```
+
+**Key insight**: When re-running fulltext fetch:
+- Papers with fulltext are **skipped** (fast, no re-fetch)
+- Papers with only abstract are **re-attempted** (upgrade opportunity)
+- All papers (skipped + new) appear in manifest stats (complete database view)
 
 ### Performance
 
@@ -503,11 +559,6 @@ DIVERSITY_ROUNDS_THRESHOLD=30000     # When to use diversity filtering
 USE_ENHANCED_QUOTAS=true             # Enable enhanced quota system
 MIN_OVERALL_PER_SUPPLEMENT=10        # Top N overall per supplement
 MIN_PER_SUPPLEMENT_GOAL=2            # Top N per supplement×goal
-PREFER_FULLTEXT_IN_QUOTAS=true       # Full-text tiebreaker in quotas
-
-# Diversity Tiebreaking
-DIVERSITY_TIEBREAK_THRESHOLD=0.8     # Score difference for full-text preference
-PREFER_FULLTEXT_IN_DIVERSITY=true    # Enable full-text tiebreaking
 
 # Full-Text Fetching
 ENABLE_UNPAYWALL=true                # Enable Unpaywall rescue
