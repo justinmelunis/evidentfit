@@ -19,7 +19,7 @@ python -m agents.ingest.get_papers.pipeline \
   --target 30000 \
   --fulltext-concurrency 8
 
-# Output: 30k papers (90% full-text) in data/ingest/runs/<timestamp>/
+# Output: 30k papers (≈77–80% full-text without subscriptions) in data/ingest/runs/<timestamp>/
 ```
 
 ```bash
@@ -42,33 +42,50 @@ After bootstrap, run monthly to keep corpus fresh with new research:
 ### Monthly Workflow (Run Once Per Month)
 
 ```bash
-# Phase 1: Fetch new papers since last run (~2-3 hours)
-python -m agents.ingest.get_papers.pipeline --mode monthly --target 2000
+# Phase 1: Fetch new papers since last run (~2-4 hours)
+python -m agents.ingest.get_papers.pipeline \
+  --mode monthly \
+  --target 2000 \
+  --upgrade-existing-abstracts  # Recommended: also upgrade old abstract-only papers
 
 # Automatically:
 # ✓ Reads watermark from last run
 # ✓ Fetches only papers published since then (~4K new papers)
 # ✓ Applies per-supplement quality thresholds
 # ✓ Guarantees top 2-10 most recent per supplement
-# ✓ Fetches full-text for selected papers
+# ✓ Fetches full-text for NEW papers (PMC + Unpaywall PDF/HTML)
+# ✓ Upgrades ~300-500 EXISTING abstract-only papers to fulltext
 # ✓ Updates watermark for next month
 # 
-# Output: ~800-1,200 quality papers added
+# Output: ~800-1,200 new papers + ~300-500 upgraded papers
 ```
 
 ```bash
-# Phase 2: Process new papers with GPU (~18-24 hours)
+# Phase 2: Process new papers with GPU (~12-18 hours)
 python -m agents.ingest.paper_processor.run \
   --mode monthly \
   --master-summaries data/paper_processor/master/summaries_master.jsonl \
   --max-papers 2000
+
+# Automatically:
+# ✓ Loads ~30K dedupe keys from master (cross-run deduplication)
+# ✓ Reads ~1,200 papers from get_papers monthly run
+# ✓ Skips ~850 already-processed papers (fast)
+# ✓ Processes ~350-400 NEW papers (~12-18 hours on RTX 3080)
+# ✓ Auto-backups master before appending
+# ✓ Appends new summaries to master file
+# ✓ Saves monthly delta (e.g., delta_202511.jsonl) for audit trail
+# ✓ Rebuilds master index (dedupe_key → line_number lookup)
+# ✓ Validates master integrity (line count matches index size)
+#
+# Output: Master grows from 30,000 → 30,350+ papers
 ```
 
 **What happens:**
-- ✓ get_papers: ~4K papers fetched → ~900 selected (quality-filtered)
-- ✓ paper_processor: Loads 30K dedupe keys → processes ~850 NEW → appends to master
-- ✓ Auto-backup master, save monthly delta, rebuild index, validate
-- ✓ Expected: ~800-900 papers added to corpus/month (stable)
+- ✓ **get_papers**: ~4K papers fetched → ~800-1,200 selected (quality-filtered) + ~300-500 upgraded
+- ✓ **paper_processor**: Loads 30K dedupe keys → processes ~350-400 NEW → appends to master
+- ✓ **Auto-backup** master, save monthly delta, rebuild index, validate
+- ✓ **Expected**: ~350-400 net new papers added to corpus/month (stable growth)
 
 ---
 
@@ -239,7 +256,7 @@ Fast paper discovery, selection, and full-text fetching.
 - ⚡ **No LLM calls** - Rule-based for speed (zero cost)
 - 🎯 **Quality scoring** - Meta-analyses, RCTs, sample size
 - 🔄 **Monthly mode** - Watermark-based incremental updates
-- 📄 **Full-text fetching** - PMC + Unpaywall (90%+ coverage)
+- 📄 **Full-text fetching** - PMC + Unpaywall + targeted scraping (≈77–80% coverage without subscriptions)
 - 🎲 **Diversity filtering** - Balanced across supplements and goals
 
 **Runtime**: ~10 hours (30K papers with API key)
@@ -373,9 +390,9 @@ python scripts/validate_master_summaries.py
 
 | Configuration | PMC Fetch | Full Pipeline | Full-Text Coverage |
 |---------------|-----------|---------------|-------------------|
-| With API key + Unpaywall | ~3-4 hrs | ~10 hrs | 90%+ |
+| With API key + Unpaywall | ~3-4 hrs | ~10 hrs | ≈77–80% |
 | With API key only | ~3-4 hrs | ~8 hrs | 73% |
-| No API key + Unpaywall | ~10-12 hrs | ~30 hrs | 90%+ |
+| No API key + Unpaywall | ~10-12 hrs | ~30 hrs | ≈77–80% |
 
 ### paper_processor (30K Papers)
 
@@ -427,10 +444,12 @@ python scripts/analyze_corpus_quality.py data/ingest/runs/latest/pm_papers.jsonl
 - **Ready for Q&A** - Structured summaries with evidence grades
 
 ### After Monthly Updates
-- **+800-1,200 papers/month** (stable growth)
+- **+800-1,200 NEW papers/month** (stable growth)
+- **+300-500 UPGRADED papers/month** (abstract → fulltext via HTML extraction)
 - **Quality-maintained** - Fixed thresholds prevent dilution
 - **Fresh research** - Top 2-10 most recent per supplement guaranteed
 - **Smart additions** - Improves weak supplements, maintains strong ones
+- **Continuous improvement** - Fulltext coverage gradually increases each month
 - **Predictable** - Same thresholds month-to-month
 
 ---

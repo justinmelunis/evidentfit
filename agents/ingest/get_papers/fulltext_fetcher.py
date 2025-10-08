@@ -655,17 +655,18 @@ async def _fetch_one_fulltext(
                 xml_text = await _fetch_text(client, xml_url)
                 if xml_text:
                     fulltext = _extract_article_content(xml_text)
-                    record["fulltext_text"] = fulltext
                     record["sources"]["pmc"]["fulltext_bytes"] = len(xml_text)
                     has_body = bool(re.search(
                         r'(INTRODUCTION|METHODS|RESULTS|DISCUSSION|BACKGROUND|MATERIALS AND METHODS|STUDY DESIGN|PARTICIPANTS):',
                         fulltext
                     ))
                     if has_body:
+                        record["fulltext_text"] = fulltext
                         record["sources"]["pmc"]["status"] = "ok"
                         record["sources"]["pmc"]["has_body_sections"] = True
                         return (pmid or doi or "unknown", record)
                     else:
+                        # Don't set fulltext_text for abstract-only; allow fallback sources to be tried
                         record["sources"]["pmc"]["status"] = "abstract_only"
                         record["sources"]["pmc"]["has_body_sections"] = False
             # EFetch fallback
@@ -680,7 +681,6 @@ async def _fetch_one_fulltext(
                 if r.status_code == 200 and r.text and len(r.text) > 1000:
                     xml_text = r.text
                     fulltext = _extract_article_content(xml_text)
-                    record["fulltext_text"] = fulltext
                     record["sources"]["pmc"]["xml_url"] = f"{fallback_xml_url}?db=pmc&id={pmcid}&rettype=xml"
                     record["sources"]["pmc"]["fulltext_bytes"] = len(xml_text)
                     has_body = bool(re.search(
@@ -688,10 +688,12 @@ async def _fetch_one_fulltext(
                         fulltext
                     ))
                     if has_body:
+                        record["fulltext_text"] = fulltext
                         record["sources"]["pmc"]["status"] = "ok_efetch"
                         record["sources"]["pmc"]["has_body_sections"] = True
                         return (pmid or doi or "unknown", record)
                     else:
+                        # Don't set fulltext_text for abstract-only; allow fallback sources to be tried
                         record["sources"]["pmc"]["status"] = "abstract_only"
                         record["sources"]["pmc"]["has_body_sections"] = False
             except Exception as e:
@@ -726,25 +728,40 @@ async def _fetch_one_fulltext(
                     pdf_text = _extract_text_from_pdf(content_bytes)
                     if pdf_text:
                         has_body = bool(re.search(r'(Introduction|Methods|Results|Discussion|Background|Materials and Methods|Study Design|Participants)', pdf_text, re.IGNORECASE))
-                        record["fulltext_text"] = pdf_text
                         record["sources"]["unpaywall"]["has_body_sections"] = has_body
-                        record["sources"]["unpaywall"]["status"] = "ok_pdf" if has_body else "pdf_abstract_only"
-                        return (pmid or doi or "unknown", record)
+                        if has_body:
+                            # Only set fulltext_text if we have body sections
+                            record["fulltext_text"] = pdf_text
+                            record["sources"]["unpaywall"]["status"] = "ok_pdf"
+                            return (pmid or doi or "unknown", record)
+                        else:
+                            # PDF extracted but no body sections - try other sources
+                            record["sources"]["unpaywall"]["status"] = "pdf_abstract_only"
                     else:
                         record["sources"]["unpaywall"]["status"] = "pdf_extraction_failed"
                 else:
                     html_text = _extract_text_from_html(content_bytes)
                     if html_text:
                         has_body = bool(re.search(r'(Introduction|Methods|Results|Discussion|Background|Materials and Methods|Study Design|Participants)', html_text, re.IGNORECASE))
-                        record["fulltext_text"] = html_text
                         record["sources"]["unpaywall"]["has_body_sections"] = has_body
-                        if format_type == "html_aggressive_scrape":
-                            record["sources"]["unpaywall"]["status"] = "ok_html_aggressive" if has_body else "html_aggressive_abstract_only"
-                        elif format_type == "html_doi_fallback":
-                            record["sources"]["unpaywall"]["status"] = "ok_html_doi_fallback" if has_body else "html_doi_fallback_abstract_only"
+                        if has_body:
+                            # Only set fulltext_text if we have body sections
+                            record["fulltext_text"] = html_text
+                            if format_type == "html_aggressive_scrape":
+                                record["sources"]["unpaywall"]["status"] = "ok_html_aggressive"
+                            elif format_type == "html_doi_fallback":
+                                record["sources"]["unpaywall"]["status"] = "ok_html_doi_fallback"
+                            else:
+                                record["sources"]["unpaywall"]["status"] = "ok_html"
+                            return (pmid or doi or "unknown", record)
                         else:
-                            record["sources"]["unpaywall"]["status"] = "ok_html" if has_body else "html_abstract_only"
-                        return (pmid or doi or "unknown", record)
+                            # HTML extracted but no body sections - allow other sources to try
+                            if format_type == "html_aggressive_scrape":
+                                record["sources"]["unpaywall"]["status"] = "html_aggressive_abstract_only"
+                            elif format_type == "html_doi_fallback":
+                                record["sources"]["unpaywall"]["status"] = "html_doi_fallback_abstract_only"
+                            else:
+                                record["sources"]["unpaywall"]["status"] = "html_abstract_only"
                     else:
                         # Track failed extractions by format type
                         if format_type == "html_aggressive_scrape":
@@ -768,10 +785,15 @@ async def _fetch_one_fulltext(
                 pdf_text = _extract_text_from_pdf(content_bytes)
                 if pdf_text:
                     has_body = bool(re.search(r'(Introduction|Methods|Results|Discussion|Background|Materials and Methods|Study Design|Participants)', pdf_text, re.IGNORECASE))
-                    record["fulltext_text"] = pdf_text
                     record["sources"]["unpaywall"]["has_body_sections"] = has_body
-                    record["sources"]["unpaywall"]["status"] = "ok_pdf_aggressive" if has_body else "pdf_aggressive_abstract_only"
-                    return (pmid or doi or "unknown", record)
+                    if has_body:
+                        # Only set fulltext_text if we have body sections
+                        record["fulltext_text"] = pdf_text
+                        record["sources"]["unpaywall"]["status"] = "ok_pdf_aggressive"
+                        return (pmid or doi or "unknown", record)
+                    else:
+                        # PDF extracted but no body sections - allow abstract fallback
+                        record["sources"]["unpaywall"]["status"] = "pdf_aggressive_abstract_only"
                 else:
                     # PDF fetch succeeded but extraction failed - still track it
                     record["sources"]["unpaywall"]["status"] = "pdf_aggressive_extraction_failed"
@@ -779,10 +801,15 @@ async def _fetch_one_fulltext(
                 html_text = _extract_text_from_html(content_bytes)
                 if html_text:
                     has_body = bool(re.search(r'(Introduction|Methods|Results|Discussion|Background|Materials and Methods|Study Design|Participants)', html_text, re.IGNORECASE))
-                    record["fulltext_text"] = html_text
                     record["sources"]["unpaywall"]["has_body_sections"] = has_body
-                    record["sources"]["unpaywall"]["status"] = "ok_html_aggressive" if has_body else "html_aggressive_abstract_only"
-                    return (pmid or doi or "unknown", record)
+                    if has_body:
+                        # Only set fulltext_text if we have body sections
+                        record["fulltext_text"] = html_text
+                        record["sources"]["unpaywall"]["status"] = "ok_html_aggressive"
+                        return (pmid or doi or "unknown", record)
+                    else:
+                        # HTML extracted but no body sections - allow abstract fallback
+                        record["sources"]["unpaywall"]["status"] = "html_aggressive_abstract_only"
                 else:
                     # HTML fetch succeeded but extraction failed strict validation - still track it
                     record["sources"]["unpaywall"]["status"] = "html_aggressive_extraction_failed"

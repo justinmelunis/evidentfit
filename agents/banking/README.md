@@ -86,12 +86,30 @@ The banking caches are consumed by:
 - **Frontend**: Exposes Level 1 data via `/supplements/evidence` endpoint
 - **Stack Planner**: Uses all three levels for comprehensive personalization
 
+## Model Selection
+
+**Model**: GPT-4o-mini (Azure AI Foundry)
+
+**Why GPT-4o-mini?**
+- ✅ **Cost-effective**: $5.32 per run (~$21/year for quarterly updates)
+- ✅ **Fast**: 20-30 minutes with parallel execution (vs 8-12 hours local)
+- ✅ **High quality**: Excellent multi-document synthesis and citation accuracy
+- ✅ **Consistent**: Same model used for user-facing API responses
+- ✅ **Reliable**: 99.9% uptime, fully managed by Azure
+
+**Alternatives considered:**
+- **GPT-4o**: 17× more expensive ($88/run) for minimal quality gain
+- **Llama-3.1-8B (local)**: Saves $19/year but 60× slower, quality validation needed
+
+See [Model Selection Strategy](../../docs/MODEL_SELECTION.md) for detailed cost analysis.
+
 ## Performance
 
-- **Level 1**: ~162 LLM calls (one per goal×supplement combination)
-- **Level 2**: ~360 LLM calls (one per profile combination)
-- **Total**: ~522 LLM calls for complete initialization
-- **Runtime**: 30-60 minutes depending on LLM response times
+- **Level 1**: 162 LLM calls (6.5k input + 600 output tokens each)
+- **Level 2**: 9,720 LLM calls (2.5k input + 250 output tokens each)
+- **Total**: ~25.35M input tokens + ~2.53M output tokens per run
+- **Runtime**: 20-30 minutes (parallel execution with 100+ concurrent calls)
+- **Cost**: $5.32 per run ($21.28/year for quarterly updates)
 - **Storage**: ~3MB total for all banking caches
 
 ## Monitoring

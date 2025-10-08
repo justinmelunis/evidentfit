@@ -45,14 +45,34 @@ pip install -r requirements.txt
 pip install torch --index-url https://download.pytorch.org/whl/cu118
 ```
 
-### Basic Usage
+### Bootstrap Usage (Initial 30K Papers)
 
 ```bash
-# Process papers from latest get_papers run
+# Process papers from latest get_papers bootstrap run
 python -m agents.ingest.paper_processor.run \
+  --mode bootstrap \
   --max-papers 30000 \
   --batch-size 1 \
   --model mistralai/Mistral-7B-Instruct-v0.3
+
+# Output: data/paper_processor/summaries/summaries_<timestamp>.jsonl
+# This becomes your master summaries file for monthly updates
+```
+
+### Monthly Updates (Incremental Processing)
+
+```bash
+# Process only NEW papers from latest monthly get_papers run
+python -m agents.ingest.paper_processor.run \
+  --mode monthly \
+  --master-summaries data/paper_processor/summaries/summaries_20251006_123456.jsonl \
+  --max-papers 2000
+
+# Automatically:
+# ✓ Cross-run deduplication (skips already-processed papers)
+# ✓ Appends to master summaries file (with backup)
+# ✓ Saves monthly delta file (audit trail)
+# ✓ Rebuilds and validates master index
 ```
 
 ### Resume Interrupted Run
@@ -135,18 +155,88 @@ python -m agents.ingest.paper_processor.run \
 └─────────────────────────────────────────────────────────────┘
 ```
 
+## Monthly Update System
+
+### Architecture
+
+The paper processor supports two modes optimized for different workflows:
+
+**Bootstrap Mode** (Initial 30K papers):
+- Processes entire corpus from scratch
+- Outputs single summaries file
+- No deduplication needed
+- Duration: ~5 days on RTX 3080
+
+**Monthly Mode** (Incremental updates):
+- Loads master summaries for deduplication
+- Processes only NEW papers (~800-1,200/month)
+- Appends to master with auto-backup
+- Saves monthly delta for audit trail
+- Rebuilds master index
+- Duration: ~12-18 hours on RTX 3080
+
+### Master Summaries System
+
+```
+data/paper_processor/
+├── master/
+│   ├── summaries_master.jsonl          # Complete corpus (all papers)
+│   ├── summaries_master_backup_<ts>.jsonl  # Auto-backup before append
+│   └── master_index.json               # Dedupe key → line number lookup
+├── monthly_deltas/
+│   ├── delta_202510.jsonl              # October additions
+│   ├── delta_202511.jsonl              # November additions
+│   └── ...
+├── summaries/
+│   ├── summaries_20251006_123456.jsonl # Bootstrap run
+│   └── summaries_20251106_234567.jsonl # Monthly run
+└── latest.json
+```
+
+### Monthly Workflow
+
+1. **Load dedupe keys** from master summaries
+2. **Read new papers** from latest get_papers run
+3. **Skip already-processed** papers (cross-run dedup)
+4. **Process remaining** papers (~800-1,200 new)
+5. **Append to master** (with auto-backup)
+6. **Save monthly delta** (audit trail)
+7. **Rebuild master index** (dedupe_key → line_num)
+8. **Validate integrity** (line count vs index size)
+
+### Cross-Run Deduplication
+
+```python
+# In monthly mode:
+master_keys = load_dedupe_keys(master_summaries)  # e.g., {'pmid_12345', ...}
+new_papers = load_papers(get_papers_output)
+
+for paper in new_papers:
+    if paper.dedupe_key in master_keys:
+        skip()  # Already processed
+    else:
+        process_and_append()
+```
+
 ## Configuration
 
 ### Command-Line Arguments
 
 ```bash
+# Mode (required)
+--mode MODE               # 'bootstrap' or 'monthly'
+
+# Monthly mode specific
+--master-summaries PATH   # Required for monthly: master summaries file to append to
+--resume-summaries PATH   # Disabled in monthly mode (use master instead)
+
+# Common arguments
 --papers-jsonl PATH       # Input JSONL (default: latest from get_papers)
 --max-papers N            # Max papers to process (default: 200)
 --batch-size N            # Keep at 1 to cap VRAM (default: 1)
 --ctx-tokens N            # Model context window (default: 16384)
 --max-new-tokens N        # Max output tokens (default: 640)
 --model NAME              # Model to use (default: mistralai/Mistral-7B-Instruct-v0.3)
---resume-summaries PATH   # Resume from .jsonl or .jsonl.tmp file
 ```
 
 ### Environment Variables
@@ -247,24 +337,52 @@ Processing ~30,000 research papers (≈300 million tokens):
 
 ```
 data/paper_processor/
-├── summaries/
-│   ├── summaries_20251006_123456.jsonl     # Structured outputs
-│   └── summaries_20251006_123456.jsonl.tmp # In-progress (resume from this)
-├── stats/
-│   └── stats_20251006_123456.json          # Processing metrics
-└── latest.json                              # Pointer to most recent run
+├── master/                                         # Monthly mode outputs
+│   ├── summaries_master.jsonl                     # Complete corpus (30K+ papers)
+│   ├── summaries_master_backup_20251106_120000.jsonl  # Auto-backup
+│   └── master_index.json                          # Fast lookup (dedupe_key → line)
+├── monthly_deltas/                                # Monthly audit trail
+│   ├── delta_202510.jsonl                         # October's new papers
+│   ├── delta_202511.jsonl                         # November's new papers
+│   └── ...
+├── summaries/                                     # Individual run outputs
+│   ├── summaries_20251006_123456.jsonl            # Bootstrap run
+│   ├── summaries_20251106_234567.jsonl            # Monthly run
+│   └── summaries_<timestamp>.jsonl.tmp            # In-progress (resume)
+├── stats/                                         # Processing metrics
+│   ├── stats_20251006_123456.json                 # Bootstrap stats
+│   └── stats_20251106_234567.json                 # Monthly stats
+└── latest.json                                    # Pointer to most recent run
 
 logs/paper_processor/
-└── paper_processor.log                      # Rotating file logger
+└── paper_processor.log                            # Rotating file logger
+```
+
+### One-Time Setup for Monthly Updates
+
+After bootstrap completes, initialize the master summaries:
+
+```bash
+# Copy bootstrap output to master directory
+mkdir -p data/paper_processor/master
+mkdir -p data/paper_processor/monthly_deltas
+
+# Initialize master from bootstrap
+cp data/paper_processor/summaries/summaries_<bootstrap_timestamp>.jsonl \
+   data/paper_processor/master/summaries_master.jsonl
+
+# Future monthly runs will append to this master file
 ```
 
 ## Telemetry & Stats
 
 The processor tracks comprehensive metrics:
 
+**Bootstrap Mode Stats:**
 ```json
 {
-  "run_id": "paper_processor_1733512345",
+  "run_id": "paper_processor_bootstrap_20251006_123456",
+  "mode": "bootstrap",
   "papers_in": 30000,
   "papers_out": 28543,
   "skipped_empty": 892,
@@ -288,6 +406,30 @@ The processor tracks comprehensive metrics:
     "evidence_grades": {"A": 5432, "B": 9821, "C": 8234, "D": 5056},
     "supplements": {"creatine": 2134, "protein": 1876, ...}
   }
+}
+```
+
+**Monthly Mode Stats:**
+```json
+{
+  "run_id": "paper_processor_monthly_20251106_234567",
+  "mode": "monthly",
+  "papers_in": 1200,
+  "papers_out": 1150,
+  "skipped_dedup": 850,                   // Already in master
+  "papers_written_this_run": 350,         // Net additions
+  
+  "master_size_before": 28543,
+  "master_size_after": 28893,
+  "net_additions": 350,
+  
+  "monthly_delta_path": "data/paper_processor/monthly_deltas/delta_202511.jsonl",
+  "master_index_valid": true,
+  
+  "elapsed_sec": 58320,
+  "rate_papers_per_sec": 0.020,
+  
+  "model": "mistralai/Mistral-7B-Instruct-v0.3"
 }
 ```
 

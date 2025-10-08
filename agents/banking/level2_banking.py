@@ -10,6 +10,12 @@ Features:
 - Citations for profile-specific findings
 - Evidence for different weight bins, age groups, and sexes
 - Integration with Level 1 base grades
+
+LLM Model: GPT-4o-mini (Azure AI Foundry)
+- Cost: ~$5.11 per run (9,720 calls)
+- Runtime: 15-20 minutes (parallel execution)
+- Same model used for user-facing API responses (consistency)
+- See docs/MODEL_SELECTION.md for rationale
 """
 
 import os

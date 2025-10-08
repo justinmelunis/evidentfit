@@ -31,7 +31,7 @@ python -m agents.ingest.get_papers.pipeline \
 ```
 
 **Runtime**: ~10 hours with API key, ~30 hours without  
-**Output**: 30,000 papers (85-90% full-text coverage)
+**Output**: 30,000 papers (≈77–80% full-text coverage without subscriptions)
 
 ### Monthly Updates (Incremental)
 
@@ -100,7 +100,7 @@ python -m agents.ingest.get_papers.pipeline --mode monthly --target 2000
 │  Protected quotas (enhanced system):                            │
 │  • Top 10 overall per supplement (by reliability score)         │
 │  • Top 2 per supplement×goal combination                        │
-│  • Full-text preference as tiebreaker                           │
+│  • Balanced tiebreaks (no full-text preference)                 │
 │  • ~715 papers protected (added back if filtered)               │
 │                                                                  │
 │  Output: ~69,000 quality papers (bootstrap)                     │
@@ -114,7 +114,7 @@ python -m agents.ingest.get_papers.pipeline --mode monthly --target 2000
 │  • Score each supplement-goal combination                        │
 │  • Eliminate worst combinations iteratively                      │
 │  • Protected quotas never eliminated                             │
-│  • 0.8 tiebreak threshold: prefer full-text when scores close   │
+│  • Balanced tiebreaks (no full-text preference)                 │
 │                                                                  │
 │  Ensures balanced representation across:                         │
 │  • Supplements (creatine, caffeine, protein, etc.)              │
@@ -154,7 +154,8 @@ python -m agents.ingest.get_papers.pipeline --mode monthly --target 2000
 │  Content extraction: Title, abstract, body, tables, figures     │
 │  Storage: data/fulltext_store (sharded, deduplicated)          │
 │                                                                  │
-│  Final coverage: 27-28k full texts (90%+), 2-3k abstracts (10%)│
+│  Final coverage (no subscriptions): ~23–24k full texts (≈77–80%),│
+│  ~6–7k abstracts (≈20–23%)                                      │
 │  Manifest: data/ingest/runs/<timestamp>/fulltext_manifest.json │
 └─────────────────────────────────────────────────────────────────┘
 ```
@@ -235,14 +236,14 @@ Every paper receives an objective quality score based on:
 2. **Enhanced Quota Protection**:
    - Top 10 overall per supplement (by reliability score)
    - Top 2 per supplement×goal combination
-   - Full-text preference as tiebreaker
+   - Balanced tiebreaks (no full-text preference)
    - ~715 papers protected
 
 3. **Diversity Filtering**:
    - Score each supplement-goal combination
    - Iteratively eliminate worst combinations
    - Protected quotas never eliminated
-   - 0.8 tiebreak threshold: prefer full-text when scores within 0.8
+   - Balanced tiebreaks (no full-text preference)
    - Continues until target reached (30K)
 
 **Output Distribution:**
@@ -427,7 +428,7 @@ For each paper (concurrent, async):
 | Not Available | - | ~6,200 (21%) | 6,200 |
 | **Final** | **~25,300-25,400 (84-85%)** | **~4,600-4,700 (15-16%)** | **30,000** |
 
-**Note**: Unpaywall rescues ~5,300-5,400 papers that PMC couldn't provide with fulltext.
+**Note**: Unpaywall frequently returns no OA content for paywalled journals; targeted DOI landing-page scraping can recover a small additional fraction under strict validation.
 
 ### Quality Detection
 
@@ -498,7 +499,7 @@ The `fulltext_manifest.json` provides comprehensive statistics about the **compl
   "unpaywall_full_text": 392,          // Unpaywall papers with fulltext
   "unpaywall_rescued": 250,            // PMC abstract-only → Unpaywall fulltext
   "full_text_with_body": 25300,        // Total papers with fulltext (PMC + Unpaywall)
-  "full_text_percent": 84.33,          // Fulltext coverage
+  "full_text_percent": 77.8,           // Example: Fulltext coverage (no subscriptions)
   "abstract_only_final": 4700          // Papers with only abstract available
 }
 ```
@@ -665,7 +666,7 @@ Each line is a JSON object:
 
 ### Low Full-Text Coverage
 
-**Expected**: 85-90% full-text coverage
+**Expected**: ≈77–80% full-text coverage (without subscriptions)
 
 **If lower (<80%)**:
 - Check UNPAYWALL_EMAIL is set

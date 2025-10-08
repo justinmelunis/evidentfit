@@ -88,6 +88,8 @@ PORT = int(os.getenv("PORT", "8000"))
 # ---- Azure AI Foundry configuration ----
 FOUNDATION_ENDPOINT = os.getenv("FOUNDATION_ENDPOINT")
 FOUNDATION_KEY = os.getenv("FOUNDATION_KEY")
+# Model Selection: GPT-4o-mini for cost-effective, high-quality responses
+# Cost: ~$0.001 per query | See docs/MODEL_SELECTION.md for rationale
 FOUNDATION_CHAT_MODEL = os.getenv("FOUNDATION_CHAT_MODEL", "gpt-4o-mini")
 FOUNDATION_EMBED_MODEL = os.getenv("FOUNDATION_EMBED_MODEL", "text-embedding-3-small")
 

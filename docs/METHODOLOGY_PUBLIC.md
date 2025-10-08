@@ -993,7 +993,7 @@ When in doubt, we err on the side of caution:
 
 We're honest about what our system can and cannot do:
 
-1. **Full-text coverage**: We obtain full-text for 90%+ of papers via PMC (~73%) and Unpaywall (~17-20% rescue); remaining ~7-10% use abstracts only
+1. **Full-text coverage**: Without publisher subscriptions, full-text coverage is typically ≈77–80% (primarily via PMC). We attempt Europe PMC and Unpaywall for open-access versions, and apply strict DOI landing-page scraping with conservative validation; remaining ≈20–23% use abstracts.
 2. **English-language focus**: Most research we access is published in English
 3. **Not medical advice**: We provide evidence-based education, not personalized medical care
 4. **Population variability**: Research shows average effects in study populations—individual results may vary

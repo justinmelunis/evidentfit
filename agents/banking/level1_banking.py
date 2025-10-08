@@ -11,6 +11,11 @@ Features:
 - Use all metadata fields for quality assessment
 - Consistency scoring: Better detection of contradictory findings
 - Effect size detection and inclusion in details
+
+LLM Model: GPT-4o-mini (Azure AI Foundry)
+- Cost: ~$1.60 per run (162 calls)
+- Runtime: 5-10 minutes (parallel execution)
+- See docs/MODEL_SELECTION.md for rationale
 """
 
 import os
