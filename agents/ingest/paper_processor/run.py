@@ -277,8 +277,19 @@ def main():
             papers_in += 1
             t0 = time.time()
 
-            content = p.get("content") or ""
-            if not content or len(content) < 20:
+            # Prefer explicit fulltext if present; otherwise abstract/content; else skip
+            fulltext_text = (p.get("fulltext_text") or "").strip()
+            abstract_text = (p.get("abstract") or p.get("content") or "").strip()
+            if fulltext_text:
+                content = fulltext_text
+                used_fulltext = True
+            elif abstract_text:
+                content = abstract_text
+                used_fulltext = False
+            else:
+                skipped_empty += 1
+                continue
+            if len(content) < 20:
                 skipped_empty += 1
                 continue
 
@@ -288,8 +299,8 @@ def main():
                 continue
             seen_keys.add(dkey)
             
-            # Track full-text vs abstract usage
-            if p.get("fulltext_source") or p.get("has_fulltext"):
+            # Track full-text vs abstract usage (robust to missing flags)
+            if 'used_fulltext' in locals() and used_fulltext:
                 fulltext_used += 1
             else:
                 abstract_only += 1
