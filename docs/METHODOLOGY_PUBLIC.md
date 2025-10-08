@@ -1,5 +1,14 @@
 # How EvidentFit Works
 
+_Note: This is the public-facing methodology used on the website. For maintainer-focused implementation details, limitations, and data flow, see `docs/METHODOLOGY.md`._
+
+## TL;DR — How it works in 4 steps
+
+1. Publication selection & curation → see “Part 1: Publication Selection & Curation”
+2. Research chat retrieves and composes with citations → see “Part 2: Research Chat Agent”
+3. Personalized stack generation with three-level banking → see “Part 3: Personalized Stack Generation”
+4. Independent supplement research database for browsing → see “Part 4: Independent Supplement Research Database”
+
 ## Our Philosophy: Evidence First, Always
 
 EvidentFit is built on one core principle: **every recommendation must link directly to peer-reviewed research**. We don't cherry-pick studies to support predetermined conclusions. We don't let commission rates influence what we recommend. We start with the evidence and let that guide everything else.
@@ -353,7 +362,7 @@ The Stack Planner builds a complete, personalized supplement protocol tailored t
   Your Evidence-Based, Personalized Stack
 ```
 
-### Detailed Phase Breakdown
+### Detailed Phase Breakdown _(Details – optional)_
 
 #### Phase 1: Three-Level Evidence Banking
 

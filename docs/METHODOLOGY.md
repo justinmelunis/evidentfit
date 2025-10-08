@@ -1,5 +1,14 @@
 # EvidentFit Methodology
 
+_Note: This is the maintainer-facing methodology covering processes, data flow, limitations, and implementation details. For the public-facing overview used on the website, see `docs/METHODOLOGY_PUBLIC.md`._
+
+## Step-to-implementation map
+
+- Discovery & curation → `agents/ingest/get_papers` (pipeline, thresholds) and `agents/ingest/paper_processor`
+- Evidence banking (levels 1–2) → `agents/banking` (`level1_evidence_bank.json`, `level2_reasoning_bank.json`)
+- API endpoints → `api/main.py` (`/stream`, `/summaries/{supplement}`, `/stack*`)
+- Frontend → `web/evidentfit-web` (pages under `src/app/`)
+
 ## Our Approach to Evidence-Based Supplement Guidance
 
 EvidentFit is built on a foundation of peer-reviewed research from PubMed. We don't make up recommendations—we extract them from thousands of published studies and present them with full transparency so you can see exactly where our guidance comes from.
