@@ -65,7 +65,7 @@ class MistralClient:
 
         quant_args = {}
         if self.cfg.use_4bit and BitsAndBytesConfig is not None:
-            quant_args["load_in_4bit"] = True
+            # Only pass quantization_config; do NOT also pass load_in_4bit kwarg
             quant_args["quantization_config"] = BitsAndBytesConfig(
                 load_in_4bit=True,
                 bnb_4bit_use_double_quant=True,
@@ -84,7 +84,7 @@ class MistralClient:
 
         self.model = AutoModelForCausalLM.from_pretrained(
             self.cfg.model_name,
-            torch_dtype=dtype,
+            dtype=dtype,
             device_map=self.cfg.device_map if self.device == "cuda" else None,
             low_cpu_mem_usage=True,
             attn_implementation=attn_impl,
