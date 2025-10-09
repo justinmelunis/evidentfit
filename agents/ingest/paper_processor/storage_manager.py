@@ -145,6 +145,22 @@ class StorageManager:
         _atomic_write_text(self.paths.latest_pointer, json.dumps(latest, indent=2))
         return out
 
+    # -------- Live latest-pointer updates (resume aid) --------
+    def update_latest_pointer(self, summaries_path: Path, stats_path: Optional[Path] = None) -> None:
+        """
+        Write/update the latest pointer to the provided summaries path (can be .tmp during a run).
+        """
+        latest = {
+            "created_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            "summaries_path": str(summaries_path.as_posix()),
+            "stats_path": str(stats_path.as_posix()) if stats_path else "",
+        }
+        _atomic_write_text(self.paths.latest_pointer, json.dumps(latest, indent=2))
+
+    def get_current_writer_paths(self) -> tuple[Optional[Path], Optional[Path]]:
+        """Return (tmp_path, final_path) for the active writer, if any."""
+        return self._writer_tmp_path, self._writer_final_path
+
     # -------- Resume helpers --------
     @staticmethod
     def iter_dedupe_keys(path: Path) -> Iterator[str]:
@@ -169,6 +185,29 @@ class StorageManager:
     def load_master_dedupe_keys(self, master_path: Path) -> set:
         """Load all dedupe keys from master summaries file for cross-run deduplication."""
         return set(self.iter_dedupe_keys(master_path))
+    
+    def load_master_input_source_map(self, master_path: Path) -> Dict[str, str]:
+        """
+        Load a lightweight map of dedupe_key -> input_source from the master file.
+        Missing values default to "unknown". This is used to identify abstract-only entries.
+        """
+        result: Dict[str, str] = {}
+        if not master_path.exists():
+            return result
+        with open(master_path, "r", encoding="utf-8") as f:
+            for line in f:
+                if not line.strip():
+                    continue
+                try:
+                    obj = json.loads(line)
+                    dk = obj.get("dedupe_key")
+                    if not dk:
+                        continue
+                    src = obj.get("input_source") or "unknown"
+                    result[dk] = src
+                except Exception:
+                    continue
+        return result
     
     def backup_master(self, master_path: Path) -> Path:
         """Create timestamped backup of master before appending."""
@@ -240,6 +279,20 @@ class StorageManager:
         _atomic_write_text(delta_path, json.dumps(delta_data, ensure_ascii=False, indent=2))
         
         return delta_path
+    
+    def save_upgrade_candidates(self, candidates: List[Dict[str, Any]]) -> Path:
+        """
+        Save upgrade candidate list (where fulltext became available for prior abstract-only records).
+        """
+        ts = time.strftime("%Y-%m-%d")
+        out = self.paths.monthly_deltas_dir / f"{ts}_upgrade_candidates.json"
+        payload = {
+            "created_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            "count": len(candidates),
+            "candidates": candidates,
+        }
+        _atomic_write_text(out, json.dumps(payload, ensure_ascii=False, indent=2))
+        return out
     
     def build_master_index(self, master_path: Path) -> Dict[str, int]:
         """

@@ -22,7 +22,7 @@ The paper processor transforms raw research papers into structured, Q&A-ready su
 
 ### Integration
 - **Automatic input**: Reads from `get_papers` latest pointer
-- **Full-text ready**: Handles both full texts and abstracts seamlessly
+- **Full-text first**: Uses full text when available; falls back to abstracts when needed; skips papers with neither
 - **Structured output**: Q&A-focused JSON with evidence grades, key findings, dosing details
 
 ## Quick Start
@@ -73,12 +73,14 @@ python -m agents.ingest.paper_processor.run \
 # ✓ Appends to master summaries file (with backup)
 # ✓ Saves monthly delta file (audit trail)
 # ✓ Rebuilds and validates master index
+# ✓ Detects abstract→fulltext upgrade candidates and saves a list for follow-up
 ```
 
 ### Resume Interrupted Run
 
 ```bash
 # If processing was interrupted, resume from the .tmp file
+# Note: latest pointer (data/paper_processor/latest.json) is refreshed periodically during runs
 python -m agents.ingest.paper_processor.run \
   --max-papers 30000 \
   --resume-summaries data/paper_processor/summaries/summaries_20251006_123456.jsonl.tmp
@@ -224,19 +226,34 @@ for paper in new_papers:
 
 ```bash
 # Mode (required)
---mode MODE               # 'bootstrap' or 'monthly'
+--mode MODE                 # 'bootstrap' or 'monthly'
 
 # Monthly mode specific
---master-summaries PATH   # Required for monthly: master summaries file to append to
---resume-summaries PATH   # Disabled in monthly mode (use master instead)
+--master-summaries PATH     # Required for monthly: master summaries file to append to
+--resume-summaries PATH     # Disabled in monthly mode (use master instead)
 
 # Common arguments
---papers-jsonl PATH       # Input JSONL (default: latest from get_papers)
---max-papers N            # Max papers to process (default: 200)
---batch-size N            # Keep at 1 to cap VRAM (default: 1)
---ctx-tokens N            # Model context window (default: 16384)
---max-new-tokens N        # Max output tokens (default: 640)
---model NAME              # Model to use (default: mistralai/Mistral-7B-Instruct-v0.3)
+--papers-jsonl PATH         # Input JSONL (default: latest from get_papers)
+--max-papers N              # Max papers to process (default: 200)
+--batch-size N              # Keep at 1 to cap VRAM (default: 1)
+--microbatch-size N         # Microbatch size (default: 1)
+--ctx-tokens N              # Model context window (default: 16384)
+--max-new-tokens N          # Max output tokens (default: 640)
+--model NAME                # Model to use (default: mistralai/Mistral-7B-Instruct-v0.3)
+--temperature T             # 0.0 for deterministic (default: 0.0)
+--seed SEED                 # RNG seed for reproducibility
+
+# Resumability & progress
+--pointer-interval N        # Update latest.json every N input papers (default: 20)
+--log-interval N            # Log progress every N successful outputs (default: 100)
+
+# Fallback & input hygiene
+--max-abstract-chars N      # Clamp abstract/content length before chunking (default: 20000)
+
+# Performance/backoff
+--slow-threshold-sec S      # Threshold for slow paper (default: 60)
+--slow-backoff-sec S        # Sleep after slow paper (default: 1.0)
+--exception-backoff-sec S   # Sleep after exceptions (default: 2.0)
 ```
 
 ### Environment Variables
@@ -455,15 +472,14 @@ The processor tracks comprehensive metrics:
 - Ensure CUDA drivers up to date
 - Verify using GPU: check logs for "device: cuda"
 
-### Empty Summaries
+### Empty or Invalid Summaries
 
 **Problem**: Model outputs invalid JSON
 
 **Handled automatically**:
-- First-pass failure → Minimal fallback stub
-- Missing fields → Second-pass repair
-- Still incomplete → Valid defaults filled
-- Never discards papers
+- Fulltext → abstract fallback on no chunks/validation errors/exceptions
+- Two-pass extraction with targeted repair
+- If neither fulltext nor abstract available: paper is skipped and counted
 
 ### Resume Not Working
 

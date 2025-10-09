@@ -14,6 +14,7 @@ Paper processing pipeline (streaming + resume + VRAM-friendly).
 import argparse
 import json
 import time
+import signal
 import logging
 from pathlib import Path
 from typing import Dict, Any, Optional, Iterator, List
@@ -178,6 +179,13 @@ def main():
     ap.add_argument("--resume-summaries", type=str, default=None, help="Path to an existing summaries .jsonl or .jsonl.tmp to resume into (bootstrap mode only)")
     ap.add_argument("--mode", type=str, choices=["bootstrap", "monthly"], default="bootstrap", help="Run mode: bootstrap (create new) or monthly (append to master)")
     ap.add_argument("--master-summaries", type=str, default=None, help="Path to master summaries file (required for monthly mode)")
+    # Progress + backoff tuning
+    ap.add_argument("--pointer-interval", type=int, default=20, help="How often (in input papers) to refresh data/paper_processor/latest.json")
+    ap.add_argument("--log-interval", type=int, default=100, help="How often (in successful outputs) to log progress")
+    ap.add_argument("--max-abstract-chars", type=int, default=20000, help="Clamp abstract/content length before chunking")
+    ap.add_argument("--slow-threshold-sec", type=float, default=60.0, help="Threshold in seconds to consider a paper slow")
+    ap.add_argument("--slow-backoff-sec", type=float, default=1.0, help="Sleep duration after a slow paper (seconds)")
+    ap.add_argument("--exception-backoff-sec", type=float, default=2.0, help="Sleep duration after an exception (seconds)")
     args = ap.parse_args()
     
     # Validation
@@ -229,10 +237,11 @@ def main():
         if not master_path.exists():
             LOG.warning(f"Master not found, will create: {master_path}")
         else:
-            # Load dedupe keys from master
-            LOG.info("Loading dedupe keys from master for cross-run deduplication...")
+            # Load dedupe keys and input_source map from master
+            LOG.info("Loading master metadata for cross-run deduplication and upgrades...")
             seen_keys = storage.load_master_dedupe_keys(master_path)
-            LOG.info(f"Loaded {len(seen_keys):,} dedupe keys from master")
+            master_input_source = storage.load_master_input_source_map(master_path)
+            LOG.info(f"Loaded {len(seen_keys):,} dedupe keys from master; {len(master_input_source):,} with source info")
             
             # Count current master size
             with open(master_path, "r", encoding="utf-8") as f:
@@ -262,10 +271,16 @@ def main():
     per_paper_latency: List[float] = []
     
     # NEW: Enhanced tracking
-    fulltext_used = 0
-    abstract_only = 0
+    fulltext_used = 0              # successfully processed using full text
+    abstract_only = 0              # successfully processed using abstract (primary or fallback)
+    abstract_fallback = 0          # of abstract_only, how many were fallback after fulltext failed
     failed_papers: List[Dict[str, Any]] = []
     slow_papers: List[Dict[str, Any]] = []
+
+    # Skip reason breakdown for clarity and resumability audits
+    skipped_no_text = 0            # neither fulltext nor abstract/content present
+    skipped_too_short = 0          # present but too short to be meaningful
+    skipped_no_chunks = 0          # chunking produced zero chunks (after both sources considered)
 
     # On-the-fly aggregate stats
     year_values: List[int] = []
@@ -273,7 +288,29 @@ def main():
     evidence_grade_counts = Counter()
     supplement_counts = Counter()
 
+    # Monthly upgrade tracking: prior abstract-only -> now fulltext
+    upgrade_candidates: List[Dict[str, Any]] = []
+
     start = time.time()
+
+    # Graceful shutdown handling (SIGINT/SIGTERM)
+    shutdown_requested = False
+    def _handle_signal(signum, frame):
+        nonlocal shutdown_requested
+        shutdown_requested = True
+        try:
+            tmp_path, final_path = storage.get_current_writer_paths()
+            if tmp_path or final_path:
+                storage.update_latest_pointer((tmp_path or final_path))
+        except Exception:
+            pass
+        LOG.warning(f"Received signal {signum}; will stop after current paper.")
+    try:
+        signal.signal(signal.SIGINT, _handle_signal)
+        signal.signal(signal.SIGTERM, _handle_signal)
+    except Exception:
+        # Not all platforms support SIGTERM (e.g., Windows older shells)
+        pass
 
     try:
         for idx, p in enumerate(stream_jsonl(papers_jsonl, limit=args.max_papers), 1):
@@ -283,36 +320,60 @@ def main():
             # Prefer explicit fulltext if present; otherwise abstract/content; else skip
             fulltext_text = (p.get("fulltext_text") or "").strip()
             abstract_text = (p.get("abstract") or p.get("content") or "").strip()
+            if abstract_text and len(abstract_text) > args.max_abstract_chars:
+                abstract_text = abstract_text[:args.max_abstract_chars]
+            content_source = None  # "fulltext" | "abstract"
             if fulltext_text:
                 content = fulltext_text
-                used_fulltext = True
+                content_source = "fulltext"
             elif abstract_text:
                 content = abstract_text
-                used_fulltext = False
+                content_source = "abstract"
             else:
                 skipped_empty += 1
+                skipped_no_text += 1
                 continue
             if len(content) < 20:
-                skipped_empty += 1
-                continue
+                # Attempt abstract fallback if initial was fulltext
+                if content_source == "fulltext" and abstract_text and len(abstract_text) >= 20:
+                    content = abstract_text
+                    content_source = "abstract"
+                else:
+                    skipped_empty += 1
+                    skipped_too_short += 1
+                    continue
 
             dkey = create_dedupe_key(p)
             if dkey in seen_keys:
+                # If monthly mode and we have new fulltext while master had abstract-only, capture upgrade
+                if args.mode == "monthly":
+                    prior_src = (master_input_source.get(dkey) if 'master_input_source' in locals() else None) or "unknown"
+                    now_has_full = (content_source == "fulltext")
+                    if prior_src == "abstract" and now_has_full:
+                        upgrade_candidates.append({
+                            "dedupe_key": dkey,
+                            "pmid": p.get("pmid"),
+                            "doi": p.get("doi"),
+                            "title": (p.get("title") or "")[:160],
+                            "previous_source": prior_src,
+                            "new_source": content_source,
+                        })
                 skipped_dedup += 1
                 continue
             seen_keys.add(dkey)
             
-            # Track full-text vs abstract usage (robust to missing flags)
-            if 'used_fulltext' in locals() and used_fulltext:
-                fulltext_used += 1
-            else:
-                abstract_only += 1
-
             # Chunk
             chunks = _split_text_safely(content, args.ctx_tokens, args.max_new_tokens)
             if not chunks:
-                skipped_empty += 1
-                continue
+                # If fulltext produced no chunks, attempt abstract fallback
+                if content_source == "fulltext" and abstract_text:
+                    content = abstract_text
+                    content_source = "abstract"
+                    chunks = _split_text_safely(content, args.ctx_tokens, args.max_new_tokens)
+                if not chunks:
+                    skipped_empty += 1
+                    skipped_no_chunks += 1
+                    continue
             chunks_total += len(chunks)
 
             # Prepare chunk inputs
@@ -325,7 +386,64 @@ def main():
                 chunk_inputs.append(cp)
 
             # Inference (effective batch ~1 to cap VRAM)
-            chunk_summaries = client.generate_batch_summaries(chunk_inputs)
+            try:
+                chunk_summaries = client.generate_batch_summaries(chunk_inputs)
+            except Exception as e:
+                LOG.exception(f"Generation failed for PMID {p.get('pmid')}: {e}")
+                # Backoff to ease GPU/IO pressure
+                try:
+                    time.sleep(max(0.0, float(args.exception_backoff_sec)))
+                except Exception:
+                    pass
+                # Attempt abstract fallback if we were on fulltext
+                if content_source == "fulltext" and abstract_text:
+                    try:
+                        content = abstract_text
+                        content_source = "abstract"
+                        chunks = _split_text_safely(content, args.ctx_tokens, args.max_new_tokens)
+                        if not chunks:
+                            skipped_empty += 1
+                            skipped_no_chunks += 1
+                            failed_papers.append({
+                                "pmid": p.get("pmid"),
+                                "doi": p.get("doi"),
+                                "title": p.get("title", "")[:100],
+                                "reason": "no_chunks_after_exception_then_abstract",
+                            })
+                            continue
+                        chunk_inputs = []
+                        for c_idx, ctext in enumerate(chunks):
+                            cp = dict(p)
+                            cp["content"] = ctext
+                            cp["chunk_idx"] = c_idx
+                            cp["chunk_total"] = len(chunks)
+                            chunk_inputs.append(cp)
+                        chunk_summaries = client.generate_batch_summaries(chunk_inputs)
+                    except Exception as e2:
+                        LOG.exception(f"Fallback generation (abstract) also failed for PMID {p.get('pmid')}: {e2}")
+                        failed_papers.append({
+                            "pmid": p.get("pmid"),
+                            "doi": p.get("doi"),
+                            "title": p.get("title", "")[:100],
+                            "reason": "exception_generation_both_sources",
+                        })
+                        try:
+                            time.sleep(max(0.0, float(args.exception_backoff_sec)))
+                        except Exception:
+                            pass
+                        continue
+                else:
+                    failed_papers.append({
+                        "pmid": p.get("pmid"),
+                        "doi": p.get("doi"),
+                        "title": p.get("title", "")[:100],
+                        "reason": "exception_generation",
+                    })
+                    try:
+                        time.sleep(max(0.0, float(args.exception_backoff_sec)))
+                    except Exception:
+                        pass
+                    continue
 
             # Normalize/validate chunks
             norm_chunks: List[Dict[str, Any]] = []
@@ -337,6 +455,42 @@ def main():
                     norm_chunks.append(s)
                 except Exception:
                     continue
+
+            # Fallback to abstract if fulltext path produced no valid chunks
+            if not norm_chunks and content_source == "fulltext" and abstract_text:
+                LOG.info(f"Fulltext failed validation; attempting abstract fallback for PMID {p.get('pmid')}")
+                # Re-run on abstract
+                content = abstract_text
+                content_source = "abstract"
+                chunks = _split_text_safely(content, args.ctx_tokens, args.max_new_tokens)
+                if not chunks:
+                    skipped_empty += 1
+                    skipped_no_chunks += 1
+                    failed_papers.append({
+                        "pmid": p.get("pmid"),
+                        "doi": p.get("doi"),
+                        "title": p.get("title", "")[:100],
+                        "reason": "no_chunks_after_fulltext_then_abstract",
+                        "chunks_attempted": 0
+                    })
+                    continue
+                chunk_inputs = []
+                for c_idx, ctext in enumerate(chunks):
+                    cp = dict(p)
+                    cp["content"] = ctext
+                    cp["chunk_idx"] = c_idx
+                    cp["chunk_total"] = len(chunks)
+                    chunk_inputs.append(cp)
+                chunk_summaries = client.generate_batch_summaries(chunk_inputs)
+                norm_chunks = []
+                for s in chunk_summaries:
+                    try:
+                        s = normalize_data(s)
+                        if not validate_optimized_schema(s):
+                            LOG.debug("Schema validation failed for a chunk (continuing).")
+                        norm_chunks.append(s)
+                    except Exception:
+                        continue
 
             if not norm_chunks:
                 LOG.warning(f"All chunks failed validation - Paper: {p.get('pmid')} - {p.get('title', '')[:60]}")
@@ -354,12 +508,25 @@ def main():
                 norm_chunks,
             )
 
+            # Annotate provenance for downstream audits
+            merged["input_source"] = content_source  # "fulltext" or "abstract"
+            merged["input_chars"] = len(content)
+
             # Write summary (tracks for monthly delta if in monthly mode)
             if args.mode == "monthly":
                 storage.write_summary_line_monthly(merged)
             else:
                 storage.write_summary_line(merged)
             papers_out += 1
+
+            # Track full-text vs abstract usage only for successful outputs
+            if content_source == "fulltext":
+                fulltext_used += 1
+            elif content_source == "abstract":
+                abstract_only += 1
+                # If fulltext existed but we ended with abstract, it's a fallback
+                if fulltext_text:
+                    abstract_fallback += 1
             
             paper_elapsed = time.time() - t0
             per_paper_latency.append(paper_elapsed)
@@ -377,7 +544,7 @@ def main():
                     supplement_counts[s] += 1
             
             # Performance monitoring: Track slow papers
-            if paper_elapsed > 60:  # >1 minute
+            if paper_elapsed > args.slow_threshold_sec:  # configurable
                 slow_papers.append({
                     "pmid": p.get("pmid"),
                     "title": p.get("title", "")[:100],
@@ -386,9 +553,14 @@ def main():
                     "content_chars": len(content)
                 })
                 LOG.warning(f"Slow paper detected: {p.get('pmid')} took {paper_elapsed:.1f}s ({len(chunks)} chunks, {len(content):,} chars)")
+                # Backoff after slow item
+                try:
+                    time.sleep(max(0.0, float(args.slow_backoff_sec)))
+                except Exception:
+                    pass
             
-            # Progress reporting: Every 100 papers
-            if papers_out % 100 == 0:
+            # Progress reporting: configurable interval
+            if papers_out % max(1, args.log_interval) == 0:
                 elapsed = time.time() - start
                 rate = papers_out / elapsed if elapsed > 0 else 0
                 remaining_papers = args.max_papers - papers_out
@@ -399,10 +571,21 @@ def main():
                 LOG.info(f"PROGRESS: {papers_out}/{args.max_papers} papers ({progress_pct:.1f}%) | "
                         f"Rate: {rate*60:.1f} papers/min | "
                         f"ETA: {eta_hours:.1f}h | "
-                        f"Full-text: {fulltext_used}/{papers_out} ({fulltext_used/papers_out*100:.1f}%)")
+                        f"Full-text: {fulltext_used}/{papers_out} ({(fulltext_used/papers_out*100) if papers_out else 0.0:.1f}%)")
 
             if torch.cuda.is_available() and (idx % max(1, args.batch_size) == 0):
                 torch.cuda.empty_cache()
+
+            # Periodically update latest pointer to the active tmp path to aid resume
+            if idx % max(1, args.pointer_interval) == 0:
+                tmp_path, final_path = storage.get_current_writer_paths()
+                if tmp_path or final_path:
+                    storage.update_latest_pointer((tmp_path or final_path))
+
+            # Check for graceful shutdown request
+            if shutdown_requested:
+                LOG.info("Shutdown requested; stopping after current paper.")
+                break
 
         final_summaries_path = storage.close_summaries_writer()
 
@@ -435,6 +618,11 @@ def main():
             else:
                 LOG.info("Master validation passed")
 
+            # Save upgrade candidate list for downstream handling
+            if upgrade_candidates:
+                up_path = storage.save_upgrade_candidates(upgrade_candidates)
+                LOG.info(f"Upgrade candidates saved: {up_path} ({len(upgrade_candidates)})")
+
         elapsed = time.time() - start
         stats = {
             "run_id": run_id,
@@ -448,6 +636,7 @@ def main():
             # Full-text validation
             "fulltext_used": fulltext_used,
             "abstract_only": abstract_only,
+            "abstract_fallback": abstract_fallback,
             "fulltext_ratio": (fulltext_used / papers_out) if papers_out > 0 else 0.0,
             
             # Error recovery
@@ -463,6 +652,11 @@ def main():
             # Chunking stats
             "chunks_total": chunks_total,
             "avg_chunks_per_doc": (chunks_total / papers_out) if papers_out else 0.0,
+
+            # Skip breakdown
+            "skipped_no_text": skipped_no_text,
+            "skipped_too_short": skipped_too_short,
+            "skipped_no_chunks": skipped_no_chunks,
             
             # Timing stats
             "elapsed_sec": elapsed,
@@ -478,6 +672,13 @@ def main():
             "ctx_tokens": args.ctx_tokens,
             "max_new_tokens": args.max_new_tokens,
             "batch_size": args.batch_size,
+            # Runtime config for audits
+            "pointer_interval": args.pointer_interval,
+            "log_interval": args.log_interval,
+            "max_abstract_chars": args.max_abstract_chars,
+            "slow_threshold_sec": args.slow_threshold_sec,
+            "slow_backoff_sec": args.slow_backoff_sec,
+            "exception_backoff_sec": args.exception_backoff_sec,
             
             # Index stats
             "index_stats": {
@@ -491,6 +692,7 @@ def main():
                 "supplements": dict(supplement_counts),
             },
             "summaries_path": str(final_summaries_path.as_posix()),
+            "upgrade_candidates": upgrade_candidates if args.mode == "monthly" else [],
         }
         
         # Add monthly-specific stats
@@ -524,8 +726,10 @@ def main():
             print(f"  After: {master_size_after:,} papers")
             print(f"  Added: {master_size_after - master_size_before:,} papers")
         
-        print(f"\nFull-text: {fulltext_used}/{papers_out} ({fulltext_used/papers_out*100:.1f}%)")
-        print(f"Abstract-only: {abstract_only}/{papers_out} ({abstract_only/papers_out*100:.1f}%)")
+        print(f"\nFull-text processed: {fulltext_used}/{papers_out} ({(fulltext_used/papers_out*100) if papers_out else 0.0:.1f}%)")
+        print(f"Abstract processed: {abstract_only}/{papers_out} ({(abstract_only/papers_out*100) if papers_out else 0.0:.1f}%)")
+        print(f"  of which fallback from fulltext: {abstract_fallback}")
+        print(f"Skipped (no text available): {skipped_no_text}")
         print(f"\nChunking: {chunks_total} total chunks, avg {chunks_total/papers_out:.2f} per paper")
         print(f"Slow papers (>60s): {len(slow_papers)}/{papers_out} ({len(slow_papers)/papers_out*100:.1f}%)")
         print(f"\nTime: {elapsed/3600:.2f} hours ({papers_out/elapsed*60:.1f} papers/min)")
@@ -539,6 +743,34 @@ def main():
 
     except Exception as e:
         LOG.exception(f"Processor error: {e}")
+        # Attempt to close writer and save partial stats for resumability
+        try:
+            try:
+                final_summaries_path = storage.close_summaries_writer()
+            except Exception:
+                tmp_path, final_path = storage.get_current_writer_paths()
+                final_summaries_path = (final_path or tmp_path or storage.paths.summaries_dir)
+            elapsed = time.time() - start
+            partial_stats = {
+                "run_id": run_id,
+                "mode": args.mode,
+                "papers_in": papers_in,
+                "papers_out": papers_out,
+                "skipped_empty": skipped_empty,
+                "skipped_dedup": skipped_dedup,
+                "fulltext_used": fulltext_used,
+                "abstract_only": abstract_only,
+                "abstract_fallback": abstract_fallback,
+                "failed_count": len(failed_papers),
+                "slow_count": len(slow_papers),
+                "chunks_total": chunks_total,
+                "elapsed_sec": elapsed,
+                "summaries_path": str(final_summaries_path.as_posix()) if hasattr(final_summaries_path, 'as_posix') else str(final_summaries_path),
+                "error": str(e),
+            }
+            storage.save_processing_stats(partial_stats)
+        except Exception:
+            pass
 
 if __name__ == "__main__":
     main()
