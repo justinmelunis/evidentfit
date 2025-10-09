@@ -3,6 +3,7 @@ import sys
 from pathlib import Path
 from logging import Logger
 from evidentfit_shared.utils import PROJECT_ROOT
+from logging.handlers import RotatingFileHandler
 
 def setup_logging(level: str | None = None) -> Logger:
     log_dir = PROJECT_ROOT / "logs" / "paper_processor"
@@ -15,7 +16,7 @@ def setup_logging(level: str | None = None) -> Logger:
 
     fmt = logging.Formatter("%(asctime)s - %(levelname)s - %(name)s - %(message)s")
 
-    fh = logging.FileHandler(logfile, encoding="utf-8")
+    fh = RotatingFileHandler(logfile, maxBytes=5_000_000, backupCount=3, encoding="utf-8")
     fh.setFormatter(fmt)
     logger.addHandler(fh)
 

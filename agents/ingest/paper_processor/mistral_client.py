@@ -36,11 +36,28 @@ class ProcessingConfig:
     enable_schema_validation: bool
     enable_model_repair: bool
     schema_version: str = "v1.2"
+    seed: Optional[int] = None
 
 class MistralClient:
     def __init__(self, cfg: ProcessingConfig):
         self.cfg = cfg
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
+
+        # Global seeding for reproducibility (optional)
+        _seed = self.cfg.seed
+        try:
+            _seed = int(os.environ.get("EF_SEED", _seed)) if os.environ.get("EF_SEED") is not None else _seed
+        except Exception:
+            pass
+        if _seed is not None:
+            import random, numpy as np
+            random.seed(_seed)
+            np.random.seed(_seed)
+            torch.manual_seed(_seed)
+            if torch.cuda.is_available():
+                torch.cuda.manual_seed_all(_seed)
+                torch.backends.cudnn.deterministic = True
+                torch.backends.cudnn.benchmark = False
 
         torch.set_grad_enabled(False)
         if torch.cuda.is_available():

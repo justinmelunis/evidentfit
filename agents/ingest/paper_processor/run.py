@@ -173,6 +173,8 @@ def main():
     ap.add_argument("--ctx-tokens", type=int, default=16384)
     ap.add_argument("--max-new-tokens", type=int, default=640)
     ap.add_argument("--model", type=str, default="mistralai/Mistral-7B-Instruct-v0.3")
+    ap.add_argument("--temperature", type=float, default=0.0, help="0.0 for deterministic output; >0 enables sampling")
+    ap.add_argument("--seed", type=int, default=None, help="Global RNG seed for reproducibility")
     ap.add_argument("--resume-summaries", type=str, default=None, help="Path to an existing summaries .jsonl or .jsonl.tmp to resume into (bootstrap mode only)")
     ap.add_argument("--mode", type=str, choices=["bootstrap", "monthly"], default="bootstrap", help="Run mode: bootstrap (create new) or monthly (append to master)")
     ap.add_argument("--master-summaries", type=str, default=None, help="Path to master summaries file (required for monthly mode)")
@@ -200,11 +202,12 @@ def main():
         model_name=args.model,
         ctx_tokens=args.ctx_tokens,
         max_new_tokens=args.max_new_tokens,
-        temperature=0.0,  # deterministic → stable outputs & slight perf benefit
+        temperature=args.temperature,  # 0.0 = deterministic; >0 enables sampling
         batch_size=args.batch_size,
         microbatch_size=args.microbatch_size,
         use_4bit=True,
         device_map="auto",
+        seed=args.seed,
         enable_schema_validation=True,
         enable_model_repair=False,
         schema_version="v1.2",
