@@ -112,10 +112,11 @@ python -m agents.ingest.paper_processor.run \
                          ↓
 ┌─────────────────────────────────────────────────────────────┐
 │ SMART CHUNKING                                              │
-│ • Calculate safe character budget (context - output - prompt)│
-│ • Split at paragraph boundaries (prefer \n\n)               │
-│ • Fall back to sentence boundaries (. )                     │
-│ • Preserve semantic coherence                               │
+│ • Calculate safe character budget:                          │
+│   ctx_tokens - max_new_tokens - prompt_reserve              │
+│ • Split at paragraph boundaries (prefer \n\n),              │
+│   fall back to sentences if needed                          │
+│ • Preserve section semantics (intro/methods/results/etc.)   │
 └─────────────────────────────────────────────────────────────┘
                          ↓
 ┌─────────────────────────────────────────────────────────────┐

@@ -1,3 +1,40 @@
+# EvidentFit Ingestion: get_papers (Finalized)
+
+This folder is done and stable. It produces:
+
+- `data/ingest/runs/latest.json` (pointer with required paths)
+- `pm_papers.jsonl` (parsed PubMed rows with required keys)
+- `data/fulltext_store/**` (one JSON per paper; full text only if real body sections exist)
+- `data/ingest/runs/*/fulltext_manifest.json` (optional counters)
+
+Contracts (frozen)
+
+- Pointer (single source of truth) must include: `run_id, run_dir, papers_path, metadata_path, fulltext_store_dir, fulltext_manifest (optional)`
+- Paper record (`pm_papers.jsonl`) keys must exist (empty allowed): `pmid, doi, title, journal, year, study_type, study_category, primary_goal, supplements, outcomes, population, sample_size, study_duration, dosage_info, has_loading_phase, has_maintenance_phase, safety_indicators, has_side_effects, has_contraindications, reliability_score, study_design_score, content`
+- Full-text store (one file/paper) must include: `pmid, doi, abstract, fulltext_text (optional), sources.pmc.has_body_sections|xml_url|pdf_url, sources.unpaywall.has_body_sections|status`
+
+Monthly vs Bootstrap (final)
+
+- Bootstrap: wide queries, recursive date-slicing to respect ESearch 9,999 caps.
+- Monthly: date-windowed pulls starting from the stored watermark; no heuristic thresholds.
+- The legacy modules `monthly_thresholds.py` and `monthly_filter.py` have been removed. Monthly mode uses the PubMed watermark + `PM_SEARCH_QUERY`.
+
+Diversity selection (final)
+
+- We standardized on `compute_enhanced_quota_ids` as the single selector.
+- Legacy variants (`iterative_diversity_filtering`, `iterative_diversity_filtering_with_protection`, `compute_minimum_quota_ids`) are deprecated and will emit warnings if referenced.
+
+## Done checklist (single CLI)
+- `python -m agents.ingest.get_papers.cli validate`  → "invalid_rows": 0
+- `python -m agents.ingest.get_papers.cli coverage`  prints sensible % fulltext
+- `python -m agents.ingest.get_papers.cli finalize`  writes `data/ingest/runs/DONE_SUMMARY.json` with "status":"ready"
+> Next step: Run Module 2 (index_papers) to join+chunk and build embeddings.
+> See `agents/ingest/index_papers/README.md`.
+
+Next steps
+
+Proceed to indexing (join + chunk) → embeddings → evidence cards → banking.
+
 # get_papers - Technical Reference
 
 Fast, LLM-free pipeline for discovering, selecting, and fetching research papers from PubMed with balanced diversity and dual-source full-text coverage.
@@ -141,21 +178,29 @@ python -m agents.ingest.get_papers.pipeline --mode monthly --target 2000
 │                                                                  │
 │  For each of 30k papers:                                        │
 │    1. PMC Check (PubMed → PMC linking)                         │
-│       ├─ PMC full text found (~22k, 73%)                       │
+│       ├─ PMC full text found                                   │
 │       │  ├─ Has body sections → Extract + Save                 │
-│       │  └─ Abstract-only → Mark for Unpaywall                 │
-│       └─ Not in PMC (~8k, 27%) → Mark for Unpaywall            │
+│       │  └─ Abstract-only → Try Europe PMC                     │
+│       └─ Not in PMC → Try Europe PMC                           │
 │                                                                  │
-│    2. Unpaywall Rescue (for PMC abstract-only + not-in-PMC)    │
-│       ├─ PDF found → Extract + Save (~5-6k rescued, 60-75%)    │
-│       └─ Not available → Use abstract fallback                 │
+│    2. Europe PMC (fallback)                                    │
+│       ├─ Full text XML found → Extract + Save                  │
+│       └─ Abstract-only / Not available → Unpaywall             │
 │                                                                  │
-│  Quality detection: Regex for body sections (INTRO, METHODS)    │
+│    3. Unpaywall Rescue (for PMC/Europe PMC abstract-only/miss)  │
+│       ├─ OA PDF/HTML found → Extract + Save                     │
+│       └─ Not available → Targeted scraping                      │
+│                                                                  │
+│    4. Targeted Scraping (publisher pages, allowlist only)       │
+│       ├─ Accessible HTML → Extract + Save                       │
+│       └─ Unavailable/blocked → Abstract fallback                │
+│                                                                  │
+│  Body-section detection: Regex for INTRO/METHODS/RESULTS/etc.   │
 │  Content extraction: Title, abstract, body, tables, figures     │
 │  Storage: data/fulltext_store (sharded, deduplicated)          │
 │                                                                  │
-│  Final coverage (no subscriptions): ~23–24k full texts (≈77–80%),│
-│  ~6–7k abstracts (≈20–23%)                                      │
+│  Final coverage (no subscriptions): ~25–26k full texts (≈84–86%),│
+│  ~4–5k abstracts (≈14–16%)                                      │
 │  Manifest: data/ingest/runs/<timestamp>/fulltext_manifest.json │
 └─────────────────────────────────────────────────────────────────┘
 ```
@@ -385,7 +430,7 @@ Ensures fresh research is always included:
 
 ## Full-Text Fetching
 
-### Dual-Source Strategy
+### Full-Text Flow (PMC → Europe PMC → Unpaywall → Scraping → Abstract)
 
 ```
 For each paper (concurrent, async):
@@ -393,21 +438,27 @@ For each paper (concurrent, async):
   1. PMC Check (PubMed → PMC linking via elink)
      ├─ Success: Fetch PMC XML
      │   ├─ Has body sections (INTRO, METHODS, etc.) → Full text
-     │   └─ Abstract-only in XML → Mark for Unpaywall rescue
-     └─ Not in PMC → Mark for Unpaywall rescue
+     │   └─ Abstract-only in XML → Try Europe PMC
+     └─ Not in PMC → Try Europe PMC
   
-  2. Unpaywall Rescue (for PMC failures & abstract-only)
+  2. Europe PMC (fallback)
+     ├─ Fetch XML / full text if available
+     ├─ Has body sections? Yes → Full text
+     └─ Abstract-only / missing → Unpaywall
+  
+  3. Unpaywall Rescue
      ├─ Query Unpaywall API by DOI
-     ├─ Download best OA content (PDF or HTML)
-     ├─ Extract text:
-     │   ├─ PDF: PyPDF extraction
-     │   └─ HTML: Trafilatura (article-aware) + BeautifulSoup fallback
+     ├─ Download OA PDF/HTML
+     ├─ Extract text (PDF: PyPDF; HTML: Trafilatura + BS4)
      ├─ Quality check: Has body sections?
-     │   ├─ Yes → Full text (upgrades PMC abstract-only)
-     │   └─ No → Abstract-only
-     └─ Not available → Keep PubMed abstract
-  
-  3. Save to Centralized Store (Smart Caching)
+     │   ├─ Yes → Full text
+     │   └─ No → Targeted scraping
+
+  4. Targeted Scraping (allowlist only)
+     ├─ Accessible publisher HTML → Extract + Save
+     └─ Otherwise → Abstract-only fallback
+
+  5. Save to Centralized Store (Smart Caching)
      ├─ Shard by key (2-level hex: pmid_xxx or doi_xxx)
      ├─ Store: {pmid, doi, fulltext_text, sources{pmc, unpaywall}, has_body_sections}
      ├─ Smart skip: Only skip if file exists AND has fulltext
