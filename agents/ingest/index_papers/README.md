@@ -32,6 +32,32 @@ python -m agents.ingest.index_papers.cli embed
 python -m agents.ingest.index_papers.cli search --q "creatine increases 1RM strength" -k 10
 ```
 
+## Chunker (direct) — single-path CLI
+
+Use the chunker directly when you already have `fulltext_store` JSONs and want fast, section-aware chunks.
+
+```bash
+# Directory input (auto-detects dir vs file); writes default report alongside chunks
+python agents/ingest/index_papers/index_prep.py data/fulltext_store --out data/index/chunks.jsonl
+# => also writes data/index/chunks.jsonl.report.jsonl
+
+# Single file input (ad-hoc debug)
+python agents/ingest/index_papers/index_prep.py data/fulltext_store/00/1e/pmid_18590587.json --out data/index/chunks_one.jsonl
+# => also writes data/index/chunks_one.jsonl.report.jsonl
+
+# Optional: custom report path and limit when using a directory
+python agents/ingest/index_papers/index_prep.py data/fulltext_store --out data/index/chunks.jsonl --report data/index/report.jsonl --max 500
+
+# Optional: update canonical metadata with relabels (narrative review, banking eligibility)
+python agents/ingest/index_papers/index_prep.py data/fulltext_store --out data/index/chunks.jsonl --update-canonical --canonical-path data/index/canonical_papers.jsonl
+```
+
+Notes:
+- The chunker auto-detects file vs directory.
+- Report JSONL defaults to `<out>.report.jsonl` if `--report` is omitted.
+- Multiprocessing workers are chosen automatically; no `--workers` flag.
+- The chunker uses a fast header detector with bounded structured-abstract handling to extract `introduction`, `methods`, `results`, and `discussion` where present.
+
 ## Chunk Schema (excerpt)
 
 Each chunk row in `data/index/chunks.jsonl`:
@@ -69,6 +95,13 @@ Each chunk row in `data/index/chunks.jsonl`:
 - Chunk IDs are deterministic SHA1 hashes over `(paper_id, section_norm, passage_idx, start_offset, end_offset, text_prefix)`; in-run dedup skips accidental duplicates.
 - Writes to `.tmp` files then atomically replaces final paths using a Windows-hardened replace.
 
+Why this design
+- In-memory fulltext index: avoids repeated directory scans across ~30K JSON files; dramatically reduces I/O.
+- Section normalization: makes ranking and UI logic predictable across heterogeneous publisher headings.
+- Overlapping chunks: increases recall by reducing boundary misses; overlap balances recall vs index size.
+- Deterministic IDs: stable references across re-runs; safe upserts to Postgres.
+- Atomic writes: prevents partial files on Windows; safe to resume after interruptions.
+
 ## Embeddings and pgvector
 
 - Default embedding model: `intfloat/e5-base-v2` (768d). Good recall for Q&A over chunks.
@@ -100,6 +133,11 @@ Search details:
   - metadata match: checks `supplements` array for exact/LIKE
   - text match: FTS over `title` and, with a guard, over body text for `results`/`abstract` sections
 - Optional `--results-first` applies a small bonus when section starts with `results`.
+
+Why these choices
+- E5 models respond well to the `query:` prefix; improves alignment with retrieval tasks.
+- Hybrid scoring (vector + tiny textual bonuses) keeps vector search primary while nudging obviously relevant chunks.
+- Guarded body FTS (results/abstract) reduces noise from methods-heavy sections when doing text filters.
 ```
 
 ## Configuration
