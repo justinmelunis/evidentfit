@@ -83,4 +83,4 @@ jspm_packages/
 .dockerignore
 
 # Azure
-.azure/
+.azure/.venv/
