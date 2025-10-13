@@ -92,11 +92,25 @@ class StorageManager:
                 # direct append resume on tmp
                 tmp_path = final_path
                 final_path = Path(str(final_path)[:-4]) if str(final_path).endswith(".tmp") else final_path.with_suffix("")
+                final_path.parent.mkdir(parents=True, exist_ok=True)
+                self._writer_file = open(tmp_path, "a", encoding="utf-8")
             else:
-                # resume into a new tmp next to final
+                # resume into a new tmp next to final; seed tmp with existing final contents if present
                 tmp_path = final_path.with_suffix(final_path.suffix + ".tmp")
-            final_path.parent.mkdir(parents=True, exist_ok=True)
-            self._writer_file = open(tmp_path, "a", encoding="utf-8")
+                final_path.parent.mkdir(parents=True, exist_ok=True)
+                # Seed tmp with existing final content to ensure true append semantics
+                try:
+                    if final_path.exists():
+                        import shutil
+                        with open(final_path, "r", encoding="utf-8") as src, open(tmp_path, "w", encoding="utf-8") as dst:
+                            shutil.copyfileobj(src, dst)
+                    else:
+                        # Ensure tmp file exists
+                        open(tmp_path, "w", encoding="utf-8").close()
+                except Exception:
+                    # If seeding fails for any reason, fall back to append to (possibly empty) tmp
+                    open(tmp_path, "a", encoding="utf-8").close()
+                self._writer_file = open(tmp_path, "a", encoding="utf-8")
             self._writer_tmp_path = tmp_path
             self._writer_final_path = final_path
             return final_path
@@ -123,6 +137,12 @@ class StorageManager:
         self._writer_file.flush()
         self._writer_file.close()
         self._writer_file = None
+        # If appending to master (no tmp), just return the final path
+        if self._writer_tmp_path is None and self._writer_final_path is not None:
+            self._last_summaries_path = self._writer_final_path
+            final = self._writer_final_path
+            self._writer_final_path = None
+            return final
         assert self._writer_tmp_path is not None and self._writer_final_path is not None
         self._writer_tmp_path.replace(self._writer_final_path)
         self._last_summaries_path = self._writer_final_path

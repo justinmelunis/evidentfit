@@ -141,6 +141,57 @@ logger = logging.getLogger(__name__)
 # Environment variables
 INDEX_VERSION = os.getenv("INDEX_VERSION", "v1")
 
+# ---------------- Study strength and banking flags -----------------
+STUDY_STRENGTH_MAP: Dict[str, float] = {
+    "meta-analysis": 1.0,
+    "systematic_review": 0.9,
+    "RCT": 0.8,
+    "crossover": 0.7,
+    "cohort": 0.5,
+    "case_control": 0.4,
+    # narrative/position/guidelines are explanation-only (chat), not banking
+    "narrative_review": 0.2,
+    "position-stand": 0.25,
+    "guideline": 0.25,
+    "consensus": 0.25,
+    "perspective": 0.15,
+    "editorial": 0.1,
+}
+
+NON_BANKING_TYPES = {
+    "narrative_review", "position-stand", "guideline", "consensus", "perspective", "editorial"
+}
+
+def _detect_doc_kind(title: str, journal: str, abstract: str, pubtypes: List[str], study_type: str) -> Optional[str]:
+    """Return a more precise doc kind label for reviews/position/guidelines when apparent."""
+    t = f"{title} {journal} {abstract}".lower()
+    # Strong signals first
+    if any(k in t for k in ["position stand", "position statement"]):
+        return "position-stand"
+    if "consensus" in t:
+        return "consensus"
+    if "guideline" in t or "practice guideline" in t:
+        return "guideline"
+    if "perspective" in t or "viewpoint" in t or "opinion" in t:
+        return "perspective"
+    # Narrative review vs systematic/meta
+    # If publication type says review but we did not classify as systematic/meta
+    pts = " ".join([str(pt).lower() for pt in (pubtypes or [])])
+    if "review" in pts or "review" in t:
+        if study_type not in ("meta-analysis", "systematic_review"):
+            return "narrative_review"
+    # Editorial catch
+    if "editorial" in pts or "editorial" in t:
+        return "editorial"
+    return None
+
+def _compute_banking_flags(doc_kind: Optional[str], study_type: str) -> (bool, float):
+    """Return (banking_eligible, study_strength) based on doc_kind/study_type."""
+    label = doc_kind or study_type
+    strength = STUDY_STRENGTH_MAP.get(label, STUDY_STRENGTH_MAP.get(study_type, 0.3))
+    banking_eligible = label not in NON_BANKING_TYPES
+    return banking_eligible, strength
+
 # Enhanced supplement keywords with form-specific detection
 SUPP_KEYWORDS = {
     "creatine": [r"\bcreatine\b", r"\bcreatine monohydrate\b", r"\bcreatine supplementation\b"],
@@ -1036,6 +1087,25 @@ def parse_pubmed_article(rec: Dict, dynamic_weights: Optional[Dict] = None) -> O
         keywords = [keywords]
     keyword_list = [kw.get("#text", "") for kw in keywords if isinstance(kw, dict)]
 
+    # Detect doc kind (review/position/guideline/etc.) and compute banking flags
+    doc_kind = _detect_doc_kind(title, journal, content, pubtypes, study_type)
+    banking_eligible, study_strength = _compute_banking_flags(doc_kind, study_type)
+
+    # Conservative banking rule at ingest time: require results-like cues in abstract
+    # (actual results section check happens later during chunking)
+    has_results_cue = False
+    if content:
+        results_patterns = [
+            r"(?mi)^\s*results?\s*[:\-]",  # structured abstract header
+            r"p\s*[<=>]\s*\d",             # p-values
+            r"95%\s*ci|confidence interval",
+            r"(increase|decrease|improv\w+|reduc\w+)",
+            r"mean\s*[±\+\-]",            # mean ± SD/SE
+        ]
+        has_results_cue = any(re.search(p, content, re.I) for p in results_patterns)
+    if banking_eligible and not has_results_cue:
+        banking_eligible = False
+
     return {
         "id": f"pmid_{pmid}_chunk_0",
         "title": title,
@@ -1044,7 +1114,10 @@ def parse_pubmed_article(rec: Dict, dynamic_weights: Optional[Dict] = None) -> O
         "url_pub": f"https://pubmed.ncbi.nlm.nih.gov/{pmid}/" if pmid else "",
         "journal": journal,
         "year": year if isinstance(year, int) else None,
-        "study_type": study_type,
+        "study_type": doc_kind or study_type,
+        "doc_kind": doc_kind,
+        "banking_eligible": banking_eligible,
+        "study_strength": study_strength,
         "study_category": study_category,
         "supplements": ",".join(supplements) if supplements else "",
         "outcomes": ",".join(outcomes) if outcomes else "",

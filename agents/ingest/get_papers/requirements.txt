@@ -7,4 +7,5 @@ lxml>=4.9.0
 pypdf>=3.17.0
 pdfminer.six>=20221105
 trafilatura>=1.6.0
+psycopg2-binary>=2.9.9
 

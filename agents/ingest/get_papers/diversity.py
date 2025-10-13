@@ -1,10 +1,20 @@
 """
-Diversity analysis and iterative filtering
+EvidentFit diversity selection API (finalized)
+----------------------------------------------
 
-Handles combination analysis, weight calculation, and iterative diversity filtering
-to ensure balanced representation across supplement-goal-population combinations.
-No per-supplement caps before diversity - only combination weights and iterative filtering.
+Public surface (keep):
+  - compute_enhanced_quota_ids(...): the single, preferred selector
+
+Deprecated (will emit warnings if called; kept only to avoid sudden breakages):
+  - iterative_diversity_filtering(...)
+  - iterative_diversity_filtering_with_protection(...)
+  - compute_minimum_quota_ids(...)
+  
+Rationale: we standardized on a single quota + MMR-style selector, and removed
+multiple variants to simplify reasoning, testing, and reproducibility.
 """
+from __future__ import annotations
+import warnings
 
 import os
 import math
@@ -226,12 +236,13 @@ def calculate_combination_score(paper: Dict, combination_weights: Dict[str, Dict
     return score
 
 
-def iterative_diversity_filtering(papers: list, target_count: int, elimination_per_round: int = 1000) -> list:
-    """
-    Iteratively eliminate papers while recalculating diversity weights each round.
-    Supports an optional protected set of IDs that will not be eliminated.
-    """
-    return _iterative_diversity_filtering_internal(papers, target_count, elimination_per_round, protected_ids=None)
+def iterative_diversity_filtering(*args, **kwargs):
+    warnings.warn(
+        "iterative_diversity_filtering is deprecated; use compute_enhanced_quota_ids instead.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+    return compute_enhanced_quota_ids(*args, **kwargs)
 
 # ---- Minimum-quota / protected IDs support ----
 
@@ -309,54 +320,13 @@ def compute_enhanced_quota_ids(
     
     return protected
 
-def compute_minimum_quota_ids(
-    all_docs: List[Dict[str, Any]],
-    min_per_supp: Optional[int] = None,
-    include_low_quality: Optional[bool] = None,
-    rare_only: Optional[bool] = None,
-    rare_threshold: Optional[int] = None,
-    exclude_supps: Optional[Set[str]] = None,
-    quality_floor: float = 0.0,
-) -> Set[str]:
-    """
-    Returns a set of doc IDs that should be protected (not eliminated) to ensure
-    each supplement has at least `min_per_supp` papers in the final selection.
-
-    If `include_low_quality=True`, low-reliability docs can be selected to meet the quota.
-    If `rare_only=True`, quotas apply only to supplements with <= rare_threshold papers in all_docs.
-    Supplements listed in `exclude_supps` are ignored (no quotas).
-    """
-    if min_per_supp is None:
-        min_per_supp = MIN_PER_SUPPLEMENT
-    if include_low_quality is None:
-        include_low_quality = INCLUDE_LOW_QUALITY_IN_MIN
-    if rare_only is None:
-        rare_only = MIN_QUOTA_RARE_ONLY
-    if rare_threshold is None:
-        rare_threshold = RARE_THRESHOLD
-    if exclude_supps is None:
-        exclude_supps = EXCLUDED_SUPPS_FOR_MIN
-
-    protected: Set[str] = set()
-    if min_per_supp <= 0:
-        return protected
-
-    by_supp = _build_supp_index(all_docs)
-    for supp, docs in by_supp.items():
-        if supp in exclude_supps:
-            continue
-        if rare_only and len(docs) > rare_threshold:
-            continue
-        picked = 0
-        for d in docs:
-            # Respect an optional quality floor if include_low_quality is False
-            if (include_low_quality or d.get("reliability_score", 0.0) >= quality_floor):
-                if d.get("id"):
-                    protected.add(d["id"])
-                    picked += 1
-            if picked >= min_per_supp:
-                break
-    return protected
+def compute_minimum_quota_ids(*args, **kwargs):
+    warnings.warn(
+        "compute_minimum_quota_ids is deprecated; use compute_enhanced_quota_ids instead.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+    return compute_enhanced_quota_ids(*args, **kwargs)
 
 def _iterative_diversity_filtering_internal(
     papers: List[Dict[str, Any]],
@@ -420,18 +390,13 @@ def _iterative_diversity_filtering_internal(
     return current_papers[:target_count]
 
 # Backward-compatible wrapper that allows passing protected IDs
-def iterative_diversity_filtering_with_protection(
-    papers: List[Dict[str, Any]],
-    target_count: int,
-    elimination_per_round: int = 1000,
-    protected_ids: Optional[Set[str]] = None,
-) -> List[Dict[str, Any]]:
-    return _iterative_diversity_filtering_internal(
-        papers, 
-        target_count, 
-        elimination_per_round, 
-        protected_ids
+def iterative_diversity_filtering_with_protection(*args, **kwargs):
+    warnings.warn(
+        "iterative_diversity_filtering_with_protection is deprecated; use compute_enhanced_quota_ids instead.",
+        DeprecationWarning,
+        stacklevel=2,
     )
+    return compute_enhanced_quota_ids(*args, **kwargs)
 
 
 def should_run_iterative_diversity(candidate_count: int, target_count: int) -> bool:

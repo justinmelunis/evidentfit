@@ -221,6 +221,12 @@ for paper in new_papers:
         process_and_append()
 ```
 
+Why this design
+- Local GPU keeps per-run costs near zero while enabling large-scale processing.
+- Two-pass extraction minimizes missing fields without introducing temperature noise.
+- Strict schema validation ensures downstream systems can rely on consistent output.
+- Streaming I/O and atomic finalization make the process resume-safe and robust on long runs.
+
 ## Configuration
 
 ### Command-Line Arguments

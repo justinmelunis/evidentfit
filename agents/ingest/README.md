@@ -263,6 +263,27 @@ Fast paper discovery, selection, and full-text fetching.
 
 📖 **[Technical Documentation](get_papers/README.md)** - Algorithms, scoring, monthly system
 
+### index_papers (Module 2)
+Chunking and embeddings for retrieval.
+
+- 📄 Join + chunk selected papers into `data/index/{canonical_papers.jsonl,chunks.jsonl,schema.json}`
+- 🔎 Optional: load chunks to Postgres and embed with SentenceTransformers; cosine search via pgvector
+
+Quick start:
+```bash
+# Join + chunk
+python -m agents.ingest.index_papers.cli prep --chunks-mode text
+
+# Optional: Postgres (pgvector)
+psql "$DATABASE_URL" -f db/ddl/10_pgvector_setup.sql
+python -m agents.ingest.index_papers.cli load-chunks
+export EMBEDDING_MODEL=intfloat/e5-base-v2
+python -m agents.ingest.index_papers.cli embed
+python -m agents.ingest.index_papers.cli search --q "creatine increases 1RM strength" -k 10
+```
+
+📖 Technical reference: `agents/ingest/index_papers/README.md`
+
 ### paper_processor
 GPU-accelerated LLM processing for structured summaries.
 

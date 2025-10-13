@@ -25,8 +25,7 @@ REQUIRED_FIELDS: Dict[str, Any] = {
     "summary": "unknown",
     "key_findings": [],
     "supplements": [],
-    "evidence_grade": "D",
-    "quality_score": 0.0,
+    # evidence_grade and quality_score removed from LLM requirements; quality_score is derived from pm_papers when available
     "study_type": "unknown",
     "outcome_measures": {
         "strength": [],
@@ -86,18 +85,8 @@ def normalize_data(obj: Dict[str, Any]) -> Dict[str, Any]:
         "power": list(om.get("power") or []),
     }
 
-    # Evidence grade normalization
-    eg = str(out.get("evidence_grade") or "D").upper()
-    if eg not in ("A", "B", "C", "D"):
-        eg = "D"
-    out["evidence_grade"] = eg
-
-    # Quality score bounds
-    try:
-        qs = float(out.get("quality_score", 0.0))
-    except Exception:
-        qs = 0.0
-    out["quality_score"] = max(0.0, min(qs, 5.0))
+    # No evidence_grade normalization; not requested from LLM
+    # No quality_score from LLM; derived in pipeline when available
 
     # Study type
     st = str(out.get("study_type") or "unknown").lower()

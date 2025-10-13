@@ -12,6 +12,7 @@ Paper processing pipeline (streaming + resume + VRAM-friendly).
 """
 
 import argparse
+import os
 import json
 import time
 import signal
@@ -29,6 +30,7 @@ from schema import (
     create_dedupe_key,
     validate_optimized_schema,
 )
+from evidentfit_shared.fulltext_store import load_by_pmid, resolve_fulltext_root
 
 import torch
 
@@ -72,10 +74,44 @@ def resolve_selected_papers(input_jsonl: Optional[str]) -> Path:
     papers_path = meta.get("papers_path")
     if not papers_path:
         raise RuntimeError("latest.json missing 'papers_path'")
+    # Helper: map Windows path to WSL POSIX if needed
+    def _windows_to_wsl(path_str: str) -> Optional[Path]:
+        try:
+            if ":" in path_str and "\\" in path_str:
+                drive = path_str.split(":", 1)[0].lower()
+                rest = path_str.split(":", 1)[1].lstrip("\\/")
+                rest = rest.replace("\\", "/")
+                return Path(f"/mnt/{drive}/{rest}")
+        except Exception:
+            return None
+        return None
+
+    # Base resolution: honor EF_PROJECT_ROOT if provided
+    ef_root = os.environ.get("EF_PROJECT_ROOT")
+    base_root = Path(ef_root) if ef_root else PROJECT_ROOT
+
     p = Path(papers_path)
     if not p.is_absolute():
-        p = (PROJECT_ROOT / p).resolve()
+        p = (base_root / p).resolve()
+    # If not found, attempt Windows→WSL translation
     if not p.exists():
+        alt = _windows_to_wsl(papers_path)
+        if alt and alt.exists():
+            return alt
+        # Also try replacing the project root via EF_PROJECT_ROOT when pointer was absolute
+        if ef_root and ":" in papers_path and "\\" in papers_path:
+            # Attempt to rebase relative path under EF_PROJECT_ROOT
+            try:
+                # Find the first occurrence of the repo directory name to slice from
+                marker = "evidentfit"
+                idx = papers_path.lower().find(marker)
+                if idx != -1:
+                    rel = papers_path[idx+len(marker):].lstrip("\\/")
+                    candidate = Path(ef_root) / rel.replace("\\", "/")
+                    if candidate.exists():
+                        return candidate
+            except Exception:
+                pass
         raise FileNotFoundError(f"Papers JSONL not found: {p}")
     return p
 
@@ -173,12 +209,12 @@ def main():
     ap.add_argument("--microbatch-size", type=int, default=1)
     ap.add_argument("--ctx-tokens", type=int, default=16384)
     ap.add_argument("--max-new-tokens", type=int, default=640)
-    ap.add_argument("--model", type=str, default="mistralai/Mistral-7B-Instruct-v0.3")
+    # Model: default will be resolved after parsing to prefer a local path if present
+    ap.add_argument("--model", type=str, default=None)
     ap.add_argument("--temperature", type=float, default=0.0, help="0.0 for deterministic output; >0 enables sampling")
     ap.add_argument("--seed", type=int, default=None, help="Global RNG seed for reproducibility")
-    ap.add_argument("--resume-summaries", type=str, default=None, help="Path to an existing summaries .jsonl or .jsonl.tmp to resume into (bootstrap mode only)")
-    ap.add_argument("--mode", type=str, choices=["bootstrap", "monthly"], default="bootstrap", help="Run mode: bootstrap (create new) or monthly (append to master)")
-    ap.add_argument("--master-summaries", type=str, default=None, help="Path to master summaries file (required for monthly mode)")
+    ap.add_argument("--resume-summaries", type=str, default=None, help="Path to an existing summaries .jsonl or .jsonl.tmp to resume into (legacy; prefer streaming to master)")
+    ap.add_argument("--master-summaries", type=str, default=None, help="Path to master summaries file (default: $EF_MASTER_SUMMARIES or data/paper_processor/master/summaries_master.jsonl)")
     # Progress + backoff tuning
     ap.add_argument("--pointer-interval", type=int, default=20, help="How often (in input papers) to refresh data/paper_processor/latest.json")
     ap.add_argument("--log-interval", type=int, default=100, help="How often (in successful outputs) to log progress")
@@ -186,25 +222,85 @@ def main():
     ap.add_argument("--slow-threshold-sec", type=float, default=60.0, help="Threshold in seconds to consider a paper slow")
     ap.add_argument("--slow-backoff-sec", type=float, default=1.0, help="Sleep duration after a slow paper (seconds)")
     ap.add_argument("--exception-backoff-sec", type=float, default=2.0, help="Sleep duration after an exception (seconds)")
+    ap.add_argument("--preflight-only", action="store_true", help="Validate store coverage for selected papers and exit (no model load)")
     args = ap.parse_args()
     
-    # Validation
-    if args.mode == "monthly":
-        if not args.master_summaries:
-            raise ValueError("--master-summaries required for monthly mode")
-        if args.resume_summaries:
-            raise ValueError("Resume not supported in monthly mode (safety). Re-run from start - cross-run dedupe prevents duplicates.")
-
-    run_id = f"paper_processor_{args.mode}_{int(time.time())}"
+    # Unified streaming mode: always append to master
+    run_id = f"paper_processor_stream_{int(time.time())}"
     setup_logging()
     LOG.info("=" * 80)
-    LOG.info(f"PAPER PROCESSOR START ({args.mode.upper()} MODE)")
+    LOG.info("PAPER PROCESSOR START (STREAM-TO-MASTER)")
     LOG.info("=" * 80)
     LOG.info(f"Run ID: {run_id}")
-    LOG.info(f"Mode: {args.mode}")
+    LOG.info("Mode: stream-to-master")
 
     papers_jsonl = resolve_selected_papers(args.papers_jsonl)
     LOG.info(f"Selected papers: {papers_jsonl}")
+    # Log fulltext store resolution for clarity
+    try:
+        store_root_path = resolve_fulltext_root()
+        LOG.info(f"Fulltext store root: {store_root_path}")
+    except Exception as e:
+        LOG.warning(f"Could not resolve fulltext store root: {e}")
+
+    # Optional preflight validation before expensive model load
+    if args.preflight_only:
+        LOG.info("Running preflight-only validation against fulltext store...")
+        total = 0
+        store_full = 0
+        store_abs = 0
+        store_missing_local = 0
+        store_no_text_local = 0
+        for idx, p in enumerate(stream_jsonl(papers_jsonl, limit=args.max_papers), 1):
+            total += 1
+            pmid_val = p.get("pmid")
+            sd = None
+            try:
+                if pmid_val:
+                    sd = load_by_pmid(str(pmid_val))
+            except Exception:
+                sd = None
+            if not sd:
+                store_missing_local += 1
+                continue
+            ft = (sd.get("fulltext_text") or "").strip()
+            ab = (sd.get("abstract") or "").strip()
+            if ft:
+                store_full += 1
+            elif ab:
+                store_abs += 1
+            else:
+                store_no_text_local += 1
+        LOG.info(f"Preflight: total={total}, store_fulltext={store_full}, store_abstract={store_abs}, store_missing={store_missing_local}, store_no_text={store_no_text_local}")
+        print(f"Preflight complete. total={total}, fulltext={store_full}, abstract={store_abs}, missing={store_missing_local}, no_text={store_no_text_local}")
+        return
+
+    # Resolve default model preference: prefer local directory if available
+    if not args.model:
+        # Environment overrides
+        env_model = os.environ.get("EF_MODEL_PATH") or os.environ.get("MODEL_LOCAL_DIR")
+        candidates = []
+        if env_model:
+            candidates.append(Path(env_model))
+        # Common local paths
+        candidates.append(Path("E:/models/Mistral-7B-Instruct-v0.3"))
+        candidates.append(Path("E:\\models\\Mistral-7B-Instruct-v0.3"))
+        candidates.append(PROJECT_ROOT / "models" / "Mistral-7B-Instruct-v0.3")
+
+        chosen = None
+        for c in candidates:
+            try:
+                if c and Path(c).exists():
+                    chosen = str(Path(c).resolve())
+                    break
+            except Exception:
+                continue
+        if chosen:
+            args.model = chosen
+            LOG.info(f"Model resolved to local path: {args.model}")
+        else:
+            args.model = "mistralai/Mistral-7B-Instruct-v0.3"
+            LOG.info(f"Model resolved to remote repo: {args.model}")
 
     cfg = ProcessingConfig(
         model_name=args.model,
@@ -225,42 +321,23 @@ def main():
     storage = StorageManager()
     storage.initialize()
 
-    # Monthly vs Bootstrap mode setup
-    seen_keys = set()
-    master_size_before = 0
-    
-    if args.mode == "monthly":
-        # Monthly mode: Append to master with cross-run deduplication
-        master_path = Path(args.master_summaries)
-        LOG.info(f"Monthly mode: Master summaries at {master_path}")
-        
-        if not master_path.exists():
-            LOG.warning(f"Master not found, will create: {master_path}")
-        else:
-            # Load dedupe keys and input_source map from master
-            LOG.info("Loading master metadata for cross-run deduplication and upgrades...")
-            seen_keys = storage.load_master_dedupe_keys(master_path)
-            master_input_source = storage.load_master_input_source_map(master_path)
-            LOG.info(f"Loaded {len(seen_keys):,} dedupe keys from master; {len(master_input_source):,} with source info")
-            
-            # Count current master size
-            with open(master_path, "r", encoding="utf-8") as f:
-                master_size_before = sum(1 for line in f if line.strip())
-            LOG.info(f"Master size before: {master_size_before:,} papers")
-        
-        # Open master for appending (auto-creates backup)
-        storage.open_summaries_appender(master_path)
-        
-    else:
-        # Bootstrap mode: Create new file or resume from tmp
-        if args.resume_summaries:
-            resume_path = Path(args.resume_summaries)
-            LOG.info(f"Resume requested from: {resume_path}")
-            for dk in storage.iter_dedupe_keys(resume_path):
-                seen_keys.add(dk)
-            storage.open_summaries_writer(resume_path=str(resume_path))
-        else:
-            storage.open_summaries_writer()
+    # Resolve master path, load dedupe, open appender
+    env_master = os.environ.get("EF_MASTER_SUMMARIES")
+    default_master = PROJECT_ROOT / "data" / "paper_processor" / "master" / "summaries_master.jsonl"
+    master_path = Path(args.master_summaries) if args.master_summaries else (Path(env_master) if env_master else default_master)
+    master_path.parent.mkdir(parents=True, exist_ok=True)
+    if not master_path.exists():
+        open(master_path, "w", encoding="utf-8").close()
+        LOG.info(f"Initialized master summaries: {master_path}")
+    LOG.info(f"Master summaries: {master_path}")
+
+    seen_keys = storage.load_master_dedupe_keys(master_path)
+    LOG.info(f"Loaded {len(seen_keys):,} dedupe keys from master")
+    with open(master_path, "r", encoding="utf-8") as f:
+        master_size_before = sum(1 for line in f if line.strip())
+    LOG.info(f"Master size before: {master_size_before:,} papers")
+
+    storage.open_summaries_appender(master_path)
 
     # Telemetry counters
     papers_in = 0
@@ -270,10 +347,7 @@ def main():
     chunks_total = 0
     per_paper_latency: List[float] = []
     
-    # NEW: Enhanced tracking
-    fulltext_used = 0              # successfully processed using full text
-    abstract_only = 0              # successfully processed using abstract (primary or fallback)
-    abstract_fallback = 0          # of abstract_only, how many were fallback after fulltext failed
+    # NEW: Enhanced tracking (store-only)
     failed_papers: List[Dict[str, Any]] = []
     slow_papers: List[Dict[str, Any]] = []
 
@@ -285,11 +359,17 @@ def main():
     # On-the-fly aggregate stats
     year_values: List[int] = []
     study_type_counts = Counter()
-    evidence_grade_counts = Counter()
+    # evidence_grade removed
     supplement_counts = Counter()
 
     # Monthly upgrade tracking: prior abstract-only -> now fulltext
     upgrade_candidates: List[Dict[str, Any]] = []
+
+    # Fulltext store diagnostics (store-only inputs)
+    store_fulltext_used = 0
+    store_abstract_used = 0
+    store_missing = 0
+    store_no_text = 0
 
     start = time.time()
 
@@ -317,21 +397,40 @@ def main():
             papers_in += 1
             t0 = time.time()
 
-            # Prefer explicit fulltext if present; otherwise abstract/content; else skip
-            fulltext_text = (p.get("fulltext_text") or "").strip()
-            abstract_text = (p.get("abstract") or p.get("content") or "").strip()
+            # Store-only selection: PMID -> store doc; use fulltext_text else abstract
+            pmid_val = p.get("pmid")
+            store_doc = None
+            try:
+                if pmid_val:
+                    store_doc = load_by_pmid(str(pmid_val))
+            except Exception:
+                store_doc = None
+            if not store_doc:
+                store_missing += 1
+                skipped_empty += 1
+                skipped_no_text += 1
+                LOG.warning(f"Store doc missing for PMID {pmid_val}")
+                continue
+
+            fulltext_text = (store_doc.get("fulltext_text") or "").strip()
+            abstract_text = (store_doc.get("abstract") or "").strip()
             if abstract_text and len(abstract_text) > args.max_abstract_chars:
                 abstract_text = abstract_text[:args.max_abstract_chars]
+
             content_source = None  # "fulltext" | "abstract"
             if fulltext_text:
                 content = fulltext_text
                 content_source = "fulltext"
+                store_fulltext_used += 1
             elif abstract_text:
                 content = abstract_text
                 content_source = "abstract"
+                store_abstract_used += 1
             else:
+                store_no_text += 1
                 skipped_empty += 1
                 skipped_no_text += 1
+                LOG.warning(f"Store has no fulltext or abstract for PMID {pmid_val}")
                 continue
             if len(content) < 20:
                 # Attempt abstract fallback if initial was fulltext
@@ -508,25 +607,32 @@ def main():
                 norm_chunks,
             )
 
+            # Derive quality_score from pm_papers without clamping: prefer relevance_score, then reliability_score, then study_design_score
+            try:
+                qsource = None
+                for key in ("relevance_score", "reliability_score", "study_design_score"):
+                    if p.get(key) is not None:
+                        qsource = float(p.get(key))
+                        break
+                if qsource is not None:
+                    merged["quality_score"] = qsource
+                else:
+                    merged.pop("quality_score", None)
+            except Exception:
+                merged.pop("quality_score", None)
+
+            # Remove evidence_grade entirely from outputs
+            merged.pop("evidence_grade", None)
+
             # Annotate provenance for downstream audits
             merged["input_source"] = content_source  # "fulltext" or "abstract"
             merged["input_chars"] = len(content)
 
-            # Write summary (tracks for monthly delta if in monthly mode)
-            if args.mode == "monthly":
-                storage.write_summary_line_monthly(merged)
-            else:
-                storage.write_summary_line(merged)
+            # Always append to master and track for delta
+            storage.write_summary_line_monthly(merged)
             papers_out += 1
 
-            # Track full-text vs abstract usage only for successful outputs
-            if content_source == "fulltext":
-                fulltext_used += 1
-            elif content_source == "abstract":
-                abstract_only += 1
-                # If fulltext existed but we ended with abstract, it's a fallback
-                if fulltext_text:
-                    abstract_fallback += 1
+            # Usage counters are already tracked via store_fulltext_used/store_abstract_used
             
             paper_elapsed = time.time() - t0
             per_paper_latency.append(paper_elapsed)
@@ -536,9 +642,7 @@ def main():
             if isinstance(y, int):
                 year_values.append(y)
             st = merged.get("study_type", "unknown")
-            eg = merged.get("evidence_grade", "D")
             study_type_counts[st] += 1
-            evidence_grade_counts[eg] += 1
             for s in (merged.get("supplements") or []):
                 if s:
                     supplement_counts[s] += 1
@@ -571,7 +675,7 @@ def main():
                 LOG.info(f"PROGRESS: {papers_out}/{args.max_papers} papers ({progress_pct:.1f}%) | "
                         f"Rate: {rate*60:.1f} papers/min | "
                         f"ETA: {eta_hours:.1f}h | "
-                        f"Full-text: {fulltext_used}/{papers_out} ({(fulltext_used/papers_out*100) if papers_out else 0.0:.1f}%)")
+                        f"Full-text (store): {store_fulltext_used}/{papers_out} ({(store_fulltext_used/papers_out*100) if papers_out else 0.0:.1f}%)")
 
             if torch.cuda.is_available() and (idx % max(1, args.batch_size) == 0):
                 torch.cuda.empty_cache()
@@ -589,55 +693,44 @@ def main():
 
         final_summaries_path = storage.close_summaries_writer()
 
-        # Monthly mode: Calculate master size after, save delta, rebuild index
+        # Calculate master size after, save delta, rebuild index
         master_size_after = 0
         delta_path = None
         index_path = None
-        
-        if args.mode == "monthly":
-            master_path = Path(args.master_summaries)
-            
-            # Count master size after appending
-            with open(master_path, "r", encoding="utf-8") as f:
-                master_size_after = sum(1 for line in f if line.strip())
-            
-            LOG.info(f"Master size after: {master_size_after:,} papers (+{master_size_after - master_size_before:,})")
-            
-            # Rebuild master index
-            LOG.info("Rebuilding master index...")
-            index = storage.build_master_index(master_path)
-            index_path = storage.save_master_index(index, master_path)
-            LOG.info(f"Master index saved: {index_path} ({len(index):,} entries)")
-            
-            # Validate master
-            LOG.info("Validating master...")
-            valid, errors = storage.validate_master(master_path, index_path)
-            if not valid:
-                LOG.error(f"Master validation failed: {errors}")
-                LOG.error("Consider restoring from backup!")
-            else:
-                LOG.info("Master validation passed")
+        # Count master size after appending
+        with open(master_path, "r", encoding="utf-8") as f:
+            master_size_after = sum(1 for line in f if line.strip())
+        LOG.info(f"Master size after: {master_size_after:,} papers (+{master_size_after - master_size_before:,})")
 
-            # Save upgrade candidate list for downstream handling
-            if upgrade_candidates:
-                up_path = storage.save_upgrade_candidates(upgrade_candidates)
-                LOG.info(f"Upgrade candidates saved: {up_path} ({len(upgrade_candidates)})")
+        # Rebuild master index
+        LOG.info("Rebuilding master index...")
+        index = storage.build_master_index(master_path)
+        index_path = storage.save_master_index(index, master_path)
+        LOG.info(f"Master index saved: {index_path} ({len(index):,} entries)")
+
+        # Validate master
+        LOG.info("Validating master...")
+        valid, errors = storage.validate_master(master_path, index_path)
+        if not valid:
+            LOG.error(f"Master validation failed: {errors}")
+            LOG.error("Consider restoring from backup!")
+        else:
+            LOG.info("Master validation passed")
 
         elapsed = time.time() - start
         stats = {
             "run_id": run_id,
-            "mode": args.mode,
+            "mode": "stream_to_master",
             "papers_in": papers_in,
             "papers_out": papers_out,
             "skipped_empty": skipped_empty,
             "skipped_dedup": skipped_dedup,
             "coverage_ratio": (papers_out / papers_in) if papers_in else None,
             
-            # Full-text validation
-            "fulltext_used": fulltext_used,
-            "abstract_only": abstract_only,
-            "abstract_fallback": abstract_fallback,
-            "fulltext_ratio": (fulltext_used / papers_out) if papers_out > 0 else 0.0,
+            # Store usage
+            "store_fulltext_used": store_fulltext_used,
+            "store_abstract_used": store_abstract_used,
+            "store_fulltext_ratio": (store_fulltext_used / papers_out) if papers_out > 0 else 0.0,
             
             # Error recovery
             "failed_papers": failed_papers,
@@ -657,6 +750,12 @@ def main():
             "skipped_no_text": skipped_no_text,
             "skipped_too_short": skipped_too_short,
             "skipped_no_chunks": skipped_no_chunks,
+
+            # Fulltext store diagnostics
+            "store_fulltext_used": store_fulltext_used,
+            "store_abstract_used": store_abstract_used,
+            "store_missing": store_missing,
+            "store_no_text": store_no_text,
             
             # Timing stats
             "elapsed_sec": elapsed,
@@ -680,11 +779,10 @@ def main():
             "slow_backoff_sec": args.slow_backoff_sec,
             "exception_backoff_sec": args.exception_backoff_sec,
             
-            # Index stats
+            # Index stats (no evidence_grade aggregation)
             "index_stats": {
                 "total_papers": papers_out,
                 "study_types": dict(study_type_counts),
-                "evidence_grades": dict(evidence_grade_counts),
                 "year_range": {
                     "min": min(year_values) if year_values else None,
                     "max": max(year_values) if year_values else None,
@@ -692,43 +790,36 @@ def main():
                 "supplements": dict(supplement_counts),
             },
             "summaries_path": str(final_summaries_path.as_posix()),
-            "upgrade_candidates": upgrade_candidates if args.mode == "monthly" else [],
         }
-        
-        # Add monthly-specific stats
-        if args.mode == "monthly":
-            stats["master_size_before"] = master_size_before
-            stats["master_size_after"] = master_size_after
-            stats["net_additions"] = master_size_after - master_size_before
-            stats["master_index_path"] = str(index_path.as_posix()) if index_path else None
+        stats["master_size_before"] = master_size_before
+        stats["master_size_after"] = master_size_after
+        stats["net_additions"] = master_size_after - master_size_before
+        stats["master_index_path"] = str(index_path.as_posix()) if index_path else None
         
         storage.save_processing_stats(stats)
         
-        # Save monthly delta
-        if args.mode == "monthly":
-            LOG.info("Saving monthly delta...")
-            delta_path = storage.save_monthly_delta(stats)
-            LOG.info(f"Monthly delta saved: {delta_path}")
+        # Save delta for this run by default
+        LOG.info("Saving run delta...")
+        delta_path = storage.save_monthly_delta(stats)
+        LOG.info(f"Run delta saved: {delta_path}")
         
         LOG.info("Done.")
         
         # Enhanced final summary
         print("\n" + "=" * 80)
-        print(f"PAPER PROCESSOR COMPLETE ({args.mode.upper()} MODE)")
+        print(f"PAPER PROCESSOR COMPLETE (STREAM-TO-MASTER)")
         print("=" * 80)
         print(f"Papers: {papers_out} successful / {papers_in} total ({papers_out/papers_in*100:.1f}%)")
         print(f"Skipped: {skipped_empty} empty, {skipped_dedup} duplicates")
         print(f"Failed: {len(failed_papers)} papers ({len(failed_papers)/papers_in*100:.1f}%)")
         
-        if args.mode == "monthly":
-            print(f"\nMaster Corpus:")
-            print(f"  Before: {master_size_before:,} papers")
-            print(f"  After: {master_size_after:,} papers")
-            print(f"  Added: {master_size_after - master_size_before:,} papers")
+        print(f"\nMaster Corpus:")
+        print(f"  Before: {master_size_before:,} papers")
+        print(f"  After: {master_size_after:,} papers")
+        print(f"  Added: {master_size_after - master_size_before:,} papers")
         
-        print(f"\nFull-text processed: {fulltext_used}/{papers_out} ({(fulltext_used/papers_out*100) if papers_out else 0.0:.1f}%)")
-        print(f"Abstract processed: {abstract_only}/{papers_out} ({(abstract_only/papers_out*100) if papers_out else 0.0:.1f}%)")
-        print(f"  of which fallback from fulltext: {abstract_fallback}")
+        print(f"\nFull-text (store): {store_fulltext_used}/{papers_out} ({(store_fulltext_used/papers_out*100) if papers_out else 0.0:.1f}%)")
+        print(f"Abstract (store): {store_abstract_used}/{papers_out} ({(store_abstract_used/papers_out*100) if papers_out else 0.0:.1f}%)")
         print(f"Skipped (no text available): {skipped_no_text}")
         print(f"\nChunking: {chunks_total} total chunks, avg {chunks_total/papers_out:.2f} per paper")
         print(f"Slow papers (>60s): {len(slow_papers)}/{papers_out} ({len(slow_papers)/papers_out*100:.1f}%)")
@@ -758,9 +849,8 @@ def main():
                 "papers_out": papers_out,
                 "skipped_empty": skipped_empty,
                 "skipped_dedup": skipped_dedup,
-                "fulltext_used": fulltext_used,
-                "abstract_only": abstract_only,
-                "abstract_fallback": abstract_fallback,
+                "store_fulltext_used": store_fulltext_used,
+                "store_abstract_used": store_abstract_used,
                 "failed_count": len(failed_papers),
                 "slow_count": len(slow_papers),
                 "chunks_total": chunks_total,

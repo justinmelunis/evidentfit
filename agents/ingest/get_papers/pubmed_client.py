@@ -3,6 +3,18 @@ PubMed E-utilities client for paper fetching
 
 Handles PubMed API calls with rate limiting, retry logic, and chunking
 to bypass the 10K result limit. No LLM calls - pure data fetching.
+
+# PubMed search usage (finalized)
+# -------------------------------
+# BOOTSTRAP mode:
+#   - Uses broad supplement/goal queries to build the initial large candidate set.
+#   - Apply time-slicing (date windows) when ESearch total > 9,999 and recurse.
+#
+# MONTHLY mode:
+#   - Uses PM_SEARCH_QUERY with a stored watermark (last successful day/month).
+#   - Only fetches new/updated PMIDs since the watermark; no heuristic thresholds needed.
+#
+# Note: monthly_thresholds.py and monthly_filter.py are deprecated and no longer consulted.
 """
 
 import os

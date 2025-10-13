@@ -45,7 +45,9 @@ def load_chunks(args: argparse.Namespace):
             row.get("title"), row.get("journal"), row.get("year"),
             row.get("study_type"), row.get("primary_goal"),
             row.get("supplements") or [],
-            row.get("section"), row.get("passage_id"),
+            row.get("section"), row.get("section_norm"), row.get("section_priority"),
+            bool(row.get("is_results")), bool(row.get("is_methods")),
+            row.get("passage_id"), row.get("start"), row.get("end"),
             row.get("text")
         ))
         if len(rows) >= 5000:
@@ -56,15 +58,42 @@ def load_chunks(args: argparse.Namespace):
 
 def _bulk_upsert_chunks(rows: List[Tuple]):
     sql = """
-    INSERT INTO ef_chunks(chunk_id,paper_id,title,journal,year,study_type,primary_goal,supplements,section,passage_id,text)
+    CREATE TABLE IF NOT EXISTS public.ef_chunks (
+        chunk_id TEXT PRIMARY KEY,
+        paper_id TEXT NOT NULL,
+        title    TEXT,
+        journal  TEXT,
+        year     INTEGER,
+        study_type TEXT,
+        primary_goal TEXT,
+        supplements TEXT[],
+        section  TEXT,
+        section_norm TEXT,
+        section_priority INTEGER,
+        is_results BOOLEAN,
+        is_methods BOOLEAN,
+        passage_id TEXT,
+        start    INTEGER,
+        "end"    INTEGER,
+        text     TEXT
+    );
+
+    INSERT INTO ef_chunks(
+        chunk_id,paper_id,title,journal,year,study_type,primary_goal,supplements,
+        section,section_norm,section_priority,is_results,is_methods,passage_id,start,"end",text)
     VALUES %s
     ON CONFLICT (chunk_id) DO UPDATE SET
       paper_id=EXCLUDED.paper_id, title=EXCLUDED.title, journal=EXCLUDED.journal, year=EXCLUDED.year,
       study_type=EXCLUDED.study_type, primary_goal=EXCLUDED.primary_goal, supplements=EXCLUDED.supplements,
-      section=EXCLUDED.section, passage_id=EXCLUDED.passage_id, text=EXCLUDED.text
+      section=EXCLUDED.section, section_norm=EXCLUDED.section_norm, section_priority=EXCLUDED.section_priority,
+      is_results=EXCLUDED.is_results, is_methods=EXCLUDED.is_methods,
+      passage_id=EXCLUDED.passage_id, start=EXCLUDED.start, "end"=EXCLUDED."end", text=EXCLUDED.text
     """
     with _conn() as cx, cx.cursor() as cur:
-        psycopg2.extras.execute_values(cur, sql, rows, page_size=1000)
+        # Run the DDL first (safe if exists), then upsert
+        cur.execute(sql.split(";\n\n")[0] + ";")
+        upsert_sql = ";\n\n".join(sql.split(";\n\n")[1:])
+        psycopg2.extras.execute_values(cur, upsert_sql, rows, page_size=1000)
         cx.commit()
 
 def _get_model_and_tokenizer(model_name: str | None):

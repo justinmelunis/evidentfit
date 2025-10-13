@@ -255,12 +255,18 @@ Every paper receives an objective quality score based on:
 - Under-represented supplement: +3 pts
 - Over-represented supplement: -3 pts
 
-**Total Range**: 0-25+ points  
-**Typical Distribution**:
-- Meta-analyses: 12-20 pts
-- High-quality RCTs: 10-18 pts
-- Standard RCTs: 6-12 pts
-- Observational: 3-8 pts
+Why this scoring scheme
+- Mirrors accepted evidence hierarchies so end results match expert intuition without manual curation.
+- Emphasizes power and bias reduction (sample size, randomized/controlled design keywords) to prioritize robust findings.
+- Keeps the journal signal small (0–2) to avoid a noisy proxy dominating selection.
+- Adds a small recency nudge so the latest evidence surfaces when scores tie.
+- Applies diversity adjustments transiently during selection rather than permanently baking them into records, preserving a clean, comparable base score for every paper.
+
+Expected ranges
+- Meta-analyses: 12–20
+- High-quality RCTs: 10–18
+- Standard RCTs: 6–12
+- Observational: 3–8
 
 ---
 
@@ -285,17 +291,22 @@ Every paper receives an objective quality score based on:
    - ~715 papers protected
 
 3. **Diversity Filtering**:
-   - Score each supplement-goal combination
-   - Iteratively eliminate worst combinations
-   - Protected quotas never eliminated
-   - Balanced tiebreaks (no full-text preference)
-   - Continues until target reached (30K)
+   - Build counts across multiple axes (supplement×goal, goal×population, study_type×goal, journal×supplement)
+   - Convert over/under-representation into weights against a dynamic target share
+   - Score papers by `reliability + combination_weight`
+   - Eliminate the lowest in rounds until target (30K), never removing protected IDs
+   - Balanced tiebreaks (never prefer full-text over quality)
 
 **Output Distribution:**
 - Balanced across supplements (no single supplement >10%)
 - Balanced across goals (strength, endurance, etc.)
 - Quality-preserved (all papers ≥2.0)
 - Full-text preferred (within quality constraints)
+
+Why protection + diversity (vs hard caps)
+- Hard per-bucket caps are brittle, mask natural variance, and can discard high-quality papers in saturated areas.
+- Protection guarantees every supplement and key goal combos survive; diversity weights suppress runaway dominance without rigid limits.
+- The algorithm is deterministic and explainable: counts → weights → scores → elimination.
 
 ### Monthly Mode (Incremental)
 
@@ -309,8 +320,8 @@ Every paper receives an objective quality score based on:
    - Fetch papers published since last run (mindate = watermark - 1 day)
    - Input: ~4,000 new papers
 
-2. **Monthly Quality Filter** (NEW STEP):
-   - Load hard-coded thresholds from `monthly_thresholds.py`
+2. **Monthly Quality Filter**:
+   - Fixed thresholds per supplement (documented and auditable)
    - Evaluate each paper against each supplement tag
    - Three-tier system:
      - Tier 1: Always add (meta-analyses, exceptional quality ≥4.5, top N recent)
@@ -324,6 +335,11 @@ Every paper receives an objective quality score based on:
    - Enhanced quotas
    - Diversity selection
    - Output: ~800-1,200 papers
+
+Why fixed thresholds monthly
+- Predictable and stable month-to-month; avoids oscillation from small sample effects.
+- Keeps additions meaningful for strong supplements while enabling growth for weak ones.
+- Combined with a small recency guarantee (2–10 per supplement if ≥2.5), ensures the corpus stays fresh.
 
 4. **Update Watermark**:
    - Save current timestamp for next month
@@ -467,9 +483,24 @@ For each paper (concurrent, async):
      └─ Include skipped files in manifest (complete database state)
 ```
 
-### Coverage Statistics
+### Coverage & Why This Order
 
-**Typical results for 30K papers:**
+Why PMC first
+- Authoritative XML, consistent structure, stable links; best quality source when available.
+
+Why Europe PMC second
+- Adds coverage for records not in PMC proper; similar metadata model and reliability.
+
+Why Unpaywall third
+- Aggregates OA links across repositories/publishers and distinguishes PDF vs HTML; excellent for OA recovery.
+
+Why targeted scraping last
+- Only on a small allowlist to avoid legal/ethical issues and unreliable layouts; strict body-section validation prevents false positives.
+
+Abstract fallback
+- Guarantees every selected paper remains usable downstream even when no full text is accessible.
+
+### Coverage Statistics (bootstrap-scale runs)
 
 | Source | Full Texts | Abstract-Only | Total |
 |--------|------------|---------------|-------|
