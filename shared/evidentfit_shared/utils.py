@@ -13,6 +13,7 @@ Usage:
 
 import os
 from pathlib import Path
+from datetime import datetime
 
 
 def get_project_root() -> Path:
@@ -55,4 +56,18 @@ def get_project_root() -> Path:
 
 # Singleton instance for consistent root across modules
 PROJECT_ROOT = get_project_root()
+def read_index_version() -> str:
+    """Read global INDEX_VERSION from VERSION file if present; else env or default."""
+    # Priority: VERSION file at repo root
+    version_file = PROJECT_ROOT / "VERSION"
+    if version_file.exists():
+        try:
+            txt = version_file.read_text(encoding="utf-8").strip()
+            if txt:
+                return txt
+        except Exception:
+            pass
+    # Env fallback
+    return os.getenv("INDEX_VERSION", "v1")
+
 

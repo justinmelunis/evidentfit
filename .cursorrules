@@ -5,13 +5,15 @@
 - Cloud: Azure Container Apps (API & Jobs), Azure AI Foundry Project endpoint (chat+embeddings), Azure AI Search.
 - Agents:
   - Agent A — Ingestion/Indexing (ACA Job)
-  - Agent B — User API (FastAPI, SSE)
-  - Agent C — Monthly Summarizer/Publisher (ACA Job)
-  - Agent D — Stack Recommender (deterministic; lives in API; optional durable store)
+  - Agent B — Paper Processor (GPU job generating cards)
+  - Agent C — Banking (L1/L2 jobs; L3 compiler)
+  - Agent D — Summarizer/Publisher (ACA Job)
+  - Agent E — User API (FastAPI, SSE)
+  - Agent F — Stack Recommender (deterministic; lives in API; optional durable store)
 
 ## Repo structure (monorepo)
 evidentfit/
-  api/                         # Agent B + Agent D + Banking System
+  api/                         # Agent E + Agent F + (reads banking)
     Dockerfile
     requirements.txt
     main.py                    # /stream, /healthz, /summaries/{supp}, /stack*, /supplements/evidence
@@ -33,10 +35,16 @@ evidentfit/
       Dockerfile
       requirements.txt
       run.py                   # modes: bootstrap | monthly (watermark-aware)
-    summarize/                 # Agent C (Papers → Summaries)
+    paper_processor/           # Agent B (cards from fulltext)
       Dockerfile
       requirements.txt
-      run.py
+      cli.py, collect.py, extract.py, run.py
+    banking/                   # Agent C (Banking L1/L2 & L3 compiler)
+      run.py                   # L1/L2 initialization
+      cli.py                   # level1 | level2 | level3
+      level3/run.py            # compile rules → config/compiled_rules.json
+    summarize/                 # Agent D (Papers → Summaries)
+      run.py                   # reads Level 1 for evidence_grade
   shared/                      # common lib (installed editable in each image)
     pyproject.toml             # project = evidentfit_shared
     evidentfit_shared/
@@ -57,8 +65,7 @@ evidentfit/
         methodology/page.tsx   # public methodology documentation
         layout.tsx             # global navigation bar
   docs/
-    architecture.md
-    api-contracts.md
+    README.md                  # updated architecture overview and links
   .cursorrules                 # THIS FILE
   .gitlab-ci.yml
   VERSION                      # e.g., v1-2025-09-25 (agents read this)
@@ -92,7 +99,7 @@ evidentfit/
 - summary?: string; content: string; content_vector: vector
 - index_version: string
 
-### Summaries index (Agent C writes; B/WEB read)
+### Summaries index (Agent D writes; API/WEB read)
 - id: string (key)  # `summary:<supplement-slug>`
 - supplement: string; updated_at: datetime
 - overview_md: string; last12_md: string
@@ -121,7 +128,15 @@ evidentfit/
   - PubMed E-utilities (ESearch/EFetch) → parse → tag `supplements` via keyword map
   - Embed `content` → upsert to Papers; watermark doc `id=WATERMARK_KEY` with `last_ingest_iso`
   - Modes: `bootstrap` (mindate=2000-01-01) & `monthly` (mindate=watermark)
-- Agent B (API):
+- Agent B (paper_processor):
+  - Build cards from fulltext/abstracts; write to data/cards
+- Agent C (banking jobs):
+  - Level 1/2: aggregate from cards and Papers; output JSON caches
+  - Level 3: validate/compile suitability rules → config/compiled_rules.json
+- Agent D (summarizer job):
+  - Read Papers → rank (meta > RCT > crossover > other; newer first)
+  - Compose overview + last-12-months; read Level 1 for grade; upsert Summaries
+- Agent E (API):
   - `/stream` SSE: retrieve top-k from Papers; deterministic dosing; interactions; safety gate; compose; stream
   - `/summaries/{supp}`: read Summaries
   - `/stack*`: Agent D routes (build+bank stacks)
@@ -157,7 +172,7 @@ evidentfit/
     "index_version":"v1-YYYY-MM-DD"
   }
 
-### POST /stack/conversational   (Agent D)
+### POST /stack/conversational   (Agent F)
 - Input JSON:
   {
     "thread_id": string,
@@ -322,6 +337,8 @@ LOG_LEVEL=info
 - Build API when `api/**/*` or `shared/**/*` change
 - Build ingest when `agents/ingest/**/*` or `shared/**/*` change
 - Build summarizer when `agents/summarize/**/*` or `shared/**/*` change
+- Build paper_processor when `agents/paper_processor/**/*` or `shared/**/*` change
+- Build banking when `agents/banking/**/*` or `shared/**/*` change
 - Deploy SWA when `web/**/*` changes
 - Container App/Job deploys can remain manual initially
 
@@ -344,7 +361,8 @@ LOG_LEVEL=info
 2) Add `GET /summaries/{supp}` in `api/main.py` per contract.
 3) Implement `POST /stack`, `GET /stack/bucket/{bucket_key}`, optional `GET /stack/buckets`.
 4) Ingest (agents/ingest/run.py): expand supplement tags; drop NO₂ pollution false positives; respect watermark (`bootstrap|monthly`).
-5) Summarizer (agents/summarize/run.py): rank, compose overview/last12, upsert to Summaries.
+5) Summarizer (agents/summarize/run.py): rank, compose overview/last12, read Level 1 for grade, upsert to Summaries.
+6) Banking (agents/banking/run.py, level3/run.py): compute Level 1/2 from cards; compile L3 rules to config/compiled_rules.json.
 6) CORS: honor `CORS_ALLOW_ORIGINS`; fix browser CORS issues.
 7) Honor `INDEX_VERSION` everywhere; read from `VERSION` if present.
 

@@ -1,4 +1,6 @@
 from .utils import PROJECT_ROOT, get_project_root
+from .banking.aggregate import BankingConfig, pool_and_grade, load_cards_for
+from .banking.adjust import load_rules, apply_suitability
 from .fulltext_store import (
     resolve_fulltext_root,
     shard_for_key,
@@ -22,6 +24,12 @@ __all__ = [
     "search_client", 
     "types",
     "guardrails",
+    "banking",
+    "BankingConfig",
+    "pool_and_grade",
+    "load_cards_for",
+    "load_rules",
+    "apply_suitability",
     "utils",
     "fulltext_store",
     "PROJECT_ROOT",

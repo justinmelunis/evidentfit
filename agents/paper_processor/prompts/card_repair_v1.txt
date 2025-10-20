@@ -1,0 +1,15 @@
+Previous JSON was missing required fields or had invalid types.
+Return a FULL corrected JSON object that satisfies the schema below.
+Do not include any extra commentary—JSON only.
+
+Required keys:
+- population (object)
+- intervention (object)
+- outcomes (array; can be empty, but prefer at least one if results mention direction)
+- safety (object)
+
+If a numeric value is unknown, set it to null.
+Always include provenance arrays; if unknown, set to [].
+
+
+

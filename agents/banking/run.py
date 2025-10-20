@@ -16,22 +16,24 @@ import json
 import logging
 from typing import Dict, List, Any
 from datetime import datetime
+from pathlib import Path
 
 # Add shared directory to path
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..', 'shared'))
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..', 'api'))
 
 from stack_builder import (
-    COMMON_SUPPLEMENTS, 
+    COMMON_SUPPLEMENTS,
     BANKING_BUCKETS,
-    get_goal_evidence_grade,
     generate_profile_specific_reasoning,
     generate_bank_key,
     get_weight_bin,
-    get_age_bin
+    get_age_bin,
 )
 from evidentfit_shared.types import UserProfile
 from clients.search_read import search_docs
+from evidentfit_shared.banking.aggregate import BankingConfig, load_cards_for, pool_and_grade
+from evidentfit_shared.utils import read_index_version
 
 
 class BankingInitializer:
@@ -41,6 +43,7 @@ class BankingInitializer:
         self.level1_bank = {}  # Goal × Supplement evidence grades
         self.level2_bank = {}  # Profile-specific reasoning
         self.papers_cache = {}  # Cache retrieved papers to avoid repeated searches
+        self.cfg = None
         
         # Setup logging
         log_dir = os.path.join(os.path.dirname(__file__), 'logs')
@@ -56,6 +59,16 @@ class BankingInitializer:
             ]
         )
         self.logger = logging.getLogger(__name__)
+        # Load banking config and index version
+        try:
+            self.cfg = BankingConfig.load(Path("config/banking.yml"))
+        except Exception as e:
+            self.logger.warning(f"Failed to load banking config: {e}")
+            self.cfg = None
+        try:
+            self.index_version = read_index_version()
+        except Exception:
+            self.index_version = os.getenv("INDEX_VERSION", "v1")
         
     def initialize_all_banks(self):
         """Initialize both Level 1 and Level 2 banking"""
@@ -76,56 +89,76 @@ class BankingInitializer:
         self.logger.info("SUCCESS: Banking initialization complete!")
         
     def initialize_level1_banking(self):
-        """Pre-compute evidence grades for all goal × supplement combinations"""
-        self.logger.info("=== Level 1: Computing Goal × Supplement Evidence Grades ===")
-        
-        goals = BANKING_BUCKETS['goal']
+        """Pre-compute evidence grades for all goal × supplement combinations using shared aggregator over cards"""
+        self.logger.info("=== Level 1: Computing Goal × Supplement Evidence Grades (cards + shared aggregator) ===")
+
+        goals = BANKING_BUCKETS["goal"]
         total_combinations = len(goals) * len(COMMON_SUPPLEMENTS)
         processed = 0
-        
+        cards_dir = Path("data/cards")
+        if not cards_dir.exists():
+            self.logger.warning(f"Cards directory not found: {cards_dir}. Level 1 may be incomplete.")
+
         for goal in goals:
             self.logger.info(f"Processing {goal} goal...")
-            
-            # Get papers relevant to this goal
-            goal_papers = self.get_papers_for_goal(goal)
-            self.logger.info(f"  Found {len(goal_papers)} papers for {goal} goal")
-            
             for supplement in COMMON_SUPPLEMENTS:
-                # Compute evidence grade for this goal × supplement
-                evidence_grade = get_goal_evidence_grade(supplement, goal, goal_papers)
-                
-                # Get supporting publications for this evidence grade
-                supporting_papers = [p for p in goal_papers if supplement.lower() in (p.get("supplements") or "").lower()]
-                publications = []
-                for paper in supporting_papers[:3]:  # Top 3 papers
-                    if paper.get('title') and (paper.get('doi') or paper.get('pmid')):
-                        publications.append({
-                            "title": paper.get('title', ''),
-                            "doi": paper.get('doi', ''),
-                            "pmid": paper.get('pmid', ''),
-                            "journal": paper.get('journal', ''),
-                            "year": paper.get('year', ''),
-                            "url_pub": paper.get('url_pub', ''),
-                            "study_type": paper.get('study_type', '')
-                        })
-                
-                bank_key = f"{goal}:{supplement}"
-                self.level1_bank[bank_key] = {
-                    "grade": evidence_grade,
-                    "goal": goal,
-                    "supplement": supplement,
-                    "paper_count": len(supporting_papers),
-                    "publications": publications,
-                    "last_updated": datetime.now().isoformat(),
-                    "index_version": os.getenv("INDEX_VERSION", "v1")
-                }
-                
+                try:
+                    cards = load_cards_for(supplement, goal, cards_dir)
+                    if not cards:
+                        # No cards for this combination; default to D
+                        agg = {"grade": "D", "pooled_effect": 0.0, "consistency": 0.0, "confidence": 0.0, "weight": 0.0}
+                        publications = []
+                        paper_count = 0
+                    else:
+                        agg = pool_and_grade(cards, self.cfg) if self.cfg else {"grade": "D"}
+                        # Build top refs into minimal publication list from cards meta
+                        pmids = set(agg.get("top_refs", []))
+                        publications = []
+                        for c in cards:
+                            pmid = str((c.get("meta") or {}).get("pmid") or "")
+                            if pmid and (not pmids or pmid in pmids):
+                                publications.append({
+                                    "title": (c.get("meta") or {}).get("title", ""),
+                                    "doi": (c.get("meta") or {}).get("doi", ""),
+                                    "pmid": pmid,
+                                    "journal": (c.get("meta") or {}).get("journal", ""),
+                                    "year": (c.get("meta") or {}).get("year", ""),
+                                    "url_pub": (c.get("meta") or {}).get("url_pub", ""),
+                                    "study_type": (c.get("meta") or {}).get("study_type", ""),
+                                })
+                                if len(publications) >= 3:
+                                    break
+                        paper_count = len(cards)
+
+                    bank_key = f"{goal}:{supplement}"
+                    self.level1_bank[bank_key] = {
+                        "grade": agg.get("grade", "D"),
+                        "goal": goal,
+                        "supplement": supplement,
+                        "paper_count": paper_count,
+                        "publications": publications,
+                        "pooled_effect": agg.get("pooled_effect"),
+                        "consistency": agg.get("consistency"),
+                        "confidence": agg.get("confidence"),
+                        "last_updated": datetime.now().isoformat(),
+                        "index_version": self.index_version,
+                    }
+                except Exception as e:
+                    self.logger.warning(f"Failed L1 for {supplement}+{goal}: {e}")
+                    self.level1_bank[f"{goal}:{supplement}"] = {
+                        "grade": "D",
+                        "goal": goal,
+                        "supplement": supplement,
+                        "paper_count": 0,
+                        "publications": [],
+                        "last_updated": datetime.now().isoformat(),
+                        "index_version": self.index_version,
+                    }
+
                 processed += 1
-                self.logger.info(f"  {supplement} + {goal}: Grade {evidence_grade} ({len(supporting_papers)} papers)")
-                
                 if processed % 20 == 0:
                     self.logger.info(f"Progress: {processed}/{total_combinations} ({processed/total_combinations*100:.1f}%)")
-        
+
         self.logger.info(f"SUCCESS: Level 1 complete: {len(self.level1_bank)} evidence grades computed")
     
     def initialize_level2_banking(self):
@@ -186,7 +219,7 @@ class BankingInitializer:
                 "age_bin": get_age_bin(profile.age),
                 "supplements": profile_reasoning,
                 "last_updated": datetime.now().isoformat(),
-                "index_version": os.getenv("INDEX_VERSION", "v1")
+                "index_version": self.index_version
             }
         
         self.logger.info(f"SUCCESS: Level 2 complete: {len(self.level2_bank)} profile reasoning sets computed")

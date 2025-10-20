@@ -27,8 +27,12 @@ Welcome to the EvidentFit docs. This index helps you find the right guide quickl
 ## Agents (research pipeline & banking)
 - Ingest overview: `agents/ingest/README.md`
   - get_papers (technical): `agents/ingest/get_papers/README.md`
-  - paper_processor (technical): `agents/ingest/paper_processor/README.md`
-- Banking initialization: `agents/banking/README.md`
+- Paper processor (Agent B): `agents/paper_processor/README.md`
+- Banking (Agent C): Level1/Level2/Level3
+  - Initialize (L1/L2): `agents/banking/run.py`
+  - Compile L3 rules: `agents/banking/level3/run.py`
+  - CLI: `agents/banking/cli.py` (level1 | level2 | level3)
+- Summarizer (Agent D): `agents/summarize/run.py` (reads Level 1 grades)
 
 ## API and web
 - API service: `api/README.md`

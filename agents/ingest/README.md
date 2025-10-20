@@ -24,7 +24,7 @@ python -m agents.ingest.get_papers.pipeline \
 
 ```bash
 # Step 2: Process with GPU (~5 days on RTX 3080)
-python -m agents.ingest.paper_processor.run \
+python -m agents.paper_processor.run \
   --max-papers 30000 \
   --batch-size 1
 
@@ -62,7 +62,7 @@ python -m agents.ingest.get_papers.pipeline \
 
 ```bash
 # Phase 2: Process new papers with GPU (~12-18 hours)
-python -m agents.ingest.paper_processor.run \
+python -m agents.paper_processor.run \
   --mode monthly \
   --master-summaries data/paper_processor/master/summaries_master.jsonl \
   --max-papers 2000
@@ -229,7 +229,7 @@ cp data/paper_processor/master/summaries_master.jsonl \
    data/paper_processor/monthly_deltas/2025-10-05_bootstrap.jsonl
 
 # Build initial index
-python -c "from agents.ingest.paper_processor.storage_manager import StorageManager; \
+python -c "from agents.paper_processor.storage_manager import StorageManager; \
 from pathlib import Path; \
 s = StorageManager(); \
 idx = s.build_master_index(Path('data/paper_processor/master/summaries_master.jsonl')); \
@@ -445,7 +445,7 @@ For implementation details, algorithms, and configuration options:
 python -m agents.ingest.get_papers.pipeline --mode monthly --target 2000
 
 # Tuesday-Wednesday: Process new papers with GPU (~1-2 days)  
-python -m agents.ingest.paper_processor.run --max-papers 2000
+python -m agents.paper_processor.run --max-papers 2000
 
 # Thursday: Verify outputs, regenerate banking if needed
 python scripts/analyze_corpus_quality.py data/ingest/runs/latest/pm_papers.jsonl

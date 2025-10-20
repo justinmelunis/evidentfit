@@ -1,0 +1,10 @@
+You will extract ONLY the requested fields from the provided excerpt.
+Rules:
+- Output STRICT JSON with keys among: population, intervention, outcomes, safety.
+- If unknown or unsupported by the excerpt, set values to null or [] (do not guess).
+- For any filled item, include provenance entries with {chunk_id, span}.
+- span MUST reference character offsets within THIS excerpt (0-based, [start,end)).
+
+Return JSON only.
+
+
