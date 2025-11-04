@@ -28,6 +28,11 @@ from stack_rules import (
     creatine_plan_by_form, protein_gap_plan,
     get_evidence_grade, get_supplement_timing, get_supplement_why
 )
+try:
+    from evidentfit_shared.suitability.extract import extract_signals_from_messages
+except Exception:
+    def extract_signals_from_messages(messages):
+        return {"conditions": [], "meds": []}
 
 
 INDEX_VERSION = os.getenv("INDEX_VERSION", "v1")
@@ -41,9 +46,10 @@ BANKING_BUCKETS = {
     "goal": ["strength", "hypertrophy", "endurance", "weight_loss", "performance", "general"],  # 6
     "weight_bin": ["xs", "small", "medium", "large", "xl"],  # 5 (<60, 60-70, 70-85, 85-100, 100+)
     "sex": ["male", "female", "other"],  # 3  
-    "age_bin": ["minor", "young", "adult", "mature"]  # 4 (13-17, 18-29, 30-49, 50+)
+    "age_bin": ["young", "adult", "mature"]  # 3 (18-29, 30-49, 50+) - pediatric excluded
 }
-# Total combinations: 6 × 5 × 3 × 4 = 360 profiles (2.2 MB storage)
+# Total combinations: 6 × 5 × 3 × 3 = 270 profiles (pediatric excluded)
+# Note: get_age_bin() still handles "minor" for real-time Level 3 adjustments, but banking only computes 270 profiles
 
 def get_weight_bin(weight_kg: float) -> str:
     """Map weight to bins that affect dosing recommendations"""
@@ -81,12 +87,32 @@ def generate_bank_key(profile: UserProfile) -> str:
     return f"{goal}:{weight_bin}:{sex}:{age_bin}"
 
 # Common supplements to evaluate for every user
+# Matches all 63 supplements searched in ingestion (agents/ingest/get_papers/pubmed_client.py)
 COMMON_SUPPLEMENTS = [
-    "creatine", "protein", "caffeine", "beta-alanine", "citrulline", 
-    "nitrate", "hmb", "bcaa", "taurine", "carnitine", "glutamine",
-    "ashwagandha", "rhodiola", "omega-3", "vitamin-d", "magnesium",
-    "collagen", "curcumin", "b12", "iron", "folate", "leucine", "betaine",
-    "zma", "tribulus", "d-aspartic-acid", "tongkat-ali"
+    # Core performance supplements
+    "creatine", "caffeine", "beta-alanine", "protein",
+    # Nitric oxide boosters
+    "citrulline", "nitrate", "arginine",
+    # Amino acids and derivatives
+    "hmb", "bcaa", "leucine", "glutamine",
+    # Other performance compounds
+    "betaine", "taurine", "carnitine",
+    # Hormonal/anabolic
+    "tribulus", "d-aspartic-acid",
+    # Essential nutrients
+    "omega-3", "vitamin-d", "magnesium", "iron",
+    # Specialized compounds
+    "sodium-bicarbonate", "sodium-phosphate", "glycerol", "curcumin", "quercetin",
+    # Adaptogens and herbs
+    "ashwagandha", "rhodiola", "cordyceps",
+    # Other compounds
+    "tyrosine", "cla", "zma", "ecdysteroids", "sodium-citrate", "alpha-gpc",
+    "theacrine", "yohimbine", "green-tea-extract", "ketone-esters", "collagen",
+    "blackcurrant", "tart-cherry", "pomegranate", "pycnogenol", "resveratrol",
+    "nac", "coq10", "fenugreek", "tongkat-ali", "maca", "boron", "shilajit",
+    "d-ribose", "phosphatidic-acid", "phosphatidylserine", "epicatechin",
+    "red-spinach", "synephrine", "garcinia-cambogia", "raspberry-ketone",
+    "chromium-picolinate", "alpha-lipoic-acid", "theanine", "hica"
 ]
 
 # Special handling for high-risk populations
@@ -463,6 +489,7 @@ def apply_text_based_adjustments(items: List[StackItem], context: str, profile: 
     if not context:
         return items
     
+    # Backward-compatible extraction from free text, plus shared deterministic extractor
     conditions = extract_conditions_from_text(context)
     medications = extract_medications_from_text(context)
     

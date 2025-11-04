@@ -890,6 +890,119 @@ def calculate_study_design_score(study_type: str, sample_size: int, duration: st
     return min(score, 10.0)  # Cap at 10
 
 
+def is_clinical_disease_study(title: str, content: str) -> bool:
+    """
+    Detect if study is about clinical/disease populations that should be excluded.
+    
+    Excludes studies with:
+    - Major diseases (cancer, heart disease, kidney disease, liver disease, diabetes, neurological disorders, etc.)
+    - Pediatric populations (<18 years)
+    - Pregnancy/lactation populations
+    
+    EXCEPTIONS (keeps these):
+    - Safety/adverse event studies (CRITICAL - even in clinical populations, safety signals are important)
+    - Obesity/overweight studies (fitness relevant)
+    - Elderly/aging populations without specific diseases
+    - Prevention studies (phrases like "preventing", "risk reduction")
+    - Metabolic syndrome without complications
+    - General health contexts
+    
+    Args:
+        title: Article title
+        content: Article abstract/content
+        
+    Returns:
+        True if study should be excluded (clinical/disease population), False otherwise
+    """
+    text = f"{title} {content}".lower()
+    
+    # CRITICAL EXCEPTION: Keep safety/adverse event studies even in clinical populations
+    # Safety signals are important regardless of population
+    safety_keywords = [
+        r"\badverse event", r"\bside effect", r"\badverse reaction",
+        r"\btoxicity", r"\bcontraindication", r"\bsafety", r"\badverse",
+        r"\btolerability", r"\bharm", r"\bcomplication"
+    ]
+    is_safety_study = any(re.search(pattern, text, re.I) for pattern in safety_keywords)
+    if is_safety_study:
+        return False  # Keep safety studies
+    
+    # Disease/condition patterns to exclude
+    disease_patterns = [
+        # Cancer/oncology
+        r"\bcancer\b", r"\bneoplasm", r"\btumor", r"\bcarcinoma", r"\boncology",
+        r"\bchemotherapy", r"\bradiotherapy", r"\bradiotherapy",
+        # Cardiovascular disease
+        r"\bheart disease", r"\bheart failure", r"\bcoronary artery",
+        r"\bmyocardial infarction", r"\bcardiac disease", r"\bcardiovascular disease",
+        r"\bstroke", r"\barrhythmia",
+        # Kidney disease
+        r"\bkidney disease", r"\brenal disease", r"\brenal failure", r"\bdialysis",
+        r"\bchronic kidney", r"\bckd\b", r"\besrd\b",
+        # Liver disease
+        r"\bliver disease", r"\bhepatic disease", r"\bcirrhosis", r"\bhepatitis",
+        # Diabetes (all types)
+        r"\bdiabetes", r"\bdiabetic", r"\binsulin resistance", r"\bglucose intolerance",
+        r"\bprediabetes", r"\btype 1 diabetes", r"\btype 2 diabetes", r"\bhyperglycemia",
+        # Neurological disorders
+        r"\bparkinson", r"\balzheimer", r"\bdementia", r"\bmultiple sclerosis",
+        r"\bepilepsy", r"\btraumatic brain injury", r"\btbi\b",
+        # Other major diseases
+        r"\bchronic obstructive", r"\bcopd\b", r"\bhiv\b", r"\baids\b",
+        r"\bimmune deficiency", r"\bautoimmune",
+        # Pediatric populations
+        r"\bchildren\b", r"\bpediatric", r"\badolescent", r"\bunder 18",
+        r"\bminors\b", r"\bjuvenile", r"\bpediatric",
+        # Pregnancy/lactation
+        r"\bpregnancy\b", r"\bpregnant\b", r"\blactation", r"\bbreastfeeding",
+        r"\bbreast feeding", r"\bmaternal\b", r"\bprenatal", r"\bpostnatal",
+        # Clinical terminology
+        r"\bpatient[s]?\b.*\b(cancer|cardiac|renal|liver|diabetes|disease)",
+        r"\bdiseased individual", r"\bclinical patient",
+    ]
+    
+    # Check for disease indicators
+    has_disease = any(re.search(pattern, text, re.I) for pattern in disease_patterns)
+    
+    if not has_disease:
+        return False  # No disease indicators found
+    
+    # Additional context checks - exclude only if clearly clinical treatment context
+    # Exclude if disease mention is in a treatment/intervention context
+    clinical_context_patterns = [
+        r"\btreatment.*\b(cancer|cardiac|renal|liver|diabetes|disease)",
+        r"\btherapy.*\b(cancer|cardiac|renal|liver|diabetes|disease)",
+        r"\bintervention.*\b(cancer|cardiac|renal|liver|diabetes|disease)",
+        r"\bpatient[s]?\b.*\bwith.*\b(cancer|cardiac|renal|liver|diabetes|disease)",
+    ]
+    
+    # If disease is mentioned in a clinical treatment context, exclude
+    has_clinical_context = any(re.search(pattern, text, re.I) for pattern in clinical_context_patterns)
+    if has_clinical_context:
+        return True  # Exclude clinical treatment studies
+    
+    # Keep prevention/risk reduction studies even if they mention disease
+    prevention_keywords = [
+        r"\bpreventing", r"\bprevention", r"\brisk reduction", r"\brisk factor",
+        r"\bpreventative", r"\bprotective", r"\bprimary prevention"
+    ]
+    is_prevention = any(re.search(pattern, text, re.I) for pattern in prevention_keywords)
+    if is_prevention:
+        return False  # Keep prevention studies
+    
+    # Keep obesity/overweight studies (fitness relevant)
+    if re.search(r"\bobesity|\boverweight|\bbmi\b", text, re.I):
+        return False
+    
+    # Keep elderly/aging without disease context
+    if re.search(r"\belderly|\bolder adult|\baging\b", text, re.I) and not has_clinical_context:
+        return False
+    
+    # If disease is mentioned but not in clear clinical treatment context, be conservative
+    # Default to excluding if disease is prominently mentioned
+    return has_disease
+
+
 def is_relevant_human_study(title: str, content: str) -> bool:
     """
     Minimal relevance filter - trust PubMed MeSH filtering for humans/exercise.
@@ -995,6 +1108,9 @@ def parse_pubmed_article(rec: Dict, dynamic_weights: Optional[Dict] = None) -> O
     # Check relevance - skip irrelevant studies early
     if not is_relevant_human_study(title, content):
         return None  # Skip this paper
+    # Skip clinical/disease population studies (except safety studies)
+    if is_clinical_disease_study(title, content):
+        return None  # Skip clinical/disease population papers
     # Screen out prevalence/usage-only surveys (no exercise outcomes)
     if _is_prevalence_survey(f"{title} {content or ''}"):
         return None

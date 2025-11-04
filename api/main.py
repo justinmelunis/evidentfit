@@ -148,6 +148,14 @@ def mini_search(query: str, k: int = 8) -> List[Dict]:
     scored.sort(key=lambda x: x[0], reverse=True)
     return [d for _, d in scored[:k]] or DOCS[:k]
 
+def _normalize_search_results(results):
+    """Return list of docs from either shared client (dict with value) or local client (list)."""
+    if isinstance(results, list):
+        return results
+    if isinstance(results, dict):
+        return results.get("value", [])
+    return []
+
 def compose_with_llm(prompt: str, hits: list[dict]) -> str:
     """Compose answer using Foundry chat with tight prompt that only cites retrieved IDs"""
     # Build citations from hits
@@ -258,9 +266,21 @@ def healthz():
         "using_fallback": not index_available
     }
 
+# Research Chat endpoint - TEMPORARILY DISABLED
+# Re-enable when revenue justifies infrastructure costs (~$35-60/month for Azure PostgreSQL)
+# To re-enable: Uncomment the code below and remove the 503 response
 @api.post("/stream")
 async def stream(request: StreamRequest, _=Depends(guard)):
-    """SSE endpoint that emits search results then final answer"""
+    """SSE endpoint that emits search results then final answer - TEMPORARILY DISABLED"""
+    raise HTTPException(
+        status_code=503,
+        detail="Research chat is temporarily disabled. We're focusing on stack recommendations first. "
+               "This feature will be re-enabled when revenue justifies the infrastructure costs. "
+               "For now, check out our Stack Planner and Supplement Database!"
+    )
+    
+    # DISABLED CODE - Re-enable by uncommenting below and removing the raise above
+    """
     thread_id = request.thread_id
     msgs = request.messages
     profile = request.profile
@@ -271,7 +291,12 @@ async def stream(request: StreamRequest, _=Depends(guard)):
     # Search for relevant documents
     try:
         search_response = search_docs(query=user_msg, top=8)
-        hits = search_response.get('value', [])
+        hits = _normalize_search_results(search_response)
+        # Rank chat hits: allow all, but prefer banking_eligible and higher study_strength
+        hits.sort(key=lambda h: (
+            int(h.get('banking_eligible', True)),
+            float(h.get('study_strength', 0) or 0)
+        ), reverse=True)
     except Exception as e:
         print(f"Search failed, using fallback: {e}")
         hits = mini_search(user_msg, k=8)
@@ -304,6 +329,7 @@ async def stream(request: StreamRequest, _=Depends(guard)):
         yield f"data: {json.dumps(final_event)}\n\n"
 
     return StreamingResponse(gen(), media_type="text/event-stream")
+    """
 
 @api.get("/summaries/{supplement}")
 def get_summary(supplement: str):
@@ -460,8 +486,11 @@ async def stack_conversational(request: ConversationalStackRequest, _=Depends(gu
     # Search for relevant papers
     try:
         search_response = search_docs(query=search_query, top=15)
-        docs = search_response.get('value', [])
-        print(f"Found {len(docs)} papers for query: {search_query}")
+        docs = _normalize_search_results(search_response)
+        # Exclude non-banking docs for stack building; then sort by study_strength desc
+        docs = [d for d in docs if d.get('banking_eligible', True)]
+        docs.sort(key=lambda d: float(d.get('study_strength', 0) or 0), reverse=True)
+        print(f"Found {len(docs)} banking-eligible papers for query: {search_query}")
     except Exception as e:
         print(f"Search failed: {e}")
         docs = []

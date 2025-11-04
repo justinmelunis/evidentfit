@@ -1,4 +1,8 @@
-# Agent A: Research Ingestion Pipeline
+# Module A: Research Ingestion Pipeline (Data Ingestion)
+
+**Module A** is a non-agentic pipeline (no LLM calls) that handles paper discovery, selection, and indexing. It consists of two phases:
+- **A1: Paper Fetcher** (`get_papers/`) - PubMed search, parsing, filtering, full-text fetching
+- **A2: Paper Indexer** (`index_papers/`) - Chunking and embeddings for vector search
 
 Build and maintain a high-quality research corpus with automated monthly updates.
 
@@ -23,7 +27,7 @@ python -m agents.ingest.get_papers.pipeline \
 ```
 
 ```bash
-# Step 2: Process with GPU (~5 days on RTX 3080)
+# Step 2: Process with GPU (~5 days on RTX 3080) - Agent B
 python -m agents.paper_processor.run \
   --max-papers 30000 \
   --batch-size 1
@@ -284,7 +288,7 @@ python -m agents.ingest.index_papers.cli search --q "creatine increases 1RM stre
 
 📖 Technical reference: `agents/ingest/index_papers/README.md`
 
-### paper_processor
+### Agent B: Paper Processor
 GPU-accelerated LLM processing for structured summaries.
 
 - 🎮 **Local GPU** - Mistral-7B on RTX 3080 (10GB VRAM)
@@ -295,7 +299,9 @@ GPU-accelerated LLM processing for structured summaries.
 
 **Runtime**: ~5 days (30K papers on RTX 3080)
 
-📖 **[Technical Documentation](paper_processor/README.md)** - GPU setup, configuration
+📖 **[Technical Documentation](../../paper_processor/README.md)** - GPU setup, configuration
+
+**Note**: Paper processor has been moved from `agents/ingest/paper_processor/` to `agents/paper_processor/` (standalone Agent B).
 
 ---
 

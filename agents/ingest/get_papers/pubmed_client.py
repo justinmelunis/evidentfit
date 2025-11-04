@@ -34,93 +34,99 @@ NCBI_EMAIL = os.getenv("NCBI_EMAIL", "you@example.com")
 NCBI_API_KEY = os.getenv("NCBI_API_KEY")  # optional
 MAX_TOTAL_PAPERS = int(os.getenv("MAX_TOTAL_PAPERS", "200000"))
 
+# Disease/condition exclusion filter for relatively healthy populations
+# Excludes clinical/disease populations while keeping obesity, elderly, and prevention studies
+DISEASE_EXCLUSION_FILTER = ' NOT (cancer OR neoplasm OR tumor OR carcinoma OR oncology OR chemotherapy OR "heart disease" OR "heart failure" OR "coronary artery" OR "myocardial infarction" OR "cardiac disease" OR "kidney disease" OR "renal disease" OR "renal failure" OR dialysis OR "chronic kidney" OR "liver disease" OR cirrhosis OR hepatitis OR "hepatic disease" OR diabetes OR diabetic OR "insulin resistance" OR "glucose intolerance" OR prediabetes OR "type 1 diabetes" OR "type 2 diabetes" OR hyperglycemia OR Parkinson OR Alzheimer OR dementia OR "multiple sclerosis" OR epilepsy OR "traumatic brain injury" OR "chronic obstructive" OR COPD OR HIV OR AIDS OR "immune deficiency" OR children OR pediatric OR adolescent OR "under 18" OR minors OR juvenile OR pregnancy OR pregnant OR lactation OR breastfeeding OR "breast feeding" OR maternal OR prenatal OR postnatal OR "Case Reports"[Publication Type])'
+
 # Multi-Query Strategy - Supplement-specific PubMed queries for comprehensive coverage
+# All queries include DISEASE_EXCLUSION_FILTER to exclude clinical/disease populations
 SUPPLEMENT_QUERIES = {
     # Core performance supplements - simplified queries that actually work
-    "creatine": 'creatine AND (exercise OR training OR performance OR strength OR muscle) AND humans[MeSH]',
-    "caffeine": 'caffeine AND (exercise OR training OR performance OR endurance OR strength) AND humans[MeSH]',
-    "beta-alanine": '"beta-alanine" AND (exercise OR training OR performance OR muscle OR fatigue) AND humans[MeSH]',
-    "protein": '"protein supplementation" AND (exercise OR training OR muscle OR hypertrophy OR strength) AND humans[MeSH]',
+    "creatine": 'creatine AND (exercise OR training OR performance OR strength OR muscle) AND humans[MeSH]' + DISEASE_EXCLUSION_FILTER,
+    "caffeine": 'caffeine AND (exercise OR training OR performance OR endurance OR strength) AND humans[MeSH]' + DISEASE_EXCLUSION_FILTER,
+    "beta-alanine": '"beta-alanine" AND (exercise OR training OR performance OR muscle OR fatigue) AND humans[MeSH]' + DISEASE_EXCLUSION_FILTER,
+    "protein": '"protein supplementation" AND (exercise OR training OR muscle OR hypertrophy OR strength) AND humans[MeSH]' + DISEASE_EXCLUSION_FILTER,
     
     # Nitric oxide boosters
-    "citrulline": 'citrulline AND (exercise OR training OR performance) AND humans[MeSH]',
-    "nitrate": '(nitrate OR beetroot) AND (exercise OR training OR performance OR endurance) AND humans[MeSH] NOT pollution',
-    "arginine": 'arginine AND (exercise OR training OR performance) AND humans[MeSH]',
+    "citrulline": 'citrulline AND (exercise OR training OR performance) AND humans[MeSH]' + DISEASE_EXCLUSION_FILTER,
+    "nitrate": '(nitrate OR beetroot) AND (exercise OR training OR performance OR endurance) AND humans[MeSH] NOT pollution' + DISEASE_EXCLUSION_FILTER,
+    "arginine": 'arginine AND (exercise OR training OR performance) AND humans[MeSH]' + DISEASE_EXCLUSION_FILTER,
     
     # Amino acids and derivatives
-    "hmb": 'HMB AND (exercise OR training OR muscle OR strength OR recovery) AND humans[MeSH]',
-    "bcaa": 'BCAA AND (exercise OR training OR muscle OR recovery OR endurance) AND humans[MeSH]',
-    "leucine": 'leucine AND (exercise OR training OR muscle) AND humans[MeSH]',
-    "glutamine": 'glutamine AND (exercise OR training OR recovery OR muscle) AND humans[MeSH]',
+    "hmb": 'HMB AND (exercise OR training OR muscle OR strength OR recovery) AND humans[MeSH]' + DISEASE_EXCLUSION_FILTER,
+    "bcaa": 'BCAA AND (exercise OR training OR muscle OR recovery OR endurance) AND humans[MeSH]' + DISEASE_EXCLUSION_FILTER,
+    "leucine": 'leucine AND (exercise OR training OR muscle) AND humans[MeSH]' + DISEASE_EXCLUSION_FILTER,
+    "glutamine": 'glutamine AND (exercise OR training OR recovery OR muscle) AND humans[MeSH]' + DISEASE_EXCLUSION_FILTER,
     
     # Other performance compounds
-    "betaine": 'betaine AND (exercise OR training OR performance OR strength OR power) AND humans[MeSH]',
-    "taurine": 'taurine AND (exercise OR training OR performance OR endurance OR muscle) AND humans[MeSH]',
-    "carnitine": 'carnitine AND (exercise OR training OR performance) AND humans[MeSH]',
+    "betaine": 'betaine AND (exercise OR training OR performance OR strength OR power) AND humans[MeSH]' + DISEASE_EXCLUSION_FILTER,
+    "taurine": 'taurine AND (exercise OR training OR performance OR endurance OR muscle) AND humans[MeSH]' + DISEASE_EXCLUSION_FILTER,
+    "carnitine": 'carnitine AND (exercise OR training OR performance) AND humans[MeSH]' + DISEASE_EXCLUSION_FILTER,
     
     # Hormonal/anabolic
-    "tribulus": 'tribulus AND (exercise OR training OR testosterone OR performance OR strength) AND humans[MeSH]',
-    "d-aspartic-acid": '"d-aspartic acid" AND (exercise OR training OR testosterone OR hormone OR strength) AND humans[MeSH]',
+    "tribulus": 'tribulus AND (exercise OR training OR testosterone OR performance OR strength) AND humans[MeSH]' + DISEASE_EXCLUSION_FILTER,
+    "d-aspartic-acid": '"d-aspartic acid" AND (exercise OR training OR testosterone OR hormone OR strength) AND humans[MeSH]' + DISEASE_EXCLUSION_FILTER,
     
     # Essential nutrients
-    "omega-3": '"omega-3" AND (exercise OR training OR performance OR recovery OR inflammation) AND humans[MeSH]',
-    "vitamin-d": '"vitamin D" AND (exercise OR training OR performance OR muscle OR strength) AND humans[MeSH]',
-    "magnesium": 'magnesium AND (exercise OR training OR performance OR muscle OR recovery) AND humans[MeSH]',
-    "iron": 'iron AND (exercise OR training OR performance OR endurance OR fatigue) AND humans[MeSH]',
+    "omega-3": '"omega-3" AND (exercise OR training OR performance OR recovery OR inflammation) AND humans[MeSH]' + DISEASE_EXCLUSION_FILTER,
+    "vitamin-d": '"vitamin D" AND (exercise OR training OR performance OR muscle OR strength) AND humans[MeSH]' + DISEASE_EXCLUSION_FILTER,
+    "magnesium": 'magnesium AND (exercise OR training OR performance OR muscle OR recovery) AND humans[MeSH]' + DISEASE_EXCLUSION_FILTER,
+    "iron": 'iron AND (exercise OR training OR performance OR endurance OR fatigue) AND humans[MeSH]' + DISEASE_EXCLUSION_FILTER,
     
     # Specialized compounds
-    "sodium-bicarbonate": '"sodium bicarbonate" AND (exercise OR training OR performance) AND humans[MeSH]',
-    "sodium-phosphate": '"sodium phosphate" AND (exercise OR training OR performance OR endurance) AND humans[MeSH]',
-    "glycerol": 'glycerol AND (exercise OR training OR performance OR hydration OR endurance) AND humans[MeSH]',
-    "curcumin": 'curcumin AND (exercise OR training OR performance OR inflammation OR recovery) AND humans[MeSH]',
-    "quercetin": 'quercetin AND (exercise OR training OR performance OR antioxidant OR endurance) AND humans[MeSH]',
+    "sodium-bicarbonate": '"sodium bicarbonate" AND (exercise OR training OR performance) AND humans[MeSH]' + DISEASE_EXCLUSION_FILTER,
+    "sodium-phosphate": '"sodium phosphate" AND (exercise OR training OR performance OR endurance) AND humans[MeSH]' + DISEASE_EXCLUSION_FILTER,
+    "glycerol": 'glycerol AND (exercise OR training OR performance OR hydration OR endurance) AND humans[MeSH]' + DISEASE_EXCLUSION_FILTER,
+    "curcumin": 'curcumin AND (exercise OR training OR performance OR inflammation OR recovery) AND humans[MeSH]' + DISEASE_EXCLUSION_FILTER,
+    "quercetin": 'quercetin AND (exercise OR training OR performance OR antioxidant OR endurance) AND humans[MeSH]' + DISEASE_EXCLUSION_FILTER,
     
     # Adaptogens and herbs
-    "ashwagandha": 'ashwagandha AND (exercise OR training OR performance OR stress OR strength) AND humans[MeSH]',
-    "rhodiola": 'rhodiola AND (exercise OR training OR performance OR fatigue OR endurance OR stress) AND humans[MeSH]',
-    "cordyceps": 'cordyceps AND (exercise OR training OR performance OR endurance) AND humans[MeSH]',
+    "ashwagandha": 'ashwagandha AND (exercise OR training OR performance OR stress OR strength) AND humans[MeSH]' + DISEASE_EXCLUSION_FILTER,
+    "rhodiola": 'rhodiola AND (exercise OR training OR performance OR fatigue OR endurance OR stress) AND humans[MeSH]' + DISEASE_EXCLUSION_FILTER,
+    "cordyceps": 'cordyceps AND (exercise OR training OR performance OR endurance) AND humans[MeSH]' + DISEASE_EXCLUSION_FILTER,
     
     # Other compounds
-    "tyrosine": 'tyrosine AND (exercise OR training OR performance OR stress OR cognitive OR focus) AND humans[MeSH]',
-    "cla": '"conjugated linoleic acid" AND (exercise OR training OR body composition) AND humans[MeSH]',
-    "zma": 'ZMA AND (exercise OR training OR recovery OR sleep OR testosterone) AND humans[MeSH]',
-    "ecdysteroids": '(ecdysterone OR ecdysteroid* OR "20-hydroxyecdysone" OR "20-HE" OR turkesterone) AND (exercise OR training OR performance OR muscle OR strength OR hypertrophy) AND humans[MeSH]',
-    "sodium-citrate": '"sodium citrate" AND (exercise OR training OR performance OR endurance) AND humans[MeSH]',
-    "alpha-gpc": '("alpha-GPC" OR glycerylphosphorylcholine OR "alpha glycerylphosphorylcholine") AND (exercise OR performance OR strength OR power) AND humans[MeSH]',
-    "theacrine": 'theacrine AND (exercise OR training OR performance OR fatigue OR vigilance) AND humans[MeSH]',
-    "yohimbine": 'yohimbine AND (exercise OR "weight loss" OR "body composition" OR fat) AND humans[MeSH]',
-    "green-tea-extract": '("green tea extract" OR EGCG OR catechin*) AND (exercise OR training OR performance OR "weight loss" OR fat) AND humans[MeSH]',
-    "ketone-esters": '("ketone ester" OR "ketone esters" OR "beta-hydroxybutyrate" OR BHB OR "ketone salt*") AND (exercise OR endurance OR performance OR fatigue) AND humans[MeSH]',
-    "collagen": '(collagen OR "collagen peptides" OR gelatin) AND (tendon OR ligament OR joint OR recovery OR "muscle" OR "body composition") AND humans[MeSH]',
-    "blackcurrant": '("blackcurrant" OR "ribes nigrum") AND (exercise OR performance OR endurance) AND humans[MeSH]',
-    "tart-cherry": '("tart cherry" OR Montmorency OR "Prunus cerasus") AND (exercise OR recovery OR performance OR soreness OR DOMS) AND humans[MeSH]',
-    "pomegranate": '(pomegranate OR "punica granatum") AND (exercise OR performance OR endurance OR recovery) AND humans[MeSH]',
-    "pycnogenol": '(pycnogenol OR "French maritime pine" OR "pine bark extract") AND (exercise OR performance OR endurance OR recovery) AND humans[MeSH]',
-    "resveratrol": 'resveratrol AND (exercise OR performance OR endurance OR mitochondrial) AND humans[MeSH]',
-    "nac": '("N-acetylcysteine" OR NAC) AND (exercise OR performance OR fatigue OR recovery) AND humans[MeSH]',
-    "coq10": '("coenzyme Q10" OR ubiquinone OR ubiquinol) AND (exercise OR performance OR fatigue) AND humans[MeSH]',
-    "fenugreek": '(fenugreek OR "Trigonella foenum-graecum") AND (exercise OR strength OR testosterone OR "body composition") AND humans[MeSH]',
-    "tongkat-ali": '("tongkat ali" OR "Eurycoma longifolia") AND (exercise OR strength OR testosterone OR fatigue) AND humans[MeSH]',
-    "maca": '(maca OR "Lepidium meyenii") AND (exercise OR performance OR fatigue) AND humans[MeSH]',
-    "boron": 'boron AND (testosterone OR "body composition" OR strength) AND humans[MeSH]',
-    "shilajit": 'shilajit AND (exercise OR performance OR testosterone OR fatigue) AND humans[MeSH]',
-    "d-ribose": '("D-ribose" OR ribose) AND (exercise OR performance OR fatigue) AND humans[MeSH]',
-    "phosphatidic-acid": '("phosphatidic acid") AND (exercise OR strength OR hypertrophy OR muscle) AND humans[MeSH]',
-    "phosphatidylserine": 'phosphatidylserine AND (exercise OR performance OR cortisol OR stress) AND humans[MeSH]',
-    "epicatechin": 'epicatechin AND (exercise OR muscle OR strength OR performance) AND humans[MeSH]',
-    "red-spinach": '("red spinach" OR amaranthus) AND (nitrate OR exercise OR performance OR endurance) AND humans[MeSH]',
-    "synephrine": '("synephrine" OR "bitter orange" OR "citrus aurantium") AND ("weight loss" OR fat OR exercise OR performance) AND humans[MeSH]',
-    "garcinia-cambogia": '("garcinia cambogia" OR "hydroxycitric acid" OR HCA) AND ("weight loss" OR "body composition") AND humans[MeSH]',
-    "raspberry-ketone": '("raspberry ketone" OR "raspberry ketones") AND ("weight loss" OR "body composition") AND humans[MeSH]',
-    "chromium-picolinate": '("chromium picolinate") AND ("weight loss" OR "body composition" OR glucose OR insulin) AND humans[MeSH]',
-    "alpha-lipoic-acid": '("alpha-lipoic acid" OR "thioctic acid") AND (exercise OR performance OR insulin OR glucose) AND humans[MeSH]',
-    "theanine": '("L-theanine" OR theanine) AND (caffeine OR attention OR reaction OR stress OR exercise) AND humans[MeSH]',
-    "hica": '("alpha-hydroxy-isocaproic acid" OR HICA) AND (muscle OR hypertrophy OR strength OR recovery OR soreness) AND humans[MeSH]',
+    "tyrosine": 'tyrosine AND (exercise OR training OR performance OR stress OR cognitive OR focus) AND humans[MeSH]' + DISEASE_EXCLUSION_FILTER,
+    "cla": '"conjugated linoleic acid" AND (exercise OR training OR body composition) AND humans[MeSH]' + DISEASE_EXCLUSION_FILTER,
+    "zma": 'ZMA AND (exercise OR training OR recovery OR sleep OR testosterone) AND humans[MeSH]' + DISEASE_EXCLUSION_FILTER,
+    "ecdysteroids": '(ecdysterone OR ecdysteroid* OR "20-hydroxyecdysone" OR "20-HE" OR turkesterone) AND (exercise OR training OR performance OR muscle OR strength OR hypertrophy) AND humans[MeSH]' + DISEASE_EXCLUSION_FILTER,
+    "sodium-citrate": '"sodium citrate" AND (exercise OR training OR performance OR endurance) AND humans[MeSH]' + DISEASE_EXCLUSION_FILTER,
+    "alpha-gpc": '("alpha-GPC" OR glycerylphosphorylcholine OR "alpha glycerylphosphorylcholine") AND (exercise OR performance OR strength OR power) AND humans[MeSH]' + DISEASE_EXCLUSION_FILTER,
+    "theacrine": 'theacrine AND (exercise OR training OR performance OR fatigue OR vigilance) AND humans[MeSH]' + DISEASE_EXCLUSION_FILTER,
+    "yohimbine": 'yohimbine AND (exercise OR "weight loss" OR "body composition" OR fat) AND humans[MeSH]' + DISEASE_EXCLUSION_FILTER,
+    "green-tea-extract": '("green tea extract" OR EGCG OR catechin*) AND (exercise OR training OR performance OR "weight loss" OR fat) AND humans[MeSH]' + DISEASE_EXCLUSION_FILTER,
+    "ketone-esters": '("ketone ester" OR "ketone esters" OR "beta-hydroxybutyrate" OR BHB OR "ketone salt*") AND (exercise OR endurance OR performance OR fatigue) AND humans[MeSH]' + DISEASE_EXCLUSION_FILTER,
+    "collagen": '(collagen OR "collagen peptides" OR gelatin) AND (tendon OR ligament OR joint OR recovery OR "muscle" OR "body composition") AND humans[MeSH]' + DISEASE_EXCLUSION_FILTER,
+    "blackcurrant": '("blackcurrant" OR "ribes nigrum") AND (exercise OR performance OR endurance) AND humans[MeSH]' + DISEASE_EXCLUSION_FILTER,
+    "tart-cherry": '("tart cherry" OR Montmorency OR "Prunus cerasus") AND (exercise OR recovery OR performance OR soreness OR DOMS) AND humans[MeSH]' + DISEASE_EXCLUSION_FILTER,
+    "pomegranate": '(pomegranate OR "punica granatum") AND (exercise OR performance OR endurance OR recovery) AND humans[MeSH]' + DISEASE_EXCLUSION_FILTER,
+    "pycnogenol": '(pycnogenol OR "French maritime pine" OR "pine bark extract") AND (exercise OR performance OR endurance OR recovery) AND humans[MeSH]' + DISEASE_EXCLUSION_FILTER,
+    "resveratrol": 'resveratrol AND (exercise OR performance OR endurance OR mitochondrial) AND humans[MeSH]' + DISEASE_EXCLUSION_FILTER,
+    "nac": '("N-acetylcysteine" OR NAC) AND (exercise OR performance OR fatigue OR recovery) AND humans[MeSH]' + DISEASE_EXCLUSION_FILTER,
+    "coq10": '("coenzyme Q10" OR ubiquinone OR ubiquinol) AND (exercise OR performance OR fatigue) AND humans[MeSH]' + DISEASE_EXCLUSION_FILTER,
+    "fenugreek": '(fenugreek OR "Trigonella foenum-graecum") AND (exercise OR strength OR testosterone OR "body composition") AND humans[MeSH]' + DISEASE_EXCLUSION_FILTER,
+    "tongkat-ali": '("tongkat ali" OR "Eurycoma longifolia") AND (exercise OR strength OR testosterone OR fatigue) AND humans[MeSH]' + DISEASE_EXCLUSION_FILTER,
+    "maca": '(maca OR "Lepidium meyenii") AND (exercise OR performance OR fatigue) AND humans[MeSH]' + DISEASE_EXCLUSION_FILTER,
+    "boron": 'boron AND (testosterone OR "body composition" OR strength) AND humans[MeSH]' + DISEASE_EXCLUSION_FILTER,
+    "shilajit": 'shilajit AND (exercise OR performance OR testosterone OR fatigue) AND humans[MeSH]' + DISEASE_EXCLUSION_FILTER,
+    "d-ribose": '("D-ribose" OR ribose) AND (exercise OR performance OR fatigue) AND humans[MeSH]' + DISEASE_EXCLUSION_FILTER,
+    "phosphatidic-acid": '("phosphatidic acid") AND (exercise OR strength OR hypertrophy OR muscle) AND humans[MeSH]' + DISEASE_EXCLUSION_FILTER,
+    "phosphatidylserine": 'phosphatidylserine AND (exercise OR performance OR cortisol OR stress) AND humans[MeSH]' + DISEASE_EXCLUSION_FILTER,
+    "epicatechin": 'epicatechin AND (exercise OR muscle OR strength OR performance) AND humans[MeSH]' + DISEASE_EXCLUSION_FILTER,
+    "red-spinach": '("red spinach" OR amaranthus) AND (nitrate OR exercise OR performance OR endurance) AND humans[MeSH]' + DISEASE_EXCLUSION_FILTER,
+    "synephrine": '("synephrine" OR "bitter orange" OR "citrus aurantium") AND ("weight loss" OR fat OR exercise OR performance) AND humans[MeSH]' + DISEASE_EXCLUSION_FILTER,
+    "garcinia-cambogia": '("garcinia cambogia" OR "hydroxycitric acid" OR HCA) AND ("weight loss" OR "body composition") AND humans[MeSH]' + DISEASE_EXCLUSION_FILTER,
+    "raspberry-ketone": '("raspberry ketone" OR "raspberry ketones") AND ("weight loss" OR "body composition") AND humans[MeSH]' + DISEASE_EXCLUSION_FILTER,
+    "chromium-picolinate": '("chromium picolinate") AND ("weight loss" OR "body composition" OR glucose OR insulin) AND humans[MeSH]' + DISEASE_EXCLUSION_FILTER,
+    "alpha-lipoic-acid": '("alpha-lipoic acid" OR "thioctic acid") AND (exercise OR performance OR insulin OR glucose) AND humans[MeSH]' + DISEASE_EXCLUSION_FILTER,
+    "theanine": '("L-theanine" OR theanine) AND (caffeine OR attention OR reaction OR stress OR exercise) AND humans[MeSH]' + DISEASE_EXCLUSION_FILTER,
+    "hica": '("alpha-hydroxy-isocaproic acid" OR HICA) AND (muscle OR hypertrophy OR strength OR recovery OR soreness) AND humans[MeSH]' + DISEASE_EXCLUSION_FILTER,
 }
 
 # Consolidated query for monthly updates
+# Includes disease exclusion filter for relatively healthy populations
 PM_SEARCH_QUERY = os.getenv("PM_SEARCH_QUERY") or \
-    '(creatine OR "beta-alanine" OR caffeine OR citrulline OR nitrate OR "nitric oxide" OR HMB OR "branched chain amino acids" OR BCAA OR tribulus OR "d-aspartic acid" OR betaine OR taurine OR carnitine OR ZMA OR glutamine OR CLA OR ecdysterone OR "deer antler" OR "whey protein" OR "protein supplementation") AND (resistance OR "strength training" OR "1RM" OR hypertrophy OR "lean mass" OR "muscle mass" OR "exercise" OR "athletic performance") AND (humans[MeSH] OR adult OR adults OR participants OR subjects OR volunteers OR athletes) NOT ("nitrogen dioxide" OR NO2 OR pollution OR "cardiac hypertrophy" OR "ventricular hypertrophy" OR "fish" OR "rat" OR "mice" OR "mouse" OR "in vitro" OR "cell culture" OR animals[MeSH])'
+    '(creatine OR "beta-alanine" OR caffeine OR citrulline OR nitrate OR "nitric oxide" OR HMB OR "branched chain amino acids" OR BCAA OR tribulus OR "d-aspartic acid" OR betaine OR taurine OR carnitine OR ZMA OR glutamine OR CLA OR ecdysterone OR "deer antler" OR "whey protein" OR "protein supplementation") AND (resistance OR "strength training" OR "1RM" OR hypertrophy OR "lean mass" OR "muscle mass" OR "exercise" OR "athletic performance") AND (humans[MeSH] OR adult OR adults OR participants OR subjects OR volunteers OR athletes) NOT ("nitrogen dioxide" OR NO2 OR pollution OR "cardiac hypertrophy" OR "ventricular hypertrophy" OR "fish" OR "rat" OR "mice" OR "mouse" OR "in vitro" OR "cell culture" OR animals[MeSH])' + DISEASE_EXCLUSION_FILTER
 
 
 def pubmed_esearch(term: str, mindate: Optional[str] = None, maxdate: Optional[str] = None, 

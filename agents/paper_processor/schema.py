@@ -17,7 +17,6 @@ REQUIRED_FIELDS: Dict[str, Any] = {
     "summary": "unknown",
     "key_findings": [],
     "supplements": [],
-    # evidence_grade and quality_score removed from LLM requirements; quality_score is derived from pm_papers when available
     "study_type": "unknown",
     "outcome_measures": {
         "strength": [],
@@ -26,6 +25,28 @@ REQUIRED_FIELDS: Dict[str, Any] = {
     },
     "keywords": [],
     "relevance_tags": [],
+    # Enhanced fields for better data capture
+    "population_size": None,
+    "population_characteristics": {
+        "age_mean": None,
+        "sex_distribution": None,
+        "training_status": None
+    },
+    "intervention_details": {
+        "dose_g_per_day": None,
+        "dose_mg_per_kg": None,
+        "duration_weeks": None,
+        "loading_phase": None,
+        "supplement_forms": []
+    },
+    "effect_sizes": [],  # [{"outcome": "1RM", "value": 0.45, "ci_lower": 0.2, "ci_upper": 0.7, "p_value": 0.02}]
+    "safety_details": {
+        "adverse_events": [],
+        "contraindications": [],
+        "safety_grade": None  # A/B/C/D
+    },
+    "extraction_confidence": None,  # 0-1 score
+    "study_quality_score": None  # 1-10
   }
 
 
@@ -57,7 +78,7 @@ def normalize_data(obj: Dict[str, Any]) -> Dict[str, Any]:
     if not out.get("summary") or not str(out.get("summary")).strip():
         out["summary"] = "unknown"
 
-    for k in ("key_findings", "supplements", "keywords", "relevance_tags"):
+    for k in ("key_findings", "supplements", "keywords", "relevance_tags", "effect_sizes"):
         out[k] = list(out.get(k) or [])
 
     om = out.get("outcome_measures") or {}
@@ -65,6 +86,32 @@ def normalize_data(obj: Dict[str, Any]) -> Dict[str, Any]:
         "strength": list(om.get("strength") or []),
         "endurance": list(om.get("endurance") or []),
         "power": list(om.get("power") or []),
+    }
+
+    # Normalize population characteristics
+    pc = out.get("population_characteristics") or {}
+    out["population_characteristics"] = {
+        "age_mean": pc.get("age_mean"),
+        "sex_distribution": pc.get("sex_distribution"),
+        "training_status": pc.get("training_status")
+    }
+
+    # Normalize intervention details
+    id = out.get("intervention_details") or {}
+    out["intervention_details"] = {
+        "dose_g_per_day": id.get("dose_g_per_day"),
+        "dose_mg_per_kg": id.get("dose_mg_per_kg"),
+        "duration_weeks": id.get("duration_weeks"),
+        "loading_phase": id.get("loading_phase"),
+        "supplement_forms": list(id.get("supplement_forms") or [])
+    }
+
+    # Normalize safety details
+    sd = out.get("safety_details") or {}
+    out["safety_details"] = {
+        "adverse_events": list(sd.get("adverse_events") or []),
+        "contraindications": list(sd.get("contraindications") or []),
+        "safety_grade": sd.get("safety_grade")
     }
 
     st = str(out.get("study_type") or "unknown").lower()
@@ -96,8 +143,6 @@ def _one_shot_example() -> str:
             "No serious adverse events reported"
         ],
         "supplements": ["creatine monohydrate"],
-        "evidence_grade": "A",
-        "quality_score": 4.2,
         "study_type": "randomized_controlled_trial",
         "outcome_measures": {
             "strength": ["1RM bench press", "1RM squat"],
@@ -105,7 +150,31 @@ def _one_shot_example() -> str:
             "power": []
         },
         "keywords": ["creatine", "strength", "RCT"],
-        "relevance_tags": ["performance", "resistance_training"]
+        "relevance_tags": ["performance", "resistance_training"],
+        "population_size": 45,
+        "population_characteristics": {
+            "age_mean": 25.3,
+            "sex_distribution": "70% male, 30% female",
+            "training_status": "trained"
+        },
+        "intervention_details": {
+            "dose_g_per_day": 5.0,
+            "dose_mg_per_kg": 71.4,
+            "duration_weeks": 8,
+            "loading_phase": "yes",
+            "supplement_forms": ["creatine monohydrate"]
+        },
+        "effect_sizes": [
+            {"outcome": "1RM bench press", "value": 0.45, "ci_lower": 0.2, "ci_upper": 0.7, "p_value": 0.02},
+            {"outcome": "1RM squat", "value": 0.38, "ci_lower": 0.15, "ci_upper": 0.61, "p_value": 0.03}
+        ],
+        "safety_details": {
+            "adverse_events": ["mild gastrointestinal discomfort (2 participants)"],
+            "contraindications": ["kidney disease"],
+            "safety_grade": "A"
+        },
+        "extraction_confidence": 0.85,
+        "study_quality_score": 8.2
     }
     return json.dumps(example, ensure_ascii=False)
 

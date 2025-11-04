@@ -8,11 +8,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
-# Optional import; we will no-op if not present
-try:
-    from .mistral_client import MistralClient  # local module in this package
-except Exception:  # pragma: no cover
-    MistralClient = None  # type: ignore
+# Lazy import to avoid slow ML library loading
+# MistralClient will be imported when needed (for legacy local GPU mode)
+MistralClient = None
 
 DOSE_NEAR_WINDOW = 160  # characters within the term window
 METRICS_PATH_DEFAULT = Path("data/cards/_logs/extract_metrics.jsonl")
@@ -165,14 +163,21 @@ def _heuristics(bundle: dict) -> dict:
     }
 
 
-def _llm_enrich(bundle: dict, model_ver: str, prompt_ver: str) -> Optional[dict]:
+def _llm_enrich(bundle: dict, model_ver: str, prompt_ver: str, client=None) -> Optional[dict]:
     """
     Optional LLM pass A (basic enrichment).
     If MistralClient is not available, returns None and we keep heuristics only.
     """
+    # Lazy import to avoid slow startup
     if MistralClient is None:
+        try:
+            from .mistral_client import MistralClient
+        except Exception:
+            return None
+    
+    # Use provided client or return None
+    if client is None:
         return None
-    client = MistralClient(model_name=model_ver)
     prompt_path = Path("agents/paper_processor/prompts/card_extractor_v1.txt")
     prompt = prompt_path.read_text(encoding="utf-8")
     # Small input: abstract+results (+methods if short)
@@ -206,11 +211,10 @@ def _validate_prov(span: List[int], excerpt_len: int) -> bool:
 
 
 def _llm_fallback(bundle: dict, want_population: bool, want_intervention: bool, want_outcomes: bool, want_safety: bool,
-                  model_ver: str, prompt_ver: str) -> Optional[dict]:
+                  model_ver: str, prompt_ver: str, client=None) -> Optional[dict]:
     """Targeted fallback: ask only for missing sections using smaller, relevant context."""
-    if MistralClient is None:
+    if client is None:
         return None
-    client = MistralClient(model_name=model_ver)
     # Build minimal excerpt
     need_sections = []
     if want_outcomes or want_safety:
@@ -285,13 +289,99 @@ def _append_metrics(before: dict, after: dict, used_fallback: bool, metrics_path
         pass
 
 
-def build_card(bundle: dict, model_ver: str = "mistral-7b-instruct", prompt_ver: str = "v1",
-               llm_mode: str = "fallback", metrics_path: Path = METRICS_PATH_DEFAULT) -> dict:
+def extract_from_bundle(bundle, client=None) -> dict:
+    """
+    Extract structured data from a SectionBundle using single-pass LLM extraction.
+    
+    Args:
+        bundle: SectionBundle with paper sections
+        client: LLM client (GPT4oMiniClient or MistralClient for compatibility)
+    
+    Returns:
+        Extracted structured data dict
+    """
+    log = logging.getLogger("paper_processor.extract")
+    
+    # Use provided client or return empty (don't create new instance)
+    if client is None:
+        log.error("No LLM client provided and cannot create new instance")
+        return {}
+    
+    # Combine section texts into single context
+    context_parts = []
+    for section_name in ["abstract", "results", "methods", "complications", "discussion"]:
+        section_data = bundle.sections.get(section_name, {})
+        section_text = section_data.get("text", "")
+        if section_text:
+            context_parts.append(f"=== {section_name.upper()} ===\n{section_text}")
+    
+    combined_text = "\n\n".join(context_parts)
+    
+    # Create comprehensive system prompt
+    system_prompt = "You are an expert research data extractor. Extract structured data as JSON."
+    
+    # Create user prompt with full enhanced schema
+    user_prompt = f"""Extract the following fields from the paper below:
+
+REQUIRED FIELDS:
+- population_size: Number of participants/subjects (integer)
+- population_characteristics: {{age_mean: number, sex_distribution: string, training_status: string}}
+- intervention_details: {{dose_g_per_day: number, dose_mg_per_kg: number, duration_weeks: number, loading_phase: boolean, supplement_forms: string}}
+- effect_sizes: List of effect sizes with context [{{measure: string, value: number, significance: string}}]
+- safety_details: {{adverse_events: string, contraindications: string, safety_grade: string}}
+- key_findings: List of main findings and conclusions [string]
+
+EXAMPLE OUTPUT:
+{{
+  "population_size": 115,
+  "population_characteristics": {{"age_mean": 45.2, "sex_distribution": "60% male, 40% female", "training_status": "untrained"}},
+  "intervention_details": {{"dose_g_per_day": 5.0, "dose_mg_per_kg": 71.4, "duration_weeks": 8, "loading_phase": false, "supplement_forms": "creatine monohydrate"}},
+  "effect_sizes": [{{"measure": "strength", "value": 0.15, "significance": "p<0.05"}}],
+  "safety_details": {{"adverse_events": "none reported", "contraindications": "none", "safety_grade": "A"}},
+  "key_findings": ["Creatine supplementation increased strength by 15%", "No adverse events were observed"]
+}}
+
+Paper text:
+{combined_text}
+
+Return valid JSON only."""
+
+    try:
+        # Single LLM call
+        response = client.generate_json(
+            system_prompt=system_prompt,
+            user_prompt=user_prompt,
+            max_new_tokens=800,
+            temperature=0.0
+        )
+        
+        if isinstance(response, dict):
+            # Add metadata
+            model_name = getattr(client, 'model_name', 'gpt-4o-mini') if client else 'unknown'
+            response["generator"] = {
+                "mode": "single_pass_extraction",
+                "model_ver": model_name,
+                "prompt_ver": "v1",
+                "input_hash": bundle.input_hash,
+                "generated_at": datetime.now(timezone.utc).isoformat(),
+            }
+            return response
+        else:
+            log.warning("LLM returned non-dict response: %s", type(response))
+            return {}
+            
+    except Exception as e:
+        log.error("LLM extraction failed: %s", e)
+        return {}
+
+
+def build_card(bundle: dict, model_ver: str = "gpt-4o-mini", prompt_ver: str = "v1",
+               llm_mode: str = "fallback", metrics_path: Path = METRICS_PATH_DEFAULT, client=None) -> dict:
     log = logging.getLogger("paper_processor.extract")
     base = _heuristics(bundle)
     enriched = None
     if llm_mode in ("basic", "fallback"):
-        enriched = _llm_enrich(bundle, model_ver=model_ver, prompt_ver=prompt_ver)
+        enriched = _llm_enrich(bundle, model_ver=model_ver, prompt_ver=prompt_ver, client=client)
     merged = base.copy()
     if isinstance(enriched, dict):
         # shallow merge for known keys
@@ -316,6 +406,39 @@ def build_card(bundle: dict, model_ver: str = "mistral-7b-instruct", prompt_ver:
         if primary_goal and d in ("increase", "decrease", "no_effect"):
             verb = {"increase": "improves", "decrease": "reduces", "no_effect": "shows no clear effect on"}[d]
             summary = f"{(supplements[0] if supplements else 'Supplement').title()} {verb} {primary_goal.replace('_',' ')}."
+    # Map to enhanced schema fields
+    population = merged.get("population") or {}
+    intervention = merged.get("intervention") or {}
+    outcomes = merged.get("outcomes") or []
+    safety = merged.get("safety") or {"notes": None, "contraindications": [], "provenance": []}
+    
+    # Extract effect sizes from outcomes
+    effect_sizes = []
+    for outcome in outcomes:
+        if outcome.get("effect_size_norm") is not None:
+            effect_sizes.append({
+                "outcome": outcome.get("name", "unknown"),
+                "value": outcome.get("effect_size_norm"),
+                "ci_lower": None,  # Could be extracted from LLM
+                "ci_upper": None,  # Could be extracted from LLM
+                "p_value": outcome.get("p_value")
+            })
+    
+    # Calculate extraction confidence based on filled fields
+    confidence_score = 0.0
+    if population.get("n") is not None:
+        confidence_score += 0.20
+    if intervention.get("dose_g_per_day") is not None:
+        confidence_score += 0.20
+    if intervention.get("duration_weeks") is not None:
+        confidence_score += 0.15
+    if effect_sizes:
+        confidence_score += 0.25
+    if safety.get("notes"):
+        confidence_score += 0.10
+    if meta.get("title") and meta.get("journal"):
+        confidence_score += 0.10
+    
     card = {
         "paper_id": f"pmid_{bundle['paper_id']}",
         "meta": {
@@ -329,13 +452,35 @@ def build_card(bundle: dict, model_ver: str = "mistral-7b-instruct", prompt_ver:
             "supplements": meta.get("supplements") or [],
             "reliability_score": meta.get("reliability_score"),
         },
-        "population": merged.get("population"),
-        "intervention": merged.get("intervention"),
-        "outcomes": merged.get("outcomes") or [],
-        "safety": merged.get("safety") or {"notes": None, "contraindications": [], "provenance": []},
+        "population": population,
+        "intervention": intervention,
+        "outcomes": outcomes,
+        "safety": safety,
         "summary": summary,
         "keywords": keywords,
         "relevance_tags": relevance_tags,
+        # Enhanced schema fields
+        "population_size": population.get("n"),
+        "population_characteristics": {
+            "age_mean": population.get("age"),
+            "sex_distribution": population.get("sex"),
+            "training_status": None  # Could be extracted from LLM
+        },
+        "intervention_details": {
+            "dose_g_per_day": intervention.get("dose_g_per_day"),
+            "dose_mg_per_kg": None,  # Could be calculated from dose_g_per_day and weight
+            "duration_weeks": intervention.get("duration_weeks"),
+            "loading_phase": intervention.get("loading"),
+            "supplement_forms": meta.get("supplements") or []
+        },
+        "effect_sizes": effect_sizes,
+        "safety_details": {
+            "adverse_events": [],  # Could be extracted from safety.notes
+            "contraindications": safety.get("contraindications", []),
+            "safety_grade": None  # Could be derived from safety information
+        },
+        "extraction_confidence": confidence_score,
+        "study_quality_score": None,  # Could be calculated from study design, sample size, etc.
         "generator": {
             "mode": "llm_enrich_v1" if enriched else "heuristic_v1",
             "model_ver": model_ver,
@@ -373,7 +518,7 @@ def build_card(bundle: dict, model_ver: str = "mistral-7b-instruct", prompt_ver:
             "safety_has_notes": not need_safe,
         }
         if any([need_pop, need_intv, need_outc, need_safe]):
-            fb = _llm_fallback(bundle, need_pop, need_intv, need_outc, need_safe, model_ver, prompt_ver)
+            fb = _llm_fallback(bundle, need_pop, need_intv, need_outc, need_safe, model_ver, prompt_ver, client)
             if isinstance(fb, dict):
                 # Merge only fields we asked for; require provenance for outcomes
                 if need_pop and fb.get("population"):

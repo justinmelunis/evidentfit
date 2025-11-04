@@ -3,13 +3,15 @@
 ## Project overview
 - Purpose: Evidence-based lifting supplement guidance with transparent citations.
 - Cloud: Azure Container Apps (API & Jobs), Azure AI Foundry Project endpoint (chat+embeddings), Azure AI Search.
-- Agents:
-  - Agent A — Ingestion/Indexing (ACA Job)
-  - Agent B — Paper Processor (GPU job generating cards)
-  - Agent C — Banking (L1/L2 jobs; L3 compiler)
-  - Agent D — Summarizer/Publisher (ACA Job)
-  - Agent E — User API (FastAPI, SSE)
-  - Agent F — Stack Recommender (deterministic; lives in API; optional durable store)
+- Architecture:
+  - **Module A** — Data Ingestion (non-agentic pipeline, no LLM)
+    - A1: Paper Fetcher (`agents/ingest/get_papers/`) - PubMed → parsed JSONL
+    - A2: Paper Indexer (`agents/ingest/index_papers/`) - JSONL → pgvector chunks
+  - **Agent B** — Paper Processor (`agents/paper_processor/`) - LLM card extraction (Mistral-7B local GPU)
+  - **Agent C** — Banking (`agents/banking/`) - LLM evidence banking (GPT-4o-mini via Azure AI Foundry)
+  - **Agent D** — Summarizer (`agents/summarize/`) - LLM summary generation (GPT-4o-mini via Azure AI Foundry)
+  - **Agent E** — Research Chat (`api/` - `/stream` endpoint) - RAG chatbot with paper retrieval (GPT-4o-mini via Azure AI Foundry)
+  - **Agent F** — Stack Builder (`api/` - `/stack/*` endpoints) - Profile-based supplement matching with L3 rules (GPT-4o-mini via Azure AI Foundry)
 
 ## Repo structure (monorepo)
 evidentfit/
@@ -28,14 +30,13 @@ evidentfit/
       foundry_chat.py          # chat completions (Project endpoint)
       foundry_embed.py         # embeddings (Project endpoint)
     level1_evidence_bank.json  # Goal × Supplement evidence grades (162 entries)
-    level2_reasoning_bank.json # Profile-specific reasoning (360 profiles × 27 supplements)
+    level2_reasoning_bank.json # Profile-specific reasoning (270 profiles × 27 supplements = 7,290 entries)
     banking_summary.json       # banking initialization metadata
   agents/
-    ingest/                    # Agent A (PubMed → Search)
-      Dockerfile
-      requirements.txt
-      run.py                   # modes: bootstrap | monthly (watermark-aware)
-    paper_processor/           # Agent B (cards from fulltext)
+    ingest/                    # Module A (Data Ingestion Pipeline)
+      get_papers/              # A1: Paper Fetcher (PubMed → parsed JSONL)
+      index_papers/            # A2: Paper Indexer (JSONL → pgvector)
+    paper_processor/           # Agent B (LLM card extraction from fulltext)
       Dockerfile
       requirements.txt
       cli.py, collect.py, extract.py, run.py
@@ -90,7 +91,7 @@ evidentfit/
 - Strict **cite-only-retrieved**: never invent PMIDs/DOIs/URLs.
 
 ## Index schemas (expected)
-### Papers index (Agent A writes; B/C/D read)
+### Papers index (Module A writes; B/C/D read)
 - id: string (key) e.g., `pmid:123456|chunk:0`
 - title: string; doi?: string; pmid: string; url_pub: string; journal: string; year: int
 - study_type: string  # "meta-analysis" | "RCT" | "crossover" | ...
@@ -111,39 +112,64 @@ evidentfit/
 ### Banking System (Three-Level Evidence Banking)
 **Level 1**: Goal × Supplement Evidence (local JSON cache)
 - File: `level1_evidence_bank.json`
-- 162 combinations (6 goals × 27 supplements)
-- Evidence grades (A/B/C/D) calculated from research papers
+- 378 combinations (6 goals × 63 supplements) - All supplements from ingestion are banked
+- Evidence grades (A/B/C/D) calculated from research papers using GPT-4o-mini (long-term choice)
 
 **Level 2**: Profile-Specific Reasoning (local JSON cache)  
 - File: `level2_reasoning_bank.json`
-- 360 profile combinations (goal × weight_bin × sex × age_bin)
-- LLM-generated personalized reasoning per supplement
+- 17,010 combinations (270 profiles × 63 supplements)
+- LLM-generated personalized reasoning per supplement using GPT-4o-mini (long-term choice)
 
 **Level 3**: Real-Time Adjustments (never cached)
 - Dynamic safety rules, contraindications, user context
 - Applied in real-time during API calls
 
-## Agents (roles & boundaries)
-- Agent A (ingest job):
-  - PubMed E-utilities (ESearch/EFetch) → parse → tag `supplements` via keyword map
-  - Embed `content` → upsert to Papers; watermark doc `id=WATERMARK_KEY` with `last_ingest_iso`
-  - Modes: `bootstrap` (mindate=2000-01-01) & `monthly` (mindate=watermark)
-- Agent B (paper_processor):
-  - Build cards from fulltext/abstracts; write to data/cards
-- Agent C (banking jobs):
+## LLM Usage by Component
+
+**Cloud LLMs (Azure AI Foundry - GPT-4o-mini):**
+- **Agent C (Banking)**: Evidence grading and profile-specific reasoning (378 Level 1 + 17,010 Level 2 combinations)
+- **Agent D (Summarizer)**: Supplement summary generation with evidence grades
+- **Agent E (Research Chat)**: Real-time Q&A synthesis with citations
+- **Agent F (Stack Builder)**: Supplement candidate suggestion and personalized reasoning
+
+**Paper Processing (GPT-4o-mini):**
+- **Agent B (Paper Processor)**: Batch card extraction from research papers (GPT-4o-mini via Azure AI Foundry)
+  - Initial: 30K papers (~$24.30)
+  - Monthly: 1-2K papers (~$0.81-1.62 per run)
+  - Runtime: 2-3 hours for 30K papers (parallel execution)
+  - Legacy: Mistral-7B local GPU available but not recommended
+
+**Rationale**: GPT-4o-mini provides excellent quality for all tasks with reasonable cost (~$42/year for banking, ~$10-19/month for paper processing). Better JSON compliance and extraction accuracy than local models. See `docs/MODEL_SELECTION.md` for detailed analysis.
+
+## Architecture (roles & boundaries)
+- **Module A** — Data Ingestion (non-agentic pipeline, no LLM):
+  - **A1: Paper Fetcher** (`agents/ingest/get_papers/`):
+    - PubMed E-utilities (ESearch/EFetch) → parse → tag `supplements` via keyword map
+    - Filter clinical/disease populations (cancer, diabetes, pediatric, pregnancy, etc.)
+    - Full-text fetching (PMC + Unpaywall) → centralized sharded store
+    - Modes: `bootstrap` (mindate=2000-01-01) & `monthly` (mindate=watermark)
+  - **A2: Paper Indexer** (`agents/ingest/index_papers/`):
+    - Join + chunk selected papers → embeddings → pgvector
+    - Watermark doc `id=WATERMARK_KEY` with `last_ingest_iso`
+- **Agent B** — Paper Processor (`agents/paper_processor/`):
+  - **LLM**: GPT-4o-mini (Azure AI Foundry, default) - ~$24.30 per 30K papers, ~$0.81-1.62 per 1-2K papers monthly
+  - Build cards from fulltext/abstracts using LLM
+  - Write to data/cards
+  - Legacy: Mistral-7B local GPU available via PAPER_PROCESSOR_USE_CLOUD=0
+- **Agent C** — Banking (`agents/banking/`):
+  - **LLM**: GPT-4o-mini (Azure AI Foundry, long-term choice)
   - Level 1/2: aggregate from cards and Papers; output JSON caches
   - Level 3: validate/compile suitability rules → config/compiled_rules.json
-- Agent D (summarizer job):
+- **Agent D** — Summarizer (`agents/summarize/`):
+  - **LLM**: GPT-4o-mini (Azure AI Foundry)
   - Read Papers → rank (meta > RCT > crossover > other; newer first)
   - Compose overview + last-12-months; read Level 1 for grade; upsert Summaries
-- Agent E (API):
-  - `/stream` SSE: retrieve top-k from Papers; deterministic dosing; interactions; safety gate; compose; stream
+- **Agent E** — Research Chat (`api/` - `/stream` endpoint):
+  - **LLM**: GPT-4o-mini (Azure AI Foundry)
+  - RAG chatbot: retrieve top-k from Papers; deterministic dosing; interactions; safety gate; compose; stream
   - `/summaries/{supp}`: read Summaries
-  - `/stack*`: Agent D routes (build+bank stacks)
-- Agent C (summarizer job):
-  - Read Papers → rank (meta > RCT > crossover > other; newer first)
-  - Compose overview + last-12-months; infer grade; upsert Summaries
-- Agent D (stack recommender; in API):
+- **Agent F** — Stack Builder (`api/` - `/stack/*` endpoints):
+  - **LLM**: GPT-4o-mini (Azure AI Foundry)
   - **Hybrid LLM + rule-based** approach: LLM suggests candidates, rules ensure safety
   - **Three-tier system**: Recommended/Optional/Not Recommended with evidence grades
   - **Three-level banking**: Level 1 (goal×supplement grades), Level 2 (profile reasoning), Level 3 (real-time)
@@ -151,7 +177,7 @@ evidentfit/
   - Deterministic safety guardrails, dosing rules, interaction checks
   - Interactive UI: toggles, checkboxes, custom stack building
 
-## API contracts (Agent B)
+## API contracts (Agents E & F)
 ### GET /healthz
 - 200 → `{"ok": true, "docs_loaded": <int>}`
 
@@ -228,8 +254,8 @@ evidentfit/
   - goal ∈ {strength,hypertrophy,endurance,weight_loss,performance,general}  # 6 options
   - weight_bin ∈ {xs,small,medium,large,xl} (<60, 60-70, 70-85, 85-100, 100+ kg)  # 5 bins
   - sex ∈ {male,female,other}  # 3 options
-  - age_bin ∈ {minor,young,adult,mature} (13-17, 18-29, 30-49, 50+ years)  # 4 bins
-- Total Level 2 combinations: 6 × 5 × 3 × 4 = 360 profiles
+  - age_bin ∈ {young,adult,mature} (18-29, 30-49, 50+ years)  # 3 bins (pediatric <18 excluded)
+- Total Level 2 combinations: 6 × 5 × 3 × 3 = 270 profiles (pediatric removed)
 - `bank_key = "{goal}:{weight_bin}:{sex}:{age_bin}"`
 - Real-time adjustments: conditions, medications, caffeine sensitivity, pregnancy (Level 3)
 
@@ -302,23 +328,29 @@ SEARCH_ADMIN_KEY
 INDEX_VERSION=v1-2025-09-25     # Current index version (update when schema changes)
 CORS_ALLOW_ORIGINS=https://www.evidentfit.com
 
-# Agent A (ingest job)
+# Module A (ingest - get_papers)
 SEARCH_INDEX=evidentfit-index
-PM_SEARCH_QUERY=<PubMed boolean with RT context; exclude NO₂ pollution terms>
+PM_SEARCH_QUERY=<PubMed boolean with RT context; exclude NO₂ pollution terms, clinical/disease populations>
 NCBI_EMAIL=<you@example.com>
 NCBI_API_KEY=<optional>
 WATERMARK_KEY=meta:last_ingest
 INGEST_LIMIT=15000
 LOG_LEVEL=info
 
-# Agent B (API)
+# Agents E & F (API)
 SEARCH_INDEX=evidentfit-index
 SEARCH_SUMMARIES_INDEX=evidentfit-summaries
 BANKING_CACHE_DIR=.                 # banking JSON files stored in API directory
 PORT=8000
 BASIC_AUTH_USER, BASIC_AUTH_PASS   # optional preview gate
 
-# Agent C (summarizer job)
+# Agent B (paper processor)
+PAPER_PROCESSOR_USE_CLOUD=1              # Use GPT-4o-mini (default). Set to 0 for legacy Mistral-7B local GPU
+FOUNDATION_ENDPOINT                      # Azure AI Foundry endpoint (required for GPT-4o-mini)
+FOUNDATION_KEY                           # Azure AI Foundry API key (required for GPT-4o-mini)
+FOUNDATION_CHAT_MODEL=gpt-4o-mini        # Model name (default: gpt-4o-mini)
+
+# Agent D (summarizer job)
 SEARCH_PAPERS_INDEX=evidentfit-index
 SEARCH_SUMMARIES_INDEX=evidentfit-summaries
 SUPPLEMENTS=creatine,caffeine,beta-alanine,citrulline,protein,hmb,nitrate,nitric-oxide,tribulus,d-aspartic-acid,deer-antler,boron,tongkat-ali,betaine,taurine,carnitine,zma,glutamine,cla,ecdysteroids,exogenous-ketones
@@ -357,10 +389,10 @@ LOG_LEVEL=info
 - Secrets via Azure env or Key Vault references (later with managed identity)
 
 ## Common tasks Cursor should handle (exact)
-1) Implement `creatine_plan_by_form()` (CME) and `protein_gap_plan()` in `api/stack_rules.py`, and wire into Agent D builder.
+1) Implement `creatine_plan_by_form()` (CME) and `protein_gap_plan()` in `api/stack_rules.py`, and wire into Agent F builder.
 2) Add `GET /summaries/{supp}` in `api/main.py` per contract.
 3) Implement `POST /stack`, `GET /stack/bucket/{bucket_key}`, optional `GET /stack/buckets`.
-4) Ingest (agents/ingest/run.py): expand supplement tags; drop NO₂ pollution false positives; respect watermark (`bootstrap|monthly`).
+4) Ingest (agents/ingest/get_papers/): expand supplement tags; drop NO₂ pollution false positives; filter clinical/disease populations; respect watermark (`bootstrap|monthly`).
 5) Summarizer (agents/summarize/run.py): rank, compose overview/last12, read Level 1 for grade, upsert to Summaries.
 6) Banking (agents/banking/run.py, level3/run.py): compute Level 1/2 from cards; compile L3 rules to config/compiled_rules.json.
 6) CORS: honor `CORS_ALLOW_ORIGINS`; fix browser CORS issues.
@@ -370,5 +402,15 @@ LOG_LEVEL=info
 - Don't switch to Azure OpenAI "deployments" API; always use Foundry Project endpoints.
 - Don't increase token limits to mask retrieval issues.
 - Don't emit citations not present in retrieved docs.
+
+## Code Change Protocol
+Before making any code modifications:
+1. **Describe the proposed change** and explain the reasoning behind it
+2. **Explain the benefits** and potential trade-offs of the modification
+3. **Ask for explicit approval** before implementing any changes
+4. **Wait for user decision** before proceeding with code edits
+5. **Ask clarifying questions** about priorities and preferences if needed
+
+This ensures the user maintains control over what gets implemented and when, allowing for proper discussion of trade-offs and priorities.
 
 # End of rules

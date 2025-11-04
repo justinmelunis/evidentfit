@@ -5,8 +5,21 @@
 EvidentFit uses a **hybrid pricing model** to balance accessibility with cost sustainability:
 
 - **Free Tier**: Public supplement database (read-only evidence grades)
-- **Email-Gated Tier**: Research chat + basic stack recommendations (approved users)
+- **Email-Gated Tier**: Basic stack recommendations (approved users)
 - **Premium Tier** (Future): Unlimited chat + workout planning ($10-20/month)
+
+## Current Status (Updated: 2025-01)
+
+**Research Chat is temporarily disabled** to control infrastructure costs. The chatbot requires:
+- Azure PostgreSQL with pgvector (~$35-60/month minimum)
+- Or Azure AI Search (~$200-500/month)
+
+**Decision**: Focus on **Stack Planner** (revenue-direct feature) first. Chatbot will be re-enabled when revenue justifies the infrastructure investment.
+
+**Active Features**:
+- ✅ Stack Planner (uses banking caches, no additional infrastructure)
+- ✅ Supplement Database (read-only, uses banking caches)
+- ❌ Research Chat (temporarily disabled - see "Infrastructure Costs" below)
 
 ---
 
@@ -25,23 +38,45 @@ EvidentFit uses a **hybrid pricing model** to balance accessibility with cost su
 
 ---
 
+## Infrastructure Costs (Research Chat)
+
+**Problem**: Research Chat requires a database for paper retrieval, but the current database is local.
+
+**Options for enabling chatbot:**
+
+| Option | Monthly Cost | Notes |
+|--------|--------------|-------|
+| **Azure Database for PostgreSQL** (with pgvector) | **$35-60** | Minimum tier (1 vCore, 32GB storage) |
+| **Azure AI Search** | **$200-500** | Too expensive for early stage |
+| **Local PostgreSQL** (self-hosted) | **$0-20** | Requires VPN/VPC access for Azure Container Apps |
+
+**Decision**: Skip chatbot until revenue justifies infrastructure. The Stack Planner uses banking caches (JSON files) which require no additional infrastructure.
+
+**Re-enablement criteria**: When monthly revenue consistently exceeds $500-1000/month, enabling chatbot at $35-60/month becomes justified.
+
+---
+
 ## Cost Analysis: Legitimate Users
 
-### Research Chat (`/stream` endpoint)
+### Research Chat (`/stream` endpoint) - **TEMPORARILY DISABLED**
 
-**Typical query:**
+**Typical query (if enabled):**
 - Input: 5k tokens (prompt + retrieved papers)
 - Output: 500 tokens (synthesized answer)
-- Cost: **$0.001 per query**
+- API Cost: **$0.001 per query** (LLM calls only)
+- **Infrastructure Cost**: $35-60/month minimum (database)
 
-**Usage scenarios:**
+**Usage scenarios (if enabled):**
 
-| User Type | Queries/Month | Monthly Cost | Annual Cost |
-|-----------|---------------|--------------|-------------|
-| **Light user** | 10 | $0.01 | $0.12 |
-| **Regular user** | 50 | $0.05 | $0.60 |
-| **Heavy user** | 200 | $0.20 | $2.40 |
-| **Power user** | 500 | $0.50 | $6.00 |
+| User Type | Queries/Month | API Cost | Infrastructure Cost | Total |
+|-----------|---------------|----------|---------------------|-------|
+| **Light user** | 10 | $0.01 | - | - |
+| **Regular user** | 50 | $0.05 | - | - |
+| **Heavy user** | 200 | $0.20 | - | - |
+| **Power user** | 500 | $0.50 | - | - |
+| **Infrastructure** | - | - | **$35-60** | **$35-60** |
+
+**Total minimum cost to enable**: $35-60/month (even with zero users)
 
 ### Stack Recommendations (`/stack/conversational` endpoint)
 
@@ -118,46 +153,55 @@ Profit: $740/month ($8,880/year)
 
 ## Recommended Phased Approach
 
-### Phase 1: Email-Gated Access (Launch Now) 🚀
+### Phase 1: Stack-First Launch (Current) 🚀
 
 **Free tier includes:**
 - ✅ Supplement database (read-only evidence grades)
 - ✅ Public methodology page
 - ✅ Static content
 
-**Email-gated tier includes:**
-- ✅ Research chat (limited to 50 queries/month)
-- ✅ Stack recommendations (limited to 10 stacks/month)
-- ✅ Manual approval required
-- ✅ Rate limits per user
+**Focus on revenue-direct features:**
+- ✅ Stack Planner (no infrastructure cost - uses banking caches)
+- ✅ Supplement Database (read-only evidence grades)
+- ❌ Research Chat (temporarily disabled - requires $35-60/month infrastructure)
 
 **Implementation:**
-1. Simple email collection form
-2. Manual approval process (email whitelist)
-3. JWT-based authentication
-4. Per-user rate limiting
-5. Cost alerts at $20/month threshold
+1. Stack Planner with banking caches (JSON files, no database needed)
+2. Supplement database displays Level 1 banking data
+3. Simple authentication for future premium features
+4. Cost monitoring for LLM API calls only
 
-**Expected cost:** $8-20/month
+**Expected cost:** $0-5/month (LLM API calls for Stack Planner only)
+
+**Rationale**: Stack Planner is revenue-direct (users get personalized recommendations they can act on). Research Chat is exploratory/educational and requires significant infrastructure. Focus on revenue generation first, then add chatbot when revenue justifies it.
 
 ---
 
-### Phase 2: Soft Launch Premium (3-6 months) 💎
+### Phase 2: Enable Research Chat (When Revenue Justifies) 💎
+
+**Prerequisites:**
+- Monthly revenue consistently > $500-1000/month
+- User demand for research chat (via surveys/feedback)
+- Infrastructure budget approved
+
+**Enable Research Chat:**
+- Migrate database to Azure PostgreSQL (~$35-60/month)
+- Enable `/stream` endpoint
+- Add Research Chat to navigation
+
+**Free tier:**
+- Supplement database (always free)
+- Limited chat (10 queries/month)
+- Limited stacks (3 stacks/month)
 
 **Premium tier ($15/month):**
 - ✅ Unlimited research chat
 - ✅ Unlimited stack recommendations
 - ✅ Priority support
-- ✅ Early access to workout planner (beta)
 
-**Keep free tier:**
-- Supplement database (always free)
-- Limited chat (10 queries/month)
-- Limited stacks (3 stacks/month)
-
-**Expected revenue:** $300-750/month (20-50 subscribers)  
-**Expected costs:** $5-15/month  
-**Expected profit:** $285-735/month
+**Expected revenue:** $750-1500/month (50-100 subscribers)  
+**Expected costs:** $40-75/month (LLM + infrastructure)  
+**Expected profit:** $710-1425/month
 
 ---
 

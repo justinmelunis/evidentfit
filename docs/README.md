@@ -25,17 +25,20 @@ Welcome to the EvidentFit docs. This index helps you find the right guide quickl
 - Deployment script: `deploy/deploy-to-aca.ps1`
 
 ## Agents (research pipeline & banking)
-- Ingest overview: `agents/ingest/README.md`
-  - get_papers (technical): `agents/ingest/get_papers/README.md`
-- Paper processor (Agent B): `agents/paper_processor/README.md`
-- Banking (Agent C): Level1/Level2/Level3
+- **Module A** — Data Ingestion (non-agentic pipeline):
+  - Overview: `agents/ingest/README.md`
+  - A1: get_papers (technical): `agents/ingest/get_papers/README.md`
+  - A2: index_papers: `agents/ingest/index_papers/README.md`
+- **Agent B** — Paper Processor: `agents/paper_processor/README.md`
+- **Agent C** — Banking: Level1/Level2/Level3
   - Initialize (L1/L2): `agents/banking/run.py`
   - Compile L3 rules: `agents/banking/level3/run.py`
   - CLI: `agents/banking/cli.py` (level1 | level2 | level3)
-- Summarizer (Agent D): `agents/summarize/run.py` (reads Level 1 grades)
+  - README: `agents/banking/README.md`
+- **Agent D** — Summarizer: `agents/summarize/run.py` (reads Level 1 grades)
 
 ## API and web
-- API service: `api/README.md`
+- **Agent E** — Research Chat + **Agent F** — Stack Builder: `api/README.md`
 - Web app: `web/evidentfit-web/README.md`
 
 ## Testing

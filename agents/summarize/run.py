@@ -1,5 +1,5 @@
 """
-Agent C (Summarizer): Compose supplement summaries using Papers index and Level 1 banking grades.
+Agent D (Summarizer): Compose supplement summaries using Papers index and Level 1 banking grades.
 
 Outputs a simple JSON file per supplement under data/summaries/ with fields that match the
 expected Summaries index schema. Evidence grade is sourced from Level 1 banking.

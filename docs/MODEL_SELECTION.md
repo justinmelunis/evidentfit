@@ -2,12 +2,12 @@
 
 ## Overview
 
-EvidentFit uses a **hybrid LLM approach** that balances cost, quality, and performance:
+EvidentFit uses **GPT-4o-mini (Azure AI Foundry)** for all LLM tasks:
 
-- **Cloud LLMs (GPT-4o-mini)**: User-facing API responses & evidence banking
-- **Local GPU (Mistral-7B)**: Batch research paper processing
+- **Cloud LLMs (GPT-4o-mini)**: All agentic tasks (banking, paper processing, summarization, API responses)
+- **Legacy**: Mistral-7B local GPU available for paper processing but not recommended
 
-This architecture optimizes for both **production reliability** (cloud) and **cost efficiency** (local for batch jobs).
+This architecture provides **consistent quality**, **fast processing**, and **reasonable costs** across all components.
 
 ---
 
@@ -17,7 +17,8 @@ This architecture optimizes for both **production reliability** (cloud) and **co
 |----------|-------|----------|-----|
 | **User API Responses** | GPT-4o-mini | Azure AI Foundry | Low latency, high quality, affordable at scale |
 | **Evidence Banking** | GPT-4o-mini | Azure AI Foundry | Consistent with API, fast parallel execution, low cost |
-| **Paper Processing** | Mistral-7B | Local GPU (RTX 3080) | Batch job, high volume, one-time cost |
+| **Paper Processing** | GPT-4o-mini | Azure AI Foundry | Fast processing (2-3 hours vs 5 days), better quality, reasonable cost (~$39/year) |
+| **Summarization** | GPT-4o-mini | Azure AI Foundry | Consistent quality across all components |
 
 ---
 
@@ -35,8 +36,8 @@ This architecture optimizes for both **production reliability** (cloud) and **co
    - GPT-4o-mini creates reasoning and explanations
 
 3. **Evidence Banking** (pre-computed, runs quarterly)
-   - Pre-computes evidence grades for 162 goal×supplement combinations
-   - Generates profile-specific reasoning for 360 user profiles
+   - Pre-computes evidence grades for 378 goal×supplement combinations (6 goals × 63 supplements)
+   - Generates profile-specific reasoning for 17,010 combinations (270 profiles × 63 supplements)
    - Creates structured output with citations
 
 ### Why GPT-4o-mini?
@@ -49,8 +50,8 @@ This architecture optimizes for both **production reliability** (cloud) and **co
 #### ✅ **Cost Efficiency**
 - **User API**: $0.15/1M input tokens, $0.60/1M output tokens
 - **Typical query**: ~5k input + 500 output = **$0.001 per response**
-- **Banking run**: 25M input + 2.5M output = **$5.32 per run**
-- **Annual cost**: ~$21/year (quarterly banking) + minimal API usage
+- **Banking run**: ~50M input + 5M output = **~$10.50 per run** (with 63 supplements)
+- **Annual cost**: ~$42/year (quarterly banking) + minimal API usage
 
 #### ✅ **Quality**
 - **Excellent reasoning**: Handles multi-document synthesis well
@@ -68,78 +69,90 @@ This architecture optimizes for both **production reliability** (cloud) and **co
 
 ## Cost Analysis: Banking (Quarterly Updates)
 
-We evaluated three options for evidence banking (pre-computing 162 evidence grades + 360 profile reasoning sets):
+We evaluated three options for evidence banking (pre-computing 378 evidence grades + 17,010 profile reasoning sets):
 
 ### Model Comparison
 
 | Metric | **Llama-3.1-8B** (Local) | **GPT-4o-mini** ⭐ | **GPT-4o** |
 |--------|--------------------------|-------------------|------------|
-| **Per Run Cost** | $0.50 (electricity) | $5.32 | $88.68 |
-| **Annual Cost** (4× runs) | $2.00 | **$21.28** | $354.72 |
+| **Per Run Cost** | $0.50 (electricity) | ~$10.50 | ~$175.00 |
+| **Annual Cost** (4× runs) | $2.00 | **~$42.00** | ~$700.00 |
 | **Runtime** | 8-12 hours | 20-30 minutes | 20-30 minutes |
 | **Quality** | ~85-90% of GPT-4o-mini | Excellent (baseline) | ~5-10% better |
 | **Setup Effort** | 2-4 hours | None (ready) | None (ready) |
 | **Parallelization** | Limited (sequential) | Excellent (100+ concurrent) | Excellent |
 
-### Token Usage Breakdown
-- **Level 1**: 162 calls × 6.5k input + 600 output = 1.05M input + 0.097M output
-- **Level 2**: 9,720 calls × 2.5k input + 250 output = 24.3M input + 2.43M output
-- **Total**: ~25.35M input tokens + ~2.53M output tokens per run
+### Token Usage Breakdown (63 supplements)
+- **Level 1**: 378 calls × 6.5k input + 600 output = 2.46M input + 0.23M output
+- **Level 2**: 17,010 calls × 2.5k input + 250 output = 42.5M input + 4.25M output
+- **Total**: ~45M input tokens + ~4.5M output tokens per run
 
-### Decision: GPT-4o-mini
+### Decision: GPT-4o-mini (Final Choice)
+
+**GPT-4o-mini is our long-term model choice for banking.** After comprehensive evaluation, we've determined it provides the optimal balance of cost, quality, and speed for evidence grading tasks.
 
 **Why we chose GPT-4o-mini over local models:**
 
-1. **$21/year is negligible** for health-related evidence quality
+1. **~$42/year is reasonable** for health-related evidence quality (with 63 supplements)
 2. **60× faster** (30 min vs 10 hours) enables rapid iteration
 3. **Already implemented and proven** - zero migration risk
 4. **Consistent quality** across banking and API responses
-5. **Parallelization** - process all 9,882 calls concurrently
-6. **Developer time > $19/year savings** vs local model
+5. **Parallelization** - process all 17,388 calls concurrently
+6. **Developer time > $40/year savings** vs local model (still worth cloud for speed)
+7. **Production-ready** - validated for health recommendations
 
 **Why we rejected GPT-4o:**
 
-- **17× more expensive** ($354/year vs $21/year)
-- **Minimal quality gain** for structured evidence grading
+- **17× more expensive** (~$700/year vs ~$42/year with 63 supplements)
+- **Minimal quality gain** (~5-10% better) for structured evidence grading
 - Premium reasoning not needed for this task
+- Quality gain doesn't justify 17× cost increase
 
-**Why we rejected Llama-3.1-8B (local):**
+**Why we rejected local models (Mistral-7B/Llama-3.1-8B):**
 
-- **Saves only $19/year** vs GPT-4o-mini
-- **60× slower** impacts development velocity
+- **Saves only ~$42/year** vs GPT-4o-mini (with 63 supplements)
+- **60× slower** impacts development velocity (8-12 hours vs 30 min)
 - **Quality validation overhead** (need to verify outputs)
-- **Implementation effort** not justified for $19 savings
+- **Higher citation risk** - could hallucinate paper citations
+- **~10-15% quality degradation** - unacceptable for health recommendations
+- **Implementation effort** not justified for $42 savings given speed/quality trade-offs
 
 ---
 
-## Local GPU for Paper Processing
+## Paper Processing (GPT-4o-mini)
 
 ### Use Case: Research Paper Analysis
-- Process 30,000+ research papers from PubMed
+- **Initial run**: Process 30,000+ research papers from PubMed
+- **Monthly updates**: Process 1-2K new papers per month
 - Extract structured summaries for RAG ingestion
 - Generate study design scores, outcome measures, dosing details
-- One-time batch job (not user-facing)
+- Batch job (not user-facing, but benefits from faster processing)
 
-### Model: Mistral-7B-Instruct
+### Model: GPT-4o-mini (Azure AI Foundry) - **Current Choice**
 
-**Why local GPU (vs cloud API)?**
+**Why GPT-4o-mini for paper processing?**
 
-#### ✅ **Cost Savings**
-- **Cloud cost**: $900-1,800 per 30K-paper run
-- **Local cost**: $0 (one-time GPU purchase, minimal electricity)
-- **ROI**: GPU pays for itself in 1-2 runs
+#### ✅ **Cost Efficiency**
+- **Initial run (30K papers)**: ~$24.30 (one-time)
+- **Monthly (1-2K papers)**: ~$0.81-1.62 per run
+- **Annual cost**: ~$39/year (initial + 12 monthly runs at 1.5K papers/month average)
+- **Very reasonable** for the quality and speed benefits
 
-#### ✅ **Batch Job Characteristics**
-- Not latency-sensitive (can run overnight)
-- Infrequent (monthly or quarterly)
-- High volume (30K papers × ~3K tokens each)
-- Sequential processing acceptable
+#### ✅ **Performance Benefits**
+- **60× faster**: 2-3 hours vs 5 days (parallel execution)
+- **Better quality**: 5-10% improvement in JSON compliance and extraction accuracy
+- **More reliable**: 99.9% uptime, automatic retries
+- **No infrastructure**: Fully managed cloud service
 
-#### ✅ **Infrastructure Control**
-- Full control over quantization and optimization
-- Can pause/resume without API rate limits
-- Can experiment with different models
-- Privacy (papers processed on-premise)
+#### ✅ **Operational Benefits**
+- **Faster iteration**: 2-3 hours enables rapid testing and improvements
+- **Better for monthly updates**: 1-2K papers processed in 10-20 minutes
+- **Consistent quality**: Same model used across all agents
+- **No GPU maintenance**: Eliminates GPU infrastructure overhead
+
+**Legacy Option**: Mistral-7B local GPU available via `PAPER_PROCESSOR_USE_CLOUD=0`, but not recommended due to speed and quality trade-offs.
+
+**See [Paper Processor Model Comparison](PAPER_PROCESSOR_MODEL_COMPARISON.md)** for detailed analysis.
 
 ---
 
@@ -168,26 +181,27 @@ We evaluated three options for evidence banking (pre-computing 162 evidence grad
 │  │  Evidence Banking               │                │
 │  │  • Quarterly updates            │                │
 │  │  • Parallel execution (30 min)  │                │
-│  │  • $5.32 per run                │                │
+│  │  • ~$10.50 per run (63 supps)   │                │
 │  └─────────────────────────────────┘                │
 │                                                      │
-│  Annual Cost: ~$21 + minimal API usage              │
+│  Annual Cost: ~$42 + minimal API usage              │
 └─────────────────────────────────────────────────────┘
 
 ┌─────────────────────────────────────────────────────┐
-│  BATCH PROCESSING (Local - Mistral-7B)              │
+│  BATCH PROCESSING (Cloud - GPT-4o-mini)             │
 ├─────────────────────────────────────────────────────┤
 │                                                      │
 │  ┌─────────────────────────────────┐                │
 │  │  Paper Processor                │                │
-│  │  • 30K papers per run           │                │
-│  │  • GPU-accelerated (RTX 3080)   │                │
-│  │  • 4-bit quantization + FA2     │                │
-│  │  • Streaming architecture       │                │
-│  │  • ~5 days runtime              │                │
+│  │  • 30K papers initial           │                │
+│  │  • 1-2K papers monthly          │                │
+│  │  • GPT-4o-mini (Azure Foundry)  │                │
+│  │  • Parallel execution           │                │
+│  │  • ~2-3 hours (30K), ~10-20 min (1-2K) │         │
 │  └─────────────────────────────────┘                │
 │                                                      │
-│  Cost: $0 per run (one-time GPU investment)         │
+│  Cost: ~$24.30 initial + ~$1.22/month (~$39/year)   │
+│  Legacy: Mistral-7B local GPU available but not recommended │
 └─────────────────────────────────────────────────────┘
 ```
 
@@ -227,21 +241,48 @@ Using **GPT-4o-mini for both banking and API** provides:
 
 ## Future Considerations
 
+**Note**: We've evaluated alternatives and committed to GPT-4o-mini as our long-term choice. The scenarios below are only for extreme circumstances.
+
 ### When to Revisit Local Models for Banking
 
-Consider switching to local models if:
-- Banking runs become **weekly** (cost scales to $276/year)
-- Privacy/compliance requires on-premise processing
-- GPU infrastructure costs are already amortized
-- Quality validation confirms Llama-3.1-8B meets standards
+Consider switching to local models only if:
+- Banking runs become **weekly or more frequent** (cost scales to ~$550+/year with 63 supplements)
+- Privacy/compliance absolutely requires on-premise processing
+- GPU infrastructure costs are already amortized (already have RTX 3080 for paper processing)
+- **Extensive quality validation** confirms local model meets strict standards (90%+ grade agreement, <5% citation errors)
+- **Note**: With 63 supplements, the cost savings (~$42/year) are minimal compared to quality/risk trade-offs
+
+**See [Mistral vs GPT-4o-mini Banking Comparison](MISTRAL_VS_GPT4OMINI_BANKING.md)** for detailed performance analysis, risk assessment, and validation strategy.
+
+**Current Status**: We are committed to GPT-4o-mini and have no plans to switch to local models given the minimal cost savings and quality/risk trade-offs.
 
 ### When to Upgrade to GPT-4o
 
-Consider upgrading if:
-- User feedback indicates reasoning quality issues
+Consider upgrading to GPT-4o (full version) if:
+- User feedback indicates reasoning quality issues with GPT-4o-mini
 - Complex multi-hop reasoning becomes core feature
-- Budget allows ($354/year for banking + higher API costs)
+- Budget allows (~$700/year for banking with 63 supplements + higher API costs)
 - Premium quality justifies 17× cost increase
+- You need better handling of edge cases (B/C grade assignments)
+
+**GPT-4o vs GPT-4o-mini for Banking:**
+- **Quality gain**: ~5-10% better (more nuanced reasoning, better edge case handling)
+- **Cost increase**: ~17× ($700/year vs ~$42/year with 63 supplements)
+- **Best for**: When you need premium quality and can justify the cost
+- **Not recommended**: For structured evidence grading where mini already performs well
+
+### Other Model Options (Not Recommended)
+
+**Claude Sonnet/Gemini/Grok:**
+- **Not available in Azure AI Foundry** (would require multi-cloud setup)
+- **Inconsistency**: Different model for banking vs API responses
+- **Operational complexity**: Multiple API keys, different error handling
+- **Recommendation**: Stick with Azure AI Foundry ecosystem
+
+**Newer Models (GPT-4.1 Nano, o4-mini, etc.):**
+- **Availability**: Many are experimental or not yet in Azure AI Foundry
+- **Stability**: Unproven for production use
+- **Recommendation**: Wait for official Azure integration and proven track record
 
 ---
 
@@ -273,10 +314,11 @@ MODEL_NAME=mistralai/Mistral-7B-Instruct-v0.3
 - **Error rates**: Alert on 4xx/5xx responses
 - **Cost tracking**: Daily spend alerts via Azure Cost Management
 
-### Expected Monthly Costs
-- **Banking**: $5.32 × 0.33 runs = **$1.76/month** (quarterly)
+### Expected Monthly Costs (63 supplements + monthly paper processing)
+- **Banking**: ~$10.50 × 0.33 runs = **~$3.50/month** (quarterly)
+- **Paper Processing**: ~$1.22/month (1-2K papers monthly)
 - **API usage**: ~$10-50/month (depends on traffic)
-- **Total**: **$12-52/month** for all cloud LLM usage
+- **Total**: **~$15-55/month** for all cloud LLM usage
 
 ---
 

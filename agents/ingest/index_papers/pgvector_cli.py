@@ -7,6 +7,7 @@ import gzip
 import json
 import os
 from pathlib import Path
+import hashlib
 from typing import Any, Dict, Iterable, List, Tuple
 import sys
 import time
@@ -32,21 +33,61 @@ def _iter_jsonl(path: Path):
 def _exec(cur, sql: str, params=None):
     cur.execute(sql, params or ())
 
+def _synthesize_ids(row: Dict[str, Any]) -> Tuple[str, str]:
+    """Return (chunk_id, paper_id) synthesizing if missing.
+    paper_id defaults to f"pmid_{pmid}" when pmid is present.
+    chunk_id is sha1 of (paper_id, section_norm, start, end, text_prefix).
+    """
+    paper_id = str(row.get("paper_id") or "").strip()
+    pmid = str(row.get("pmid") or "").strip()
+    if not paper_id and pmid:
+        paper_id = f"pmid_{pmid}"
+    section_norm = str(row.get("section_norm") or row.get("section") or "other")
+    start = row.get("start") if isinstance(row.get("start"), int) else 0
+    end = row.get("end") if isinstance(row.get("end"), int) else 0
+    txt = (row.get("text") or "")
+    text_prefix = txt[:64]
+    chunk_id = str(row.get("chunk_id") or "").strip()
+    if not chunk_id:
+        h = hashlib.sha1()
+        h.update((paper_id or "").encode("utf-8"))
+        h.update(b"|")
+        h.update(section_norm.encode("utf-8"))
+        h.update(b"|")
+        h.update(str(start).encode("utf-8"))
+        h.update(b"|")
+        h.update(str(end).encode("utf-8"))
+        h.update(b"|")
+        h.update(text_prefix.encode("utf-8"))
+        chunk_id = f"{paper_id}#" + h.hexdigest()[:16]
+    return chunk_id, paper_id
+
 def load_chunks(args: argparse.Namespace):
-    chunks_path = Path("data/index/chunks.jsonl")
-    if not chunks_path.exists() and Path("data/index/chunks.jsonl.gz").exists():
-        chunks_path = Path("data/index/chunks.jsonl.gz")
+    # Allow explicit --chunks path; otherwise auto-detect default jsonl(.gz)
+    if getattr(args, "chunks", None):
+        chunks_path = Path(args.chunks)
+        if not chunks_path.exists() and str(chunks_path).endswith(".jsonl") and Path(str(chunks_path) + ".gz").exists():
+            chunks_path = Path(str(chunks_path) + ".gz")
+    else:
+        chunks_path = Path("data/index/chunks.jsonl")
+        if not chunks_path.exists() and Path("data/index/chunks.jsonl.gz").exists():
+            chunks_path = Path("data/index/chunks.jsonl.gz")
     if not chunks_path.exists():
-        raise SystemExit("data/index/chunks.jsonl(.gz) not found. Run index prep first.")
+        raise SystemExit("chunks file not found. Provide --chunks or generate data/index/chunks.jsonl(.gz).")
     rows = []
     for row in _iter_jsonl(chunks_path):
+        ck_id, paper_id = _synthesize_ids(row)
+        # Normalize booleans safely
+        is_results = bool(row.get("is_results")) if row.get("is_results") is not None else None
+        is_methods = bool(row.get("is_methods")) if row.get("is_methods") is not None else None
         rows.append((
-            row["chunk_id"], row["paper_id"],
+            ck_id, paper_id,
+            row.get("pmid"),
             row.get("title"), row.get("journal"), row.get("year"),
             row.get("study_type"), row.get("primary_goal"),
             row.get("supplements") or [],
             row.get("section"), row.get("section_norm"), row.get("section_priority"),
-            bool(row.get("is_results")), bool(row.get("is_methods")),
+            is_results, is_methods,
             row.get("passage_id"), row.get("start"), row.get("end"),
             row.get("text")
         ))
@@ -55,12 +96,24 @@ def load_chunks(args: argparse.Namespace):
     if rows:
         _bulk_upsert_chunks(rows)
     print("✅ load-chunks complete")
+    # Auto backfill canonical metadata unless disabled
+    if not getattr(args, "no_backfill", False):
+        try:
+            ns = argparse.Namespace(canonical=getattr(args, "canonical", None))
+            backfill_meta(ns)
+        except SystemExit as e:
+            # Missing canonical file should not fail the load step; just warn
+            try:
+                print(f"⚠️  backfill-meta skipped: {e}")
+            except Exception:
+                pass
 
 def _bulk_upsert_chunks(rows: List[Tuple]):
     sql = """
     CREATE TABLE IF NOT EXISTS public.ef_chunks (
         chunk_id TEXT PRIMARY KEY,
         paper_id TEXT NOT NULL,
+        pmid     TEXT,
         title    TEXT,
         journal  TEXT,
         year     INTEGER,
@@ -79,11 +132,13 @@ def _bulk_upsert_chunks(rows: List[Tuple]):
     );
 
     INSERT INTO ef_chunks(
-        chunk_id,paper_id,title,journal,year,study_type,primary_goal,supplements,
+        chunk_id,paper_id,pmid,
+        title,journal,year,study_type,primary_goal,supplements,
         section,section_norm,section_priority,is_results,is_methods,passage_id,start,"end",text)
     VALUES %s
     ON CONFLICT (chunk_id) DO UPDATE SET
-      paper_id=EXCLUDED.paper_id, title=EXCLUDED.title, journal=EXCLUDED.journal, year=EXCLUDED.year,
+      paper_id=EXCLUDED.paper_id, pmid=EXCLUDED.pmid,
+      title=EXCLUDED.title, journal=EXCLUDED.journal, year=EXCLUDED.year,
       study_type=EXCLUDED.study_type, primary_goal=EXCLUDED.primary_goal, supplements=EXCLUDED.supplements,
       section=EXCLUDED.section, section_norm=EXCLUDED.section_norm, section_priority=EXCLUDED.section_priority,
       is_results=EXCLUDED.is_results, is_methods=EXCLUDED.is_methods,
@@ -92,8 +147,48 @@ def _bulk_upsert_chunks(rows: List[Tuple]):
     with _conn() as cx, cx.cursor() as cur:
         # Run the DDL first (safe if exists), then upsert
         cur.execute(sql.split(";\n\n")[0] + ";")
+        # Ensure all expected columns exist (handles older minimal schemas)
+        try:
+            cur.execute("""
+                SELECT column_name FROM information_schema.columns
+                WHERE table_schema='public' AND table_name='ef_chunks'
+            """)
+            existing = {r[0] for r in cur.fetchall()}
+            # Map: logical name -> (rendered name, type)
+            required = {
+                "chunk_id": ("chunk_id", "TEXT"),
+                "paper_id": ("paper_id", "TEXT"),
+                "pmid": ("pmid", "TEXT"),
+                "title": ("title", "TEXT"),
+                "journal": ("journal", "TEXT"),
+                "year": ("year", "INTEGER"),
+                "study_type": ("study_type", "TEXT"),
+                "primary_goal": ("primary_goal", "TEXT"),
+                "supplements": ("supplements", "TEXT[]"),
+                "section": ("section", "TEXT"),
+                "section_norm": ("section_norm", "TEXT"),
+                "section_priority": ("section_priority", "INTEGER"),
+                "is_results": ("is_results", "BOOLEAN"),
+                "is_methods": ("is_methods", "BOOLEAN"),
+                "passage_id": ("passage_id", "TEXT"),
+                "start": ("start", "INTEGER"),
+                "end": ('"end"', "INTEGER"),
+                "text": ("text", "TEXT"),
+            }
+            missing = [k for k in required.keys() if k not in existing]
+            for k in missing:
+                col_name, col_type = required[k]
+                cur.execute(f"ALTER TABLE public.ef_chunks ADD COLUMN IF NOT EXISTS {col_name} {col_type}")
+        except Exception:
+            # best-effort; continue to upsert
+            pass
+        # Deduplicate by chunk_id within this batch to avoid ON CONFLICT affecting a row twice
+        unique_by_id = {}
+        for r in rows:
+            unique_by_id[r[0]] = r  # keep last occurrence
+        deduped_rows = list(unique_by_id.values())
         upsert_sql = ";\n\n".join(sql.split(";\n\n")[1:])
-        psycopg2.extras.execute_values(cur, upsert_sql, rows, page_size=1000)
+        psycopg2.extras.execute_values(cur, upsert_sql, deduped_rows, page_size=1000)
         cx.commit()
 
 def _get_model_and_tokenizer(model_name: str | None):
@@ -118,6 +213,18 @@ def _iter_texts_to_embed(cur, limit: int | None = None):
 def embed(args: argparse.Namespace):
     model, dim = _get_model_and_tokenizer(args.model)
     with _conn() as cx, cx.cursor() as cur:
+        # Ensure extension and embeddings table exist
+        try:
+            cur.execute("CREATE EXTENSION IF NOT EXISTS vector;")
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS ef_chunk_embeddings (
+                    chunk_id   TEXT PRIMARY KEY REFERENCES ef_chunks(chunk_id) ON DELETE CASCADE,
+                    embedding  vector(768)
+                )
+            """)
+            cx.commit()
+        except Exception:
+            pass
         cur.execute("SELECT atttypmod-4 FROM pg_attribute WHERE attrelid = 'ef_chunk_embeddings'::regclass AND attname='embedding'")
         current = cur.fetchone()
         current_dim = current[0] if current else None
@@ -135,6 +242,101 @@ def embed(args: argparse.Namespace):
         if todo:
             _embed_batch(model, todo)
     print("✅ embed complete")
+
+def build_ann(args: argparse.Namespace):
+    lists = int(getattr(args, "lists", 200) or 200)
+    recreate = bool(getattr(args, "recreate", False))
+    with _conn() as cx, cx.cursor() as cur:
+        cur.execute("CREATE EXTENSION IF NOT EXISTS vector;")
+        if recreate:
+            cur.execute("DROP INDEX IF EXISTS ef_chunk_embeddings_ivfflat_cos")
+        cur.execute(
+            f"""
+            CREATE INDEX IF NOT EXISTS ef_chunk_embeddings_ivfflat_cos
+            ON ef_chunk_embeddings
+            USING ivfflat (embedding vector_cosine_ops)
+            WITH (lists = {lists})
+            """
+        )
+        cx.commit()
+    print("✅ build-ann complete")
+
+def analyze(args: argparse.Namespace):
+    with _conn() as cx, cx.cursor() as cur:
+        cur.execute("ANALYZE ef_chunk_embeddings;")
+        cx.commit()
+    print("✅ analyze complete")
+
+def backfill_meta(args: argparse.Namespace):
+    # Populate missing metadata in ef_chunks from canonical_papers.jsonl(.gz)
+    canonical_path = Path(getattr(args, "canonical", None) or "data/index/canonical_papers.jsonl")
+    if not canonical_path.exists() and Path(str(canonical_path) + ".gz").exists():
+        canonical_path = Path(str(canonical_path) + ".gz")
+    if not canonical_path.exists():
+        raise SystemExit(f"canonical file not found: {canonical_path}")
+
+    rows: List[Tuple[str, Any, Any, Any, Any, Any, List[str]]] = []
+    for obj in _iter_jsonl(canonical_path):
+        pmid = str(obj.get("pmid") or "").strip()
+        if not pmid:
+            continue
+        title = obj.get("title")
+        journal = obj.get("journal")
+        year = obj.get("year")
+        study_type = obj.get("study_type")
+        primary_goal = obj.get("primary_goal")
+        supplements = obj.get("supplements") or []
+        try:
+            supplements = list(supplements)
+        except Exception:
+            supplements = []
+        rows.append((pmid, title, journal, year, study_type, primary_goal, supplements))
+
+    if not rows:
+        print("No rows to backfill from canonical; exiting")
+        return
+
+    with _conn() as cx, cx.cursor() as cur:
+        cur.execute("DROP TABLE IF EXISTS tmp_canonical_meta;")
+        cur.execute(
+            """
+            CREATE TEMP TABLE tmp_canonical_meta (
+                pmid TEXT PRIMARY KEY,
+                title TEXT,
+                journal TEXT,
+                year INTEGER,
+                study_type TEXT,
+                primary_goal TEXT,
+                supplements TEXT[]
+            ) ON COMMIT DROP
+            """
+        )
+        psycopg2.extras.execute_values(
+            cur,
+            "INSERT INTO tmp_canonical_meta(pmid,title,journal,year,study_type,primary_goal,supplements) VALUES %s",
+            rows,
+            page_size=2000,
+        )
+        cur.execute(
+            """
+            UPDATE ef_chunks c
+            SET
+              title = COALESCE(c.title, m.title),
+              journal = COALESCE(c.journal, m.journal),
+              year = COALESCE(c.year, m.year),
+              study_type = COALESCE(c.study_type, m.study_type),
+              primary_goal = COALESCE(c.primary_goal, m.primary_goal),
+              supplements = CASE
+                 WHEN c.supplements IS NULL OR array_length(c.supplements, 1) IS NULL OR array_length(c.supplements,1)=0
+                 THEN m.supplements
+                 ELSE c.supplements
+              END
+            FROM tmp_canonical_meta m
+            WHERE c.pmid = m.pmid
+            """
+        )
+        cx.commit()
+    print("✅ backfill-meta complete")
 
 def _embed_batch(model, pairs: List[Tuple[str, str]]):
     ids, texts = zip(*pairs)
@@ -233,6 +435,9 @@ def main():
     sub = ap.add_subparsers(dest="cmd", required=True)
 
     p1 = sub.add_parser("load-chunks")
+    p1.add_argument("--chunks", type=str, default=None)
+    p1.add_argument("--no-backfill", action="store_true", help="Skip canonical metadata backfill")
+    p1.add_argument("--canonical", type=str, default=None, help="Path to canonical_papers.jsonl(.gz)")
     p1.set_defaults(func=load_chunks)
 
     p2 = sub.add_parser("embed")
@@ -246,6 +451,18 @@ def main():
     p3.add_argument("--supp", type=str, default=None, help="Optional supplement filter, e.g., creatine")
     p3.add_argument("--results-first", action="store_true", help="Slightly boost Results-section chunks")
     p3.set_defaults(func=search)
+
+    p4 = sub.add_parser("build-ann")
+    p4.add_argument("--lists", type=int, default=200)
+    p4.add_argument("--recreate", action="store_true")
+    p4.set_defaults(func=build_ann)
+
+    p5 = sub.add_parser("analyze")
+    p5.set_defaults(func=analyze)
+
+    p6 = sub.add_parser("backfill-meta")
+    p6.add_argument("--canonical", type=str, default=None, help="Path to canonical_papers.jsonl(.gz)")
+    p6.set_defaults(func=backfill_meta)
 
     args = ap.parse_args()
     args.func(args)

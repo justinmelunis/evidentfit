@@ -1,6 +1,8 @@
-# EvidentFit API
+# EvidentFit API (Agents E & F)
 
-FastAPI service providing research chat, supplement summaries, and the stack recommender.
+FastAPI service hosting two agentic capabilities:
+- **Agent E** — Research Chat (`/stream` endpoint): RAG chatbot for supplement research questions
+- **Agent F** — Stack Builder (`/stack/*` endpoints): Profile-based personalized supplement recommendations
 
 ## Quick start
 ```bash

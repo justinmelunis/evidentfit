@@ -16,7 +16,7 @@ try:
 except Exception:  # pragma: no cover
     psycopg = None
 
-SECTION_ORDER = ["abstract", "methods", "results", "discussion"]
+SECTION_ORDER = ["abstract", "results", "methods", "complications", "discussion"]
 
 
 def _read_jsonl(path: Path) -> Iterable[dict]:
@@ -67,21 +67,27 @@ def _collect_from_db(paper_id: str) -> List[Tuple[str, str, int, str]]:
     """
     dsn = os.getenv("EVIDENTFIT_DB_DSN")
     if not dsn or psycopg is None:
+        logging.getLogger("paper_processor.collect").debug(f"DB connection failed: dsn={dsn is not None}, psycopg={psycopg is not None}")
         return []
-    with psycopg.connect(dsn) as conn:
-        with conn.cursor() as cur:
-            cur.execute(
-                """
-                SELECT chunk_id, section_norm, start, text
-                FROM ef_chunks
-                WHERE paper_id = %s
-                  AND section_norm IN ('abstract','methods','results','discussion')
-                ORDER BY section_norm, start
-                """,
-                (paper_id,),
-            )
-            rows = cur.fetchall()
-    return [(r[0], r[1], int(r[2] or 0), r[3]) for r in rows]
+    
+    try:
+        with psycopg.connect(dsn) as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT chunk_id, section_norm, start, text
+                    FROM ef_chunks
+                    WHERE paper_id = %s
+                      AND section_norm IN ('abstract','results','methods','complications','discussion')
+                    ORDER BY section_norm, start
+                    """,
+                    (paper_id,),
+                )
+                rows = cur.fetchall()
+        return [(r[0], r[1], int(r[2] or 0), r[3]) for r in rows]
+    except Exception as e:
+        logging.getLogger("paper_processor.collect").error(f"Database query failed for {paper_id}: {e}")
+        return []
 
 
 def _collect_from_jsonl(paper_id: str, chunks_path: Path) -> List[Tuple[str, str, int, str]]:
@@ -139,6 +145,107 @@ def build_section_bundle(
         total_chunks += len(items)
 
     has_fulltext = any(sections_payload[sec]["char_len"] > 0 for sec in ("methods", "results", "discussion"))
+
+    # Smart truncation if total text exceeds limit
+    MAX_CHARS = 16000
+    total_chars = sum(sections_payload[sec]["char_len"] for sec in SECTION_ORDER)
+    
+    if total_chars > MAX_CHARS:
+        log.info("Paper %s exceeds %d chars (%d), applying smart truncation", paper_id, MAX_CHARS, total_chars)
+        
+        # Keyword scoring weights
+        keyword_weights = {
+            "sample size": 5, "n=": 5, "participants": 4, "subjects": 4,
+            "dose": 5, "mg": 4, "grams": 4, "supplementation": 4, "intervention": 4,
+            "adverse events": 4, "side effects": 4, "safety": 3, "contraindications": 3,
+            "results": 3, "findings": 3, "outcomes": 3, "efficacy": 3, "effectiveness": 3,
+            "statistical significance": 3, "p-value": 3, "confidence interval": 3,
+            "significant": 2, "improvement": 2, "increase": 2, "decrease": 2,
+            "method": 2, "procedure": 2, "protocol": 2, "study design": 2,
+            "conclusion": 2, "discussion": 1, "background": 1, "introduction": 1
+        }
+        
+        # Truncate sections in priority order
+        current_chars = 0
+        truncated_sections = {}
+        
+        for section_name in SECTION_ORDER:
+            section_data = sections_payload[section_name]
+            section_text = section_data["text"]
+            section_chunks = section_data["chunks"]
+            
+            if not section_text:
+                truncated_sections[section_name] = section_data
+                continue
+            
+            # If this section fits entirely, include it
+            if current_chars + len(section_text) <= MAX_CHARS:
+                truncated_sections[section_name] = section_data
+                current_chars += len(section_text)
+                continue
+            
+            # Section is too large, need to truncate chunks within it
+            remaining_chars = MAX_CHARS - current_chars
+            if remaining_chars <= 0:
+                break
+            
+            # Get chunks for this section and score them
+            section_chunk_data = by_section.get(section_name, [])
+            scored_chunks = []
+            
+            for chunk_id, start, text in section_chunk_data:
+                text_lower = text.lower()
+                score = 0
+                
+                # Score based on keywords
+                for keyword, weight in keyword_weights.items():
+                    if keyword in text_lower:
+                        score += weight
+                
+                # Bonus for chunks with numbers (quantitative data)
+                import re
+                numbers = re.findall(r'\d+\.?\d*', text)
+                if numbers:
+                    score += min(len(numbers) * 0.5, 3)
+                
+                # Bonus for statistical terms
+                stats_terms = ["mean", "sd", "std", "median", "range", "ci", "or", "rr", "hr"]
+                for term in stats_terms:
+                    if term in text_lower:
+                        score += 1
+                
+                scored_chunks.append((chunk_id, start, text, score))
+            
+            # Sort by score (highest first) and select chunks that fit
+            scored_chunks.sort(key=lambda x: x[3], reverse=True)
+            
+            selected_chunks = []
+            selected_texts = []
+            selected_chars = 0
+            
+            for chunk_id, start, text, score in scored_chunks:
+                if selected_chars + len(text) <= remaining_chars:
+                    selected_chunks.append(chunk_id)
+                    selected_texts.append(text)
+                    selected_chars += len(text)
+                else:
+                    break
+            
+            # Update section data with truncated content
+            truncated_text = "\n\n".join(selected_texts) if selected_texts else ""
+            truncated_sections[section_name] = {
+                "text": truncated_text,
+                "chunks": selected_chunks,
+                "char_len": len(truncated_text)
+            }
+            current_chars += len(truncated_text)
+            
+            log.info("Truncated section %s: %d -> %d chars (%d chunks)", 
+                    section_name, len(section_text), len(truncated_text), len(selected_chunks))
+        
+        # Update sections_payload with truncated data
+        sections_payload = truncated_sections
+        log.info("Smart truncation complete: %d -> %d chars", total_chars, current_chars)
 
     # Abstract fallback from canonical if no abstract text in chunks
     # We only fill abstract; we do not change has_fulltext and we keep chunk list empty.

@@ -11,11 +11,11 @@ Features:
 - Evidence for different weight bins, age groups, and sexes
 - Integration with Level 1 base grades
 
-LLM Model: GPT-4o-mini (Azure AI Foundry)
-- Cost: ~$5.11 per run (9,720 calls)
-- Runtime: 15-20 minutes (parallel execution)
+LLM Model: GPT-4o-mini (Azure AI Foundry) - Long-term choice
+- Cost: ~$6.75 per run (17,010 calls: 270 profiles × 63 supplements)
+- Runtime: 20-30 minutes (parallel execution)
 - Same model used for user-facing API responses (consistency)
-- See docs/MODEL_SELECTION.md for rationale
+- See docs/MODEL_SELECTION.md for detailed rationale and model comparison
 """
 
 import os
@@ -32,18 +32,14 @@ sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..', 'api'))
 from evidentfit_shared.search_client import search_docs
 from clients.foundry_chat import chat as foundry_chat
 
-# Banking configuration
-GOALS = ["strength", "hypertrophy", "endurance", "weight_loss", "performance", "general"]
-WEIGHT_BINS = ["xs", "small", "medium", "large", "xl"]  # <60, 60-70, 70-85, 85-100, 100+ kg
-SEXES = ["male", "female", "other"]
-AGE_BINS = ["minor", "young", "adult", "mature"]  # 13-17, 18-29, 30-49, 50+ years
-SUPPLEMENTS = [
-    "creatine", "protein", "caffeine", "beta-alanine", "citrulline", 
-    "nitrate", "hmb", "bcaa", "taurine", "carnitine", "glutamine",
-    "ashwagandha", "rhodiola", "omega-3", "vitamin-d", "magnesium",
-    "collagen", "curcumin", "b12", "iron", "folate", "leucine", "betaine",
-    "zma", "tribulus", "d-aspartic-acid", "tongkat-ali"
-]
+# Banking configuration - matches api/stack_builder.py
+from stack_builder import BANKING_BUCKETS, COMMON_SUPPLEMENTS
+
+GOALS = BANKING_BUCKETS["goal"]
+WEIGHT_BINS = BANKING_BUCKETS["weight_bin"]
+SEXES = BANKING_BUCKETS["sex"]
+AGE_BINS = BANKING_BUCKETS["age_bin"]  # ["young", "adult", "mature"] - pediatric excluded
+SUPPLEMENTS = COMMON_SUPPLEMENTS  # All 63 supplements from ingestion
 
 class Level2BankingInitializer:
     """Initialize Level 2 banking with profile-specific evidence enhancement"""

@@ -75,7 +75,7 @@ class BankingInitializer:
         self.logger.info("Starting Banking Initialization...")
         self.logger.info(f"Will process:")
         self.logger.info(f"   - Level 1: {len(BANKING_BUCKETS['goal'])} goals × {len(COMMON_SUPPLEMENTS)} supplements = {len(BANKING_BUCKETS['goal']) * len(COMMON_SUPPLEMENTS)} evidence grades")
-        self.logger.info(f"   - Level 2: {6 * 5 * 3 * 4} profile combinations × {len(COMMON_SUPPLEMENTS)} supplements = {6 * 5 * 3 * 4 * len(COMMON_SUPPLEMENTS)} reasoning entries")
+        self.logger.info(f"   - Level 2: {6 * 5 * 3 * 3} profile combinations × {len(COMMON_SUPPLEMENTS)} supplements = {6 * 5 * 3 * 3 * len(COMMON_SUPPLEMENTS)} reasoning entries")
         
         # Step 1: Initialize Level 1 (Goal × Supplement Evidence)
         self.initialize_level1_banking()

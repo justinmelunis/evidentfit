@@ -1,4 +1,53 @@
 "use client";
+
+// Research Chat - TEMPORARILY DISABLED
+// Re-enable when revenue justifies infrastructure costs (~$35-60/month for Azure PostgreSQL)
+// To re-enable: Uncomment the code below and restore the original component
+
+export default function Agent() {
+  return (
+    <main className="max-w-3xl mx-auto p-8">
+      <h1 className="text-3xl font-bold mb-4">Research Chat</h1>
+      
+      <div className="border rounded-lg p-8 bg-gray-50">
+        <div className="text-center space-y-4">
+          <div className="text-6xl mb-4">🔬</div>
+          <h2 className="text-2xl font-semibold text-gray-800">Coming Soon</h2>
+          <p className="text-gray-600 max-w-md mx-auto">
+            Research chat is temporarily disabled while we focus on our core stack recommendations.
+            This feature requires additional infrastructure (~$35-60/month) and will be re-enabled 
+            when revenue justifies the costs.
+          </p>
+          
+          <div className="mt-8 space-y-3">
+            <p className="font-medium text-gray-700">In the meantime, check out:</p>
+            <div className="flex flex-col gap-3 items-center">
+              <a 
+                href="/stack-chat" 
+                className="bg-black text-white px-6 py-3 rounded-lg hover:bg-gray-800 transition-colors"
+              >
+                Stack Planner
+              </a>
+              <a 
+                href="/supplements" 
+                className="bg-gray-200 text-gray-800 px-6 py-3 rounded-lg hover:bg-gray-300 transition-colors"
+              >
+                Supplement Database
+              </a>
+            </div>
+          </div>
+        </div>
+      </div>
+      
+      <p className="text-xs text-gray-500 mt-6 text-center">
+        Educational only; not medical advice.
+      </p>
+    </main>
+  );
+}
+
+/* DISABLED CODE - Re-enable by replacing the component above with this code:
+"use client";
 import { useRef, useState } from "react";
 
 type Msg = { role: "user"|"assistant"; content: string };
@@ -13,22 +62,12 @@ export default function Agent() {
 
   const testConnection = async () => {
     try {
-      // Try hardcoded values first to test if env vars are the issue
       const apiBase = process.env.NEXT_PUBLIC_API_BASE || "http://127.0.0.1:8000";
       const testUrl = `${apiBase}/test-frontend`;
       console.log("Testing connection to:", testUrl);
-      console.log("API Base:", apiBase);
-      console.log("Env var NEXT_PUBLIC_API_BASE:", process.env.NEXT_PUBLIC_API_BASE);
-      
       const res = await fetch(testUrl);
-      console.log("Response status:", res.status);
-      console.log("Response headers:", res.headers);
-      
       const text = await res.text();
-      console.log("Response text:", text);
-      
       const data = JSON.parse(text);
-      console.log("Connection test result:", data);
       alert("Connection test: " + JSON.stringify(data));
     } catch (error) {
       console.error("Connection test failed:", error);
@@ -39,10 +78,9 @@ export default function Agent() {
   const send = async () => {
     const newMsgs = [...msgs, {role:"user" as const, content: input}];
     setMsgs(newMsgs); setInput(""); setLoading(true);
-    setHits([]); // Clear previous hits
+    setHits([]);
 
     try {
-      // Read API base from environment
       const apiBase = process.env.NEXT_PUBLIC_API_BASE || "http://127.0.0.1:8000";
       const demoUser = process.env.NEXT_PUBLIC_DEMO_USER || "demo";
       const demoPw = process.env.NEXT_PUBLIC_DEMO_PW || "demo123";
@@ -50,16 +88,12 @@ export default function Agent() {
       const apiUrl = `${apiBase}/stream`;
       const authString = btoa(`${demoUser}:${demoPw}`);
       
-      // Profile for the request
       const profile = {
         goal: "strength",
         weight_kg: 80,
         caffeine_sensitive: false,
         meds: []
       };
-      
-      console.log("API URL:", apiUrl);
-      console.log("Request body:", {thread_id: tid.current, messages: newMsgs, profile});
       
       const res = await fetch(apiUrl, {
         method: "POST",
@@ -75,7 +109,8 @@ export default function Agent() {
       });
 
       if (!res.ok) {
-        throw new Error(`HTTP error! status: ${res.status}`);
+        const errorData = await res.json().catch(() => ({ detail: res.statusText }));
+        throw new Error(errorData.detail || `HTTP error! status: ${res.status}`);
       }
 
       const reader = res.body!.getReader();
@@ -83,47 +118,31 @@ export default function Agent() {
       let acc = "";
       let finalAnswer = "";
       
-      console.log("Starting SSE stream reading...");
-      
       while(true){
         const {value, done} = await reader.read();
-        if (done) {
-          console.log("Stream ended, final answer:", finalAnswer);
-          break;
-        }
+        if (done) break;
         
         const chunk = dec.decode(value);
         acc += chunk;
-        console.log("Received chunk:", chunk);
         
-        // Process each line that starts with "data:"
         const lines = acc.split('\n');
-        acc = lines.pop() || ""; // Keep the last incomplete line
-        
-        console.log("Processing lines:", lines);
+        acc = lines.pop() || "";
         
         for (const line of lines){
-          console.log("Processing line:", line);
           if (!line.startsWith("data:")) continue;
           try{
             const jsonStr = line.slice(5).trim();
-            console.log("JSON string:", jsonStr);
             const ev = JSON.parse(jsonStr);
-            console.log("Parsed event:", ev);
             
-            // Handle search stage - show hits
             if (ev.stage === "search" && ev.hits) {
               setHits(ev.hits);
-              console.log("Found search hits:", ev.hits);
             }
             
-            // Handle final stage - show answer
             if (ev.stage === "final" && ev.answer){
               finalAnswer = ev.answer;
-              console.log("Found final answer:", finalAnswer);
             }
           }catch(e){
-            console.error("Error parsing SSE event:", e, "Raw:", line);
+            console.error("Error parsing SSE event:", e);
           }
         }
       }
@@ -131,7 +150,6 @@ export default function Agent() {
       if (finalAnswer) {
         setMsgs([...newMsgs, {role:"assistant", content: finalAnswer}]);
       } else {
-        // Fallback: show error message
         setMsgs([...newMsgs, {role:"assistant", content: "Sorry, I couldn't process your request. Please try again."}]);
       }
     } catch (error) {
@@ -146,7 +164,6 @@ export default function Agent() {
     <main className="max-w-3xl mx-auto p-8">
       <h1 className="text-2xl font-semibold mb-4">EvidentFit</h1>
       
-      {/* Search hits display */}
       {hits.length > 0 && (
         <div className="mb-4 p-3 bg-blue-50 rounded">
           <h3 className="text-sm font-medium mb-2">Found {hits.length} relevant studies:</h3>
@@ -189,3 +206,4 @@ export default function Agent() {
     </main>
   );
 }
+*/

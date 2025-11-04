@@ -4,9 +4,15 @@ _Note: This is the maintainer-facing methodology covering processes, data flow, 
 
 ## Step-to-implementation map
 
-- Discovery & curation → `agents/ingest/get_papers` (pipeline, thresholds) and `agents/ingest/paper_processor`
-- Evidence banking (levels 1–2) → `agents/banking` (`level1_evidence_bank.json`, `level2_reasoning_bank.json`)
-- API endpoints → `api/main.py` (`/stream`, `/summaries/{supplement}`, `/stack*`)
+- **Module A** — Data Ingestion (non-agentic):
+  - A1: Paper discovery & curation → `agents/ingest/get_papers/` (pipeline, thresholds)
+  - A2: Paper indexing → `agents/ingest/index_papers/` (chunking, embeddings)
+- **Agent B** — Paper processing → `agents/paper_processor/` (LLM card extraction)
+- **Agent C** — Evidence banking (levels 1–2) → `agents/banking/` (`level1_evidence_bank.json`, `level2_reasoning_bank.json`)
+  - Note: We search for 63 supplements in ingestion, but bank the top 27 most important supplements (6 goals × 27 = 162 Level 1 combinations)
+- **Agent D** — Summarization → `agents/summarize/` (supplement summaries)
+- **Agent E** — Research chat → `api/main.py` (`/stream`, `/summaries/{supplement}`)
+- **Agent F** — Stack builder → `api/stack_builder.py` (`/stack/*` endpoints)
 - Frontend → `web/evidentfit-web` (pages under `src/app/`)
 
 ## Our Approach to Evidence-Based Supplement Guidance
@@ -35,8 +41,14 @@ We continuously monitor PubMed for research on resistance training supplements. 
 **What we exclude:**
 - Animal studies (we focus on human research)
 - Pollution/environmental studies (e.g., nitrogen dioxide research)
+- **Clinical/disease populations**: Cancer, heart disease, kidney disease, liver disease, diabetes, neurological disorders, HIV/AIDS, COPD, and other major diseases
+- **Pediatric populations**: Studies on children/adolescents under 18 years old
+- **Pregnancy/lactation populations**: Studies on pregnant or breastfeeding individuals
+- **Case reports**: Low-quality single-case studies
 - Non-peer-reviewed sources
 - Industry marketing materials
+
+**Important exception**: We keep safety/adverse event studies even in clinical populations, as safety signals are important regardless of population.
 
 ### 2. **Quality Assessment**
 
@@ -86,7 +98,7 @@ To prevent our database from being dominated by over-studied topics (like creati
 - Over-represented combinations get deprioritized (e.g., "creatine + strength + RCT")
 - **Quality safeguard**: Low-quality papers never get selected purely for diversity
 
-**Result**: Our corpus of ~8,000 papers provides balanced coverage across supplements, goals, and populations while maintaining high quality standards.
+**Result**: Our corpus of ~30,000 papers provides balanced coverage across supplements, goals, and populations while maintaining high quality standards.
 
 ## What You Get
 
@@ -146,11 +158,12 @@ Our AI considers:
 We believe in being upfront about what our system can and cannot do:
 
 ### Current Limitations
-1. **Abstract-only analysis**: We analyze abstracts, not full papers (storage constraints)
-2. **No real-time dosing adjustments**: Dosing is based on published protocols, not individual optimization
-3. **English-language bias**: Most PubMed papers are in English
-4. **Regex extraction**: We use pattern matching to extract sample sizes, dosing, etc.—may occasionally misread
-5. **No intervention ranking**: We present evidence but don't say "Supplement X is better than Y" without studies directly comparing them
+1. **Full-text coverage**: ≈77–80% of papers have full text (PMC + Unpaywall); remaining 20–23% use abstracts only
+2. **Population scope**: Focus on relatively healthy populations (excludes clinical disease populations, pediatric, pregnancy)
+3. **No real-time dosing adjustments**: Dosing is based on published protocols, not individual optimization
+4. **English-language bias**: Most PubMed papers are in English
+5. **Regex extraction**: We use pattern matching to extract sample sizes, dosing, etc.—may occasionally misread
+6. **No intervention ranking**: We present evidence but don't say "Supplement X is better than Y" without studies directly comparing them
 
 ### What We're Working On
 - **Full-text access**: Expanding to analyze complete papers
@@ -164,10 +177,12 @@ We believe in being upfront about what our system can and cannot do:
 For those interested in the technical implementation:
 
 ### Our Stack
-- **Data ingestion**: Python-based PubMed E-utilities client
-- **Storage**: Azure AI Search (text-based, ~8,000 papers)
-- **AI/LLM**: Azure AI Foundry (GPT-4o-mini for composition)
-- **API**: FastAPI with server-sent events (SSE) for streaming
+- **Module A**: Data ingestion (Python-based PubMed E-utilities client, pgvector for embeddings)
+- **Agent B**: GPU-accelerated LLM processing (Mistral-7B local for card extraction)
+- **Agent C**: Evidence banking (GPT-4o-mini for Level 1/2 banking)
+- **Agent D**: Summarization (GPT-4o-mini for supplement summaries)
+- **Agent E & F**: User API (FastAPI with GPT-4o-mini for research chat and stack building)
+- **Storage**: Azure AI Search + pgvector (~30,000 papers)
 - **Frontend**: Next.js static site
 - **Infrastructure**: Azure Container Apps
 
@@ -188,7 +203,7 @@ Each paper receives two scores:
 
 **Final Score = Reliability + Combination**
 
-Top ~8,000 papers selected and updated monthly.
+Top ~30,000 papers selected and updated monthly.
 
 ### Code & Reproducibility
 - All code is versioned in GitLab

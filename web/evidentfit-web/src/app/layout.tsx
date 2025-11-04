@@ -25,9 +25,10 @@ export default function RootLayout({
               EvidentFit
             </Link>
           <div className="flex gap-6">
-            <Link href="/agent" className="text-gray-600 hover:text-blue-600 font-medium transition-colors">
+            {/* Research Chat - TEMPORARILY HIDDEN (disabled to save costs) */}
+            {/* <Link href="/agent" className="text-gray-600 hover:text-blue-600 font-medium transition-colors">
               Research Chat
-            </Link>
+            </Link> */}
             <Link href="/stack-chat" className="text-gray-600 hover:text-blue-600 font-medium transition-colors">
               Stack Planner
             </Link>
