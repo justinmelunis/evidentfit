@@ -1,0 +1,18 @@
+[
+  {
+    "id": "pregnancy_avoid_creatine",
+    "applies_to": ["creatine", "creatine monohydrate"],
+    "profile": {"pregnant": true},
+    "severity": "hard_stop",
+    "message": "Avoid during pregnancy"
+  },
+  {
+    "id": "caffeine_caution_anxiety",
+    "applies_to": ["caffeine"],
+    "profile": {"conditions_any": ["anxiety_disorder", "panic_disorder"]},
+    "severity": "caution",
+    "message": "May exacerbate anxiety"
+  }
+]
+
+

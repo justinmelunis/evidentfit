@@ -1,0 +1,34 @@
+{
+  "version": "l3-20251020-151921",
+  "index_version": "v1",
+  "generated_at": "2025-10-20T15:19:21.320309+00:00",
+  "rules": [
+    {
+      "id": "pregnancy_avoid_creatine",
+      "applies_to": [
+        "creatine",
+        "creatine monohydrate"
+      ],
+      "profile": {
+        "pregnant": true
+      },
+      "severity": "hard_stop",
+      "actions": {}
+    },
+    {
+      "id": "caffeine_caution_anxiety",
+      "applies_to": [
+        "caffeine"
+      ],
+      "profile": {
+        "conditions_any": [
+          "anxiety_disorder",
+          "panic_disorder"
+        ]
+      },
+      "severity": "caution",
+      "actions": {}
+    }
+  ],
+  "sha256": "da4d1ead69a8c96c39842829fb2748967be86b217be16365d247367f1ec796fe"
+}
