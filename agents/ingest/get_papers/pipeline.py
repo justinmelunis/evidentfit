@@ -40,6 +40,7 @@ from get_papers.storage import (
     RUNS_BASE_DIR,
 )
 from get_papers.fulltext_fetcher import fetch_fulltexts_for_jsonl
+from get_papers.pico_evaluator import evaluate_pico_batch, is_pico_relevant, apply_pico_metadata, PICO_ENABLED, PICO_BATCH_SIZE, PICO_RELEVANCE_THRESHOLD
 
 logger = logging.getLogger(__name__)
 
@@ -247,6 +248,44 @@ def process_papers(ids: List[str], mode: str) -> List[Dict]:
             continue
     
     logger.info(f"Successfully processed {len(all_docs)} papers from {len(ids)} PMIDs")
+    
+    # Apply PICO evaluation at abstract stage - FILTER OUT low-relevance papers
+    if PICO_ENABLED and all_docs:
+        logger.info(f"Applying PICO evaluation to {len(all_docs)} papers (batch size: {PICO_BATCH_SIZE}, threshold: {PICO_RELEVANCE_THRESHOLD})...")
+        pico_evaluated = 0
+        pico_filtered = 0
+        filtered_docs = []
+        
+        for batch_start in range(0, len(all_docs), PICO_BATCH_SIZE):
+            batch_end = min(batch_start + PICO_BATCH_SIZE, len(all_docs))
+            batch = all_docs[batch_start:batch_end]
+            
+            try:
+                pico_results = evaluate_pico_batch(batch)
+                for paper, pico_result in zip(batch, pico_results):
+                    pico_evaluated += 1
+                    
+                    # Check if paper meets relevance threshold
+                    if is_pico_relevant(pico_result):
+                        # Store PICO metadata and keep paper
+                        apply_pico_metadata(paper, pico_result)
+                        filtered_docs.append(paper)
+                    else:
+                        # Filter out low-relevance paper
+                        pico_filtered += 1
+                        logger.debug(f"Filtered out paper {paper.get('pmid', 'unknown')} - PICO relevance: {pico_result.get('relevance_score', 0):.2f}")
+                
+                if (batch_end // PICO_BATCH_SIZE) % 10 == 0:
+                    logger.info(f"PICO evaluated {pico_evaluated}/{len(all_docs)} papers, filtered {pico_filtered}, kept {len(filtered_docs)}...")
+            except Exception as e:
+                logger.warning(f"PICO evaluation failed for batch {batch_start}-{batch_end}: {e}")
+                # On error, keep all papers from this batch (fail open)
+                filtered_docs.extend(batch)
+                continue
+        
+        logger.info(f"PICO evaluation complete: {pico_evaluated} evaluated, {pico_filtered} filtered out, {len(filtered_docs)} kept (filter rate: {pico_filtered/pico_evaluated*100:.1f}%)")
+        all_docs = filtered_docs
+    
     return all_docs
 
 

@@ -266,21 +266,9 @@ def healthz():
         "using_fallback": not index_available
     }
 
-# Research Chat endpoint - TEMPORARILY DISABLED
-# Re-enable when revenue justifies infrastructure costs (~$35-60/month for Azure PostgreSQL)
-# To re-enable: Uncomment the code below and remove the 503 response
 @api.post("/stream")
 async def stream(request: StreamRequest, _=Depends(guard)):
-    """SSE endpoint that emits search results then final answer - TEMPORARILY DISABLED"""
-    raise HTTPException(
-        status_code=503,
-        detail="Research chat is temporarily disabled. We're focusing on stack recommendations first. "
-               "This feature will be re-enabled when revenue justifies the infrastructure costs. "
-               "For now, check out our Stack Planner and Supplement Database!"
-    )
-    
-    # DISABLED CODE - Re-enable by uncommenting below and removing the raise above
-    """
+    """SSE endpoint that emits search results then final answer"""
     thread_id = request.thread_id
     msgs = request.messages
     profile = request.profile
@@ -329,7 +317,6 @@ async def stream(request: StreamRequest, _=Depends(guard)):
         yield f"data: {json.dumps(final_event)}\n\n"
 
     return StreamingResponse(gen(), media_type="text/event-stream")
-    """
 
 @api.get("/summaries/{supplement}")
 def get_summary(supplement: str):

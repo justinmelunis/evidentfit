@@ -1,0 +1,27 @@
+design_weights:
+  meta_analysis: 1.2
+  randomized_controlled_trial: 1.0
+  rct: 1.0
+  controlled: 0.7
+  observational: 0.4
+  cohort: 0.4
+  case_control: 0.3
+  cross_sectional: 0.2
+
+w_min: 3.0
+
+cutoffs:
+  small: 0.05   # threshold for "small" effects
+  b: 0.25       # B lower bound
+  a: 0.45       # A lower bound
+
+# nearly-null band for F when consistent
+null_eps: 0.05
+
+# negative effect threshold for F
+negative_thresh: 0.10
+
+# fallback when only direction is known
+direction_fallback: 0.35
+
+

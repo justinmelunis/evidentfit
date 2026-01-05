@@ -84,3 +84,8 @@ jspm_packages/
 
 # Azure
 .azure/.venv/
+
+# Python virtual environment
+.venv/
+venv/
+env/

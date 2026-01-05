@@ -23,10 +23,13 @@ This guide covers deploying EvidentFit to Azure Container Apps using Docker cont
 
 - Docker Desktop installed and running
 - Azure CLI installed (`az --version`)
-- Azure subscription with appropriate permissions
+- Azure subscription with billing configured (see [Azure Billing Setup Guide](AZURE_BILLING_SETUP.md))
+- Payment method added to Azure account
 - Azure Container Registry (ACR) created
 - Azure Container Apps Environment created
 - Azure Key Vault with secrets configured
+
+**Important**: Before deploying, ensure you have completed the billing setup steps in [AZURE_BILLING_SETUP.md](AZURE_BILLING_SETUP.md).
 
 ## 🚀 Local Development
 
