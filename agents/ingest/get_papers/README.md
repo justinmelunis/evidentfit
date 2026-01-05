@@ -207,6 +207,68 @@ python -m agents.ingest.get_papers.pipeline --mode monthly --target 2000
 
 ---
 
+## PICO-Based Relevance Evaluation
+
+### Overview
+
+PICO (Patient/Population, Intervention, Comparison, Outcome) evaluation is a critical filtering step that ensures only relevant research papers are included in the corpus. Papers are evaluated using GPT-4o-mini via Azure AI Foundry to extract PICO components and score relevance for supplement/fitness research.
+
+### Evaluation Stages
+
+**Abstract Stage** (Primary Filtering - Clear Exclusions Only):
+- Evaluated after parsing but before quality filtering
+- **Only filters out papers that clearly don't fit** (permissive approach)
+- Threshold: `PICO_RELEVANCE_THRESHOLD` (default: 0.4)
+- Filters out papers scoring 0.0-0.4 (clearly irrelevant, wrong population, non-supplement interventions)
+- Keeps all papers scoring 0.4+ (borderline and above are retained for downstream evaluation)
+- Batch processing: 15 papers at a time (configurable via `PICO_BATCH_SIZE`)
+
+**Full-Text Stage** (Validation):
+- Re-evaluated after full-text extraction
+- Uses full-text context for more accurate assessment
+- Metadata stored in fulltext store JSON for downstream analysis
+- Does not filter papers (they've already passed abstract stage)
+
+### Configuration
+
+Environment variables:
+- `PICO_ENABLED=true` (enable/disable PICO filtering, default: true)
+- `PICO_RELEVANCE_THRESHOLD=0.6` (minimum relevance score 0-1, default: 0.6)
+- `PICO_BATCH_SIZE=15` (papers per LLM batch, default: 15)
+
+### Relevance Scoring
+
+Papers receive a relevance score (0-1) based on:
+- **0.9-1.0**: Highly relevant (human studies on supplements/exercise, clear outcomes)
+- **0.7-0.8**: Relevant (related populations, applicable interventions)
+- **0.5-0.6**: Moderately relevant (some overlap, may have limitations)
+- **0.4-0.5**: Borderline (some connection, may have limitations but not clearly irrelevant)
+- **0.0-0.4**: Clearly irrelevant (wrong population, non-supplement interventions, irrelevant outcomes, clearly off-topic)
+
+**Filtering Strategy**: Only papers scoring below 0.4 (clearly don't fit) are filtered out. All papers scoring 0.4+ are retained for downstream quality and diversity evaluation. This permissive approach ensures we only remove papers that are clearly off-topic, not papers that might be relevant but have some limitations.
+
+### PICO Components Extracted
+
+- **P (Patient/Population)**: Study population (e.g., "healthy adults", "athletes", "elderly")
+- **I (Intervention)**: Supplement, treatment, or intervention being studied
+- **C (Comparison)**: Comparison group (placebo, control, other intervention)
+- **O (Outcome)**: Measured outcomes (e.g., strength, muscle mass, performance, endurance)
+
+### Metadata Storage
+
+PICO evaluation results are stored in paper metadata:
+- `_pico`: Dict with P, I, C, O components
+- `_pico_relevance_score`: Relevance score (0-1)
+- `_pico_relevance_reasoning`: Brief explanation of score
+- Full-text stage adds `_pico_fulltext` variants with full-text context
+
+### Performance Considerations
+
+- LLM calls are made in batches to optimize throughput
+- Failures in PICO evaluation result in papers being kept (fail-open policy)
+- Evaluation adds ~1-2 seconds per batch (15 papers) due to LLM latency
+- Estimated cost: ~$0.50-2.00 per 1000 papers evaluated (GPT-4o-mini pricing)
+
 ## Reliability Scoring
 
 ### Scoring Components (0-20+ points)

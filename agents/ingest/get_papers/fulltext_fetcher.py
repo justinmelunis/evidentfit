@@ -819,6 +819,25 @@ async def _fetch_one_fulltext(
         record["fulltext_text"] = record["abstract"]
         logger.debug(f"Using PubMed abstract as fallback for {pmid or doi}")
 
+    # 6) PICO evaluation at full-text stage (re-evaluate with full text if available)
+    try:
+        from get_papers.pico_evaluator import evaluate_pico_single, PICO_ENABLED
+        if PICO_ENABLED and record.get("fulltext_text"):
+            # Re-evaluate PICO with full-text context
+            title = paper.get("title", "")
+            fulltext = record["fulltext_text"]
+            supplements = paper.get("supplements", "")
+            
+            pico_result = evaluate_pico_single(title, fulltext, supplements)
+            
+            # Store PICO metadata in record
+            record["_pico_fulltext"] = pico_result.get("pico", {})
+            record["_pico_relevance_score_fulltext"] = pico_result.get("relevance_score", 0.8)
+            record["_pico_relevance_reasoning_fulltext"] = pico_result.get("relevance_reasoning", "")
+    except Exception as e:
+        logger.debug(f"PICO evaluation at fulltext stage failed for {pmid or doi}: {e}")
+        # Continue without PICO metadata if evaluation fails
+
     return (pmid or doi or "unknown", record)
 
 # ============================================================================
